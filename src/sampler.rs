@@ -1,5 +1,3 @@
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha20Rng;
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -206,18 +204,22 @@ pub fn reservoir_weight(u: f64, time_decay: f64, entries_seen: u64) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::*;
 
-    #[test]
-    fn sampler_fills_to_capacity() {
-        let mut s = Sampler::new(4);
-        for i in 0..4u64 {
+    #[rstest]
+    #[case(1)]
+    #[case(4)]
+    #[case(16)]
+    fn sampler_fills_to_capacity(#[case] capacity: usize) {
+        let mut s = Sampler::new(capacity);
+        for i in 0..capacity as u64 {
             let w = reservoir_weight(0.5, 0.0, i);
             let result = s.accept(true, w, i as usize);
             assert!(result.accepted);
             s.add_point(i as usize);
         }
         assert!(s.is_full());
-        assert_eq!(s.points().len(), 4);
+        assert_eq!(s.points().len(), capacity);
     }
 
     #[test]

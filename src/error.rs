@@ -1,30 +1,19 @@
-use std::fmt;
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum RcfError {
+    #[error("invalid argument: {0}")]
     InvalidArgument(String),
+    #[error("dimension mismatch: expected {expected}, got {got}")]
     DimensionMismatch { expected: usize, got: usize },
+    #[error("forest not ready: insufficient data")]
     NotReady,
+    #[error("index out of bounds: {0}")]
     IndexOutOfBounds(usize),
+    #[error("operation on empty tree")]
     EmptyTree,
+    #[error("I/O error: {0}")]
     Io(String),
 }
-
-impl fmt::Display for RcfError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RcfError::InvalidArgument(msg) => write!(f, "Invalid argument: {msg}"),
-            RcfError::DimensionMismatch { expected, got } => {
-                write!(f, "Dimension mismatch: expected {expected}, got {got}")
-            }
-            RcfError::NotReady => write!(f, "Forest not ready: insufficient data"),
-            RcfError::IndexOutOfBounds(i) => write!(f, "Index out of bounds: {i}"),
-            RcfError::EmptyTree => write!(f, "Operation on empty tree"),
-            RcfError::Io(msg) => write!(f, "I/O error: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for RcfError {}
 
 pub type Result<T> = std::result::Result<T, RcfError>;

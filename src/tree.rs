@@ -1,5 +1,5 @@
-use rand::{Rng, RngCore, SeedableRng};
-use rand_chacha::ChaCha20Rng;
+use rand::prelude::*;
+use rand::rngs::StdRng;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -41,8 +41,8 @@ impl RcfTree {
     // Helpers
     // -----------------------------------------------------------------------
 
-    fn rng(&mut self) -> ChaCha20Rng {
-        let mut rng = ChaCha20Rng::seed_from_u64(self.rng_seed);
+    fn rng(&mut self) -> StdRng {
+        let mut rng = StdRng::seed_from_u64(self.rng_seed);
         self.rng_seed = rng.next_u64();
         rng
     }
@@ -159,7 +159,7 @@ impl RcfTree {
 
         // Scan from leaf upward, expanding the bounding box as we go.
         for step in 0..=path.len() {
-            let factor: f64 = rng.r#gen::<f64>();
+            let factor: f64 = rng.random::<f64>();
             if let Some((cut, sep)) = random_cut(&current_bbox, point, factor) {
                 if sep {
                     saved_cut_dim = cut.dim;
@@ -661,7 +661,7 @@ impl RcfTree {
         if self.root == NULL || self.tree_mass == 0 {
             return None;
         }
-        let mut rng = ChaCha20Rng::seed_from_u64(seed);
+        let mut rng = StdRng::seed_from_u64(seed);
         let mut best: Option<(f64, usize, f64)> = None;
         self.impute_recursive(
             self.root,
@@ -682,7 +682,7 @@ impl RcfTree {
         missing: &[bool],
         point_store: &PointStore,
         centrality: f64,
-        rng: &mut ChaCha20Rng,
+        rng: &mut StdRng,
         best: &mut Option<(f64, usize, f64)>,
     ) {
         match self.arena.get(node_id) {
@@ -693,7 +693,7 @@ impl RcfTree {
                 let accept = match best {
                     None => true,
                     Some((_, _, best_dist)) => {
-                        let r: f64 = rng.r#gen::<f64>();
+                        let r: f64 = rng.random::<f64>();
                         // With probability centrality, always prefer the closer one.
                         // Otherwise accept stochastically (mimics the original's
                         // "centrality" parameter).
@@ -805,6 +805,7 @@ impl BoundingBox {
 mod tests {
     use super::*;
     use crate::{point_store::PointStore, score::ScoreMode};
+    use rstest::*;
 
     fn make_store_and_tree(points: &[Vec<f32>]) -> (PointStore, RcfTree) {
         let dim = points[0].len();
@@ -842,8 +843,11 @@ mod tests {
         assert_eq!(tree.tree_mass, 4);
     }
 
-    #[test]
-    fn score_outlier_higher_than_inlier() {
+    #[rstest]
+    #[case(vec![100.0f32, 0.0])]
+    #[case(vec![-50.0f32, -50.0])]
+    #[case(vec![0.0f32, 200.0])]
+    fn score_outlier_higher_than_inlier(#[case] outlier: Vec<f32>) {
         // Build a dense cluster, then score a far outlier vs a center point.
         let mut pts: Vec<Vec<f32>> = (0..50).map(|_| vec![0.5f32, 0.5]).collect();
         pts.push(vec![0.4, 0.6]); // slight inlier
@@ -851,7 +855,7 @@ mod tests {
 
         let mode = ScoreMode::standard();
         let inlier_score = tree.raw_score(&[0.5, 0.5], &store, &mode);
-        let outlier_score = tree.raw_score(&[100.0, 0.0], &store, &mode);
+        let outlier_score = tree.raw_score(&outlier, &store, &mode);
         assert!(
             outlier_score > inlier_score,
             "outlier={outlier_score} inlier={inlier_score}"

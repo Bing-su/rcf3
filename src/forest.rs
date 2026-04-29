@@ -1,7 +1,8 @@
-use rand::{Rng, RngCore, SeedableRng};
-use rand_chacha::ChaCha20Rng;
+use itertools::Itertools;
+use rand::prelude::*;
+use rand::rngs::StdRng;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 use crate::{
     config::RcfConfig,
@@ -57,7 +58,7 @@ impl Forest {
             return Err(RcfError::InvalidArgument("num_trees must be > 0".into()));
         }
 
-        let mut rng = ChaCha20Rng::seed_from_u64(seed);
+        let mut rng = StdRng::seed_from_u64(seed);
         let dim = config.dim();
         let capacity = config.capacity;
         let num_trees = config.num_trees;
@@ -89,7 +90,7 @@ impl Forest {
 
     /// Create a forest from a [`RcfConfig`] with a random seed.
     pub fn from_config(config: &RcfConfig) -> Result<Self> {
-        let mut seed_rng = ChaCha20Rng::from_entropy();
+        let mut seed_rng = rand::make_rng::<StdRng>();
         Self::new_internal(config.clone(), seed_rng.next_u64())
     }
 
@@ -138,13 +139,13 @@ impl Forest {
         let time_decay = self.config.effective_time_decay();
         let initial_frac = self.config.initial_accept_fraction;
 
-        let mut rng = ChaCha20Rng::seed_from_u64(self.rng_seed);
+        let mut rng = StdRng::seed_from_u64(self.rng_seed);
         self.rng_seed = rng.next_u64();
 
         let mut any_accepted = false;
 
         for t in 0..self.trees.len() {
-            let u: f64 = rng.r#gen::<f64>();
+            let u: f64 = rng.random::<f64>();
             let weight = reservoir_weight(u, time_decay, self.entries_seen);
 
             // Determine initial-phase acceptance probability.
@@ -159,7 +160,7 @@ impl Forest {
                 } else {
                     1.0 - (fill - initial_frac) / (1.0 - initial_frac)
                 };
-                rng.r#gen::<f64>() < prob
+                rng.random::<f64>() < prob
             };
 
             let result = self.samplers[t].accept(is_initial, weight, point_idx);
@@ -228,17 +229,26 @@ impl Forest {
     pub fn attribution(&self, query: &[f32]) -> Result<Attribution> {
         let q = self.prepare_query(query)?;
         let dim = self.config.dim();
-        let mut total_attr = vec![[0.0f64; 2]; dim];
         let mode = ScoreMode::standard();
         let n = self.trees.len() as f64;
-        for tree in &self.trees {
-            let tree_attr = tree.attribution(&q, &self.point_store, &mode);
-            for i in 0..dim {
-                total_attr[i][0] += tree_attr[i][0] / n;
-                total_attr[i][1] += tree_attr[i][1] / n;
-            }
-        }
-        Ok(total_attr)
+        let total_attr = self
+            .trees
+            .par_iter()
+            .map(|tree| tree.attribution(&q, &self.point_store, &mode))
+            .reduce(
+                || vec![[0.0f64; 2]; dim],
+                |mut acc, tree_attr| {
+                    for i in 0..dim {
+                        acc[i][0] += tree_attr[i][0];
+                        acc[i][1] += tree_attr[i][1];
+                    }
+                    acc
+                },
+            );
+        Ok(total_attr
+            .into_iter()
+            .map(|[a, b]| [a / n, b / n])
+            .collect())
     }
 
     // -----------------------------------------------------------------------
@@ -250,7 +260,7 @@ impl Forest {
         let q = self.prepare_query(query)?;
         let raw: f64 = self
             .trees
-            .iter()
+            .par_iter()
             .map(|t| t.density(&q, &self.point_store))
             .sum::<f64>()
             / self.trees.len() as f64;
@@ -274,29 +284,29 @@ impl Forest {
     ) -> Result<Vec<(f64, Vec<f32>, f64)>> {
         let q = self.prepare_query(query)?;
         let mode = ScoreMode::standard();
-
-        // Collect candidates across trees; use point_idx as key to deduplicate.
-        let mut seen: HashMap<usize, (f64, f64)> = HashMap::new();
-        for tree in &self.trees {
-            for (score, idx, dist) in tree.near_neighbors(&q, &self.point_store, &mode, percentile)
-            {
-                seen.entry(idx)
-                    .and_modify(|(s, d)| {
-                        *s += score;
-                        *d = d.min(dist);
-                    })
-                    .or_insert((score, dist));
-            }
-        }
-
         let n = self.trees.len() as f64;
-        let mut results: Vec<(f64, Vec<f32>, f64)> = seen
+
+        // Collect all candidates, deduplicate by idx (sum scores, min dist), sort by distance.
+        let results: Vec<(f64, Vec<f32>, f64)> = self
+            .trees
+            .par_iter()
+            .flat_map(|tree| tree.near_neighbors(&q, &self.point_store, &mode, percentile))
+            .collect::<Vec<_>>()
             .into_iter()
-            .map(|(idx, (score_sum, dist))| (score_sum / n, self.point_store.copy_point(idx), dist))
+            .sorted_by_key(|(_, idx, _)| *idx)
+            .chunk_by(|(_, idx, _)| *idx)
+            .into_iter()
+            .map(|(idx, group)| {
+                let (score_sum, dist_min) = group
+                    .fold((0.0f64, f64::MAX), |(s, d), (score, _, dist)| {
+                        (s + score, d.min(dist))
+                    });
+                (score_sum / n, self.point_store.copy_point(idx), dist_min)
+            })
+            .sorted_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
+            .take(top_k)
             .collect();
 
-        results.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
-        results.truncate(top_k);
         Ok(results)
     }
 
@@ -333,7 +343,7 @@ impl Forest {
         }
 
         let mut candidates: Vec<Vec<f32>> = Vec::new();
-        let mut rng = ChaCha20Rng::seed_from_u64(self.rng_seed ^ 0xdead_beef);
+        let mut rng = StdRng::seed_from_u64(self.rng_seed ^ 0xdead_beef);
 
         for tree in &self.trees {
             let seed = rng.next_u64();
@@ -393,7 +403,7 @@ impl Forest {
         let mut fictitious = self.point_store.current_shingled().to_vec();
         let mut result = Vec::with_capacity(look_ahead * input_dim);
 
-        let mut rng = ChaCha20Rng::seed_from_u64(self.rng_seed ^ 0xcafe_babe);
+        let mut rng = StdRng::seed_from_u64(self.rng_seed ^ 0xcafe_babe);
 
         for step in 0..look_ahead {
             let missing_indices = self.point_store.next_indices(step);
@@ -500,7 +510,7 @@ impl Forest {
         }
         let sum: f64 = self
             .trees
-            .iter()
+            .par_iter()
             .map(|t| t.raw_score(query, &self.point_store, mode))
             .sum();
         sum / self.trees.len() as f64
@@ -573,6 +583,7 @@ impl ForestBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::*;
 
     fn make_forest() -> Forest {
         Forest::builder(2, 1)
@@ -599,18 +610,21 @@ mod tests {
         assert!(f.is_ready());
     }
 
-    #[test]
-    fn outlier_scores_higher_than_inlier() {
+    #[rstest]
+    #[case([100.0f32, 100.0])]
+    #[case([-50.0f32, -50.0])]
+    #[case([0.0f32, 500.0])]
+    fn outlier_scores_higher_than_inlier(#[case] outlier: [f32; 2]) {
         let mut f = make_forest();
         // Warm up on a tight cluster.
         for _ in 0..200 {
             f.update(&[0.5f32, 0.5]).unwrap();
         }
         let inlier = f.score(&[0.5f32, 0.5]).unwrap();
-        let outlier = f.score(&[100.0f32, 100.0]).unwrap();
+        let out = f.score(&outlier).unwrap();
         assert!(
-            outlier > inlier,
-            "outlier={outlier:.4} should be > inlier={inlier:.4}"
+            out > inlier,
+            "outlier={out:.4} should be > inlier={inlier:.4}"
         );
     }
 

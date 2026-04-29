@@ -1,9 +1,9 @@
-use burn::prelude::*;
+use serde::{Deserialize, Serialize};
 
 /// Hyperparameters for a Random Cut Forest.
 ///
 /// Use [`RcfConfig::new`] then chain the builder methods, or deserialise from JSON.
-#[derive(Config, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RcfConfig {
     /// Number of base feature dimensions per observation (before shingling).
     pub input_dim: usize,
@@ -11,38 +11,96 @@ pub struct RcfConfig {
     /// Temporal window size. When `internal_shingling` is true the forest
     /// maintains a rolling buffer and the effective model dimension is
     /// `input_dim * shingle_size`.
-    #[config(default = 1)]
+    #[serde(default = "default_shingle_size")]
     pub shingle_size: usize,
 
     /// Maximum number of points stored per tree.
-    #[config(default = 256)]
+    #[serde(default = "default_capacity")]
     pub capacity: usize,
 
     /// Number of trees in the forest.
-    #[config(default = 50)]
+    #[serde(default = "default_num_trees")]
     pub num_trees: usize,
 
     /// Exponential time-decay rate applied to sampling weights.
     /// `0.0` means "use the default `0.1 / capacity`".
-    #[config(default = 0.0)]
+    #[serde(default)]
     pub time_decay: f64,
 
     /// Minimum number of updates before `score` / `attribution` / etc. return
     /// non-trivial results.  `0` means "use `1 + capacity / 4`".
-    #[config(default = 0)]
+    #[serde(default)]
     pub output_after: usize,
 
     /// When true the forest manages the shingle buffer automatically so callers
     /// pass one base observation at a time.
-    #[config(default = true)]
+    #[serde(default = "default_internal_shingling")]
     pub internal_shingling: bool,
 
     /// Controls how quickly the sampler fills to capacity during warm-up.
-    #[config(default = 0.125)]
+    #[serde(default = "default_initial_accept_fraction")]
     pub initial_accept_fraction: f64,
 }
 
+fn default_shingle_size() -> usize {
+    1
+}
+fn default_capacity() -> usize {
+    256
+}
+fn default_num_trees() -> usize {
+    50
+}
+fn default_internal_shingling() -> bool {
+    true
+}
+fn default_initial_accept_fraction() -> f64 {
+    0.125
+}
+
 impl RcfConfig {
+    pub fn new(input_dim: usize) -> Self {
+        Self {
+            input_dim,
+            shingle_size: default_shingle_size(),
+            capacity: default_capacity(),
+            num_trees: default_num_trees(),
+            time_decay: 0.0,
+            output_after: 0,
+            internal_shingling: default_internal_shingling(),
+            initial_accept_fraction: default_initial_accept_fraction(),
+        }
+    }
+
+    pub fn with_shingle_size(mut self, v: usize) -> Self {
+        self.shingle_size = v;
+        self
+    }
+    pub fn with_capacity(mut self, v: usize) -> Self {
+        self.capacity = v;
+        self
+    }
+    pub fn with_num_trees(mut self, v: usize) -> Self {
+        self.num_trees = v;
+        self
+    }
+    pub fn with_time_decay(mut self, v: f64) -> Self {
+        self.time_decay = v;
+        self
+    }
+    pub fn with_output_after(mut self, v: usize) -> Self {
+        self.output_after = v;
+        self
+    }
+    pub fn with_internal_shingling(mut self, v: bool) -> Self {
+        self.internal_shingling = v;
+        self
+    }
+    pub fn with_initial_accept_fraction(mut self, v: f64) -> Self {
+        self.initial_accept_fraction = v;
+        self
+    }
+
     /// Effective time-decay (resolves the `0.0 → default` convention).
     pub fn effective_time_decay(&self) -> f64 {
         if self.time_decay == 0.0 {
