@@ -8,7 +8,7 @@ use crate::{
     error::{RcfError, Result},
     node_arena::{NULL, Node, NodeArena},
     point_store::PointStore,
-    score::{Attribution, ScoreMode},
+    score::ScoreMode,
 };
 
 // ---------------------------------------------------------------------------
@@ -604,7 +604,7 @@ impl RcfTree {
                 right,
                 cut_dim,
                 cut_val,
-                mass,
+                mass: _,
                 bbox,
             } => {
                 let prob = bbox.probability_of_cut(query);
