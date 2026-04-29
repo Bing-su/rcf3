@@ -451,9 +451,19 @@ impl Forest {
     // Save / Load
     // -----------------------------------------------------------------------
 
+    /// Serialise the entire forest state to a JSON string.
+    pub fn to_json(&self) -> Result<String> {
+        serde_json::to_string(self).map_err(|e| RcfError::Io(e.to_string()))
+    }
+
+    /// Deserialise a forest from a JSON string previously written by [`to_json`].
+    pub fn from_json(json: &str) -> Result<Self> {
+        serde_json::from_str(json).map_err(|e| RcfError::Io(e.to_string()))
+    }
+
     /// Serialise the entire forest state to a JSON file.
     pub fn save_json(&self, path: &str) -> Result<()> {
-        let json = serde_json::to_string(self).map_err(|e| RcfError::Io(e.to_string()))?;
+        let json = self.to_json()?;
         std::fs::write(path, json).map_err(|e| RcfError::Io(e.to_string()))
     }
 
@@ -461,7 +471,7 @@ impl Forest {
     /// [`save_json`].
     pub fn load_json(path: &str) -> Result<Self> {
         let data = std::fs::read_to_string(path).map_err(|e| RcfError::Io(e.to_string()))?;
-        serde_json::from_str(&data).map_err(|e| RcfError::Io(e.to_string()))
+        Self::from_json(&data)
     }
 
     // -----------------------------------------------------------------------
