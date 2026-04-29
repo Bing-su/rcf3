@@ -1,0 +1,16 @@
+[package]
+name = "arcf"
+version = "0.1.0"
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+crate-type = ["cdylib"]
+name = "arcf"
+
+[dependencies]
+burn = { version = "0.20", features = ["wgpu"] }
+pyo3 = { version = "0.28", features = [
+  "extension-module",
+  "generate-import-lib"
+] }
