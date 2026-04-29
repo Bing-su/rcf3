@@ -149,7 +149,7 @@ mod tests {
         let mut a = BoundingBox::from_point(&[0.0, 0.0]);
         let b = BoundingBox::from_point(&[2.0, 3.0]);
         a.merge(&b);
-        assert_eq!(a.min, vec![0.0, 0.0]);
-        assert_eq!(a.max, vec![2.0, 3.0]);
+        assert_eq!(a.min, vec![0.0f32, 0.0]);
+        assert_eq!(a.max, vec![2.0f32, 3.0]);
     }
 }

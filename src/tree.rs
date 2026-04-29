@@ -146,8 +146,8 @@ impl RcfTree {
         }
 
         // Different point: need a new internal node with a random cut.
-        let leaf_point = point_store.get(leaf_point_idx).to_vec();
-        let mut current_bbox = BoundingBox::from_point(&leaf_point);
+        let leaf_point = point_store.get(leaf_point_idx);
+        let mut current_bbox = BoundingBox::from_point(leaf_point);
 
         // Find the highest-in-tree cut that separates the new point.
         let mut rng = self.rng();
