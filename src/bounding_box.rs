@@ -1,4 +1,61 @@
+use itertools::izip;
 use serde::{Deserialize, Serialize};
+
+#[inline]
+fn excess_component(p: f32, lo: f32, hi: f32) -> f32 {
+    if p < lo {
+        lo - p
+    } else if p > hi {
+        p - hi
+    } else {
+        0.0
+    }
+}
+
+#[inline]
+fn excess_outside_box(point: &[f32], min: &[f32], max: &[f32]) -> f32 {
+    izip!(point, min, max)
+        .map(|(&p, &lo, &hi)| excess_component(p, lo, hi))
+        .sum()
+}
+
+#[inline]
+fn excess_outside_box_with_missing(
+    point: &[f32],
+    min: &[f32],
+    max: &[f32],
+    missing: &[bool],
+) -> f32 {
+    izip!(point, min, max, missing)
+        .filter(|(_, _, _, is_missing)| !*is_missing)
+        .map(|(&p, &lo, &hi, _)| excess_component(p, lo, hi))
+        .sum()
+}
+
+#[inline]
+fn active_range_sum_with_missing(min: &[f32], max: &[f32], missing: &[bool]) -> f64 {
+    izip!(min, max, missing)
+        .filter(|(_, _, is_missing)| !*is_missing)
+        .map(|(&lo, &hi, _)| (hi - lo) as f64)
+        .sum()
+}
+
+#[inline]
+fn componentwise_min_max(a: &[f32], b: &[f32]) -> (Vec<f32>, Vec<f32>) {
+    izip!(a, b).map(|(&x, &y)| (x.min(y), x.max(y))).unzip()
+}
+
+#[inline]
+fn merge_bounds_in_place(min: &mut [f32], max: &mut [f32], other_min: &[f32], other_max: &[f32]) {
+    debug_assert_eq!(min.len(), max.len());
+    debug_assert_eq!(min.len(), other_min.len());
+    debug_assert_eq!(max.len(), other_max.len());
+
+    for (lo, hi, olo, ohi) in izip!(min.iter_mut(), max.iter_mut(), other_min, other_max) {
+        *lo = lo.min(*olo);
+        *hi = hi.max(*ohi);
+    }
+}
 
 /// Axis-aligned bounding box in `dim`-dimensional space.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -22,8 +79,7 @@ impl BoundingBox {
     /// Smallest box containing both `a` and `b`.
     pub fn from_two_points(a: &[f32], b: &[f32]) -> Self {
         debug_assert_eq!(a.len(), b.len());
-        let min: Vec<f32> = a.iter().zip(b).map(|(x, y)| x.min(*y)).collect();
-        let max: Vec<f32> = a.iter().zip(b).map(|(x, y)| x.max(*y)).collect();
+        let (min, max) = componentwise_min_max(a, b);
         let range_sum = range_sum(&min, &max);
         BoundingBox {
             min,
@@ -36,28 +92,14 @@ impl BoundingBox {
     /// Returns `true` if `point` was already inside (box unchanged).
     pub fn expand_with_point(&mut self, point: &[f32]) -> bool {
         let old = self.range_sum;
-        for i in 0..self.min.len() {
-            if point[i] < self.min[i] {
-                self.min[i] = point[i];
-            }
-            if point[i] > self.max[i] {
-                self.max[i] = point[i];
-            }
-        }
+        merge_bounds_in_place(&mut self.min, &mut self.max, point, point);
         self.range_sum = range_sum(&self.min, &self.max);
         (self.range_sum - old).abs() < 1e-12
     }
 
     /// Expand this box to also contain all of `other`.
     pub fn merge(&mut self, other: &BoundingBox) {
-        for i in 0..self.min.len() {
-            if other.min[i] < self.min[i] {
-                self.min[i] = other.min[i];
-            }
-            if other.max[i] > self.max[i] {
-                self.max[i] = other.max[i];
-            }
-        }
+        merge_bounds_in_place(&mut self.min, &mut self.max, &other.min, &other.max);
         self.range_sum = range_sum(&self.min, &self.max);
     }
 
@@ -66,20 +108,7 @@ impl BoundingBox {
     ///
     /// Returns 0.0 when `point` is inside the box.
     pub fn probability_of_cut(&self, point: &[f32]) -> f64 {
-        let excess: f32 = point
-            .iter()
-            .zip(&self.min)
-            .zip(&self.max)
-            .map(|((&p, &lo), &hi)| {
-                if p < lo {
-                    lo - p
-                } else if p > hi {
-                    p - hi
-                } else {
-                    0.0
-                }
-            })
-            .sum();
+        let excess = excess_outside_box(point, &self.min, &self.max);
 
         if excess == 0.0 {
             return 0.0;
@@ -92,20 +121,8 @@ impl BoundingBox {
 
     /// Probability of cut ignoring dimensions listed in `missing`.
     pub fn probability_of_cut_with_missing(&self, point: &[f32], missing: &[bool]) -> f64 {
-        let mut excess = 0.0f32;
-        let mut active_range = 0.0f64;
-        for i in 0..self.min.len() {
-            if missing[i] {
-                continue;
-            }
-            let p = point[i];
-            if p < self.min[i] {
-                excess += self.min[i] - p;
-            } else if p > self.max[i] {
-                excess += p - self.max[i];
-            }
-            active_range += (self.max[i] - self.min[i]) as f64;
-        }
+        let excess = excess_outside_box_with_missing(point, &self.min, &self.max, missing);
+        let active_range = active_range_sum_with_missing(&self.min, &self.max, missing);
         if excess == 0.0 {
             return 0.0;
         }
@@ -118,7 +135,7 @@ impl BoundingBox {
 
 #[inline]
 fn range_sum(min: &[f32], max: &[f32]) -> f64 {
-    min.iter().zip(max).map(|(lo, hi)| (hi - lo) as f64).sum()
+    izip!(min, max).map(|(&lo, &hi)| (hi - lo) as f64).sum()
 }
 
 #[cfg(test)]
@@ -151,5 +168,74 @@ mod tests {
         a.merge(&b);
         assert_eq!(a.min, vec![0.0f32, 0.0]);
         assert_eq!(a.max, vec![2.0f32, 3.0]);
+    }
+
+    #[test]
+    fn excess_outside_box_helpers_work() {
+        let min = [0.0f32, 0.0, -1.0];
+        let max = [1.0f32, 2.0, 1.0];
+        let point = [-2.0f32, 1.5, 3.0];
+
+        let excess = excess_outside_box(&point, &min, &max);
+        assert!((excess - 4.0).abs() < 1e-12);
+
+        let missing = [true, false, false];
+        let excess_missing = excess_outside_box_with_missing(&point, &min, &max, &missing);
+        assert!((excess_missing - 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn probability_with_missing_ignores_masked_dims() {
+        let bbox = BoundingBox::from_two_points(&[0.0, 0.0], &[1.0, 1.0]);
+
+        // Outside only on dim 0, but that dim is missing, so probability is 0.
+        let p0 = bbox.probability_of_cut_with_missing(&[5.0, 0.5], &[true, false]);
+        assert_eq!(p0, 0.0);
+
+        // Outside on active dim 1, so probability becomes positive.
+        let p1 = bbox.probability_of_cut_with_missing(&[0.5, 5.0], &[true, false]);
+        assert!(p1 > 0.0);
+    }
+
+    #[test]
+    fn from_two_points_uses_componentwise_bounds() {
+        let bbox = BoundingBox::from_two_points(&[3.0, -2.0, 1.0], &[1.0, 4.0, -5.0]);
+        assert_eq!(bbox.min, vec![1.0f32, -2.0, -5.0]);
+        assert_eq!(bbox.max, vec![3.0f32, 4.0, 1.0]);
+        assert!((bbox.range_sum - 14.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn componentwise_min_max_matches_expected() {
+        let (min, max) = componentwise_min_max(&[2.0, -1.0, 7.0], &[3.0, -4.0, 5.0]);
+        assert_eq!(min, vec![2.0f32, -4.0, 5.0]);
+        assert_eq!(max, vec![3.0f32, -1.0, 7.0]);
+    }
+
+    #[test]
+    fn merge_bounds_in_place_updates_both_sides() {
+        let mut min = vec![0.0f32, -1.0, 2.0];
+        let mut max = vec![1.0f32, 2.0, 4.0];
+        let other_min = vec![-3.0f32, 0.0, 3.0];
+        let other_max = vec![0.5f32, 5.0, 10.0];
+
+        merge_bounds_in_place(&mut min, &mut max, &other_min, &other_max);
+
+        assert_eq!(min, vec![-3.0f32, -1.0, 2.0]);
+        assert_eq!(max, vec![1.0f32, 5.0, 10.0]);
+    }
+
+    #[test]
+    fn expand_with_point_matches_merge_with_point_box() {
+        let mut via_expand = BoundingBox::from_two_points(&[0.0, 0.0], &[1.0, 1.0]);
+        let mut via_merge = via_expand.clone();
+        let point = [3.0f32, -2.0];
+
+        via_expand.expand_with_point(&point);
+        via_merge.merge(&BoundingBox::from_point(&point));
+
+        assert_eq!(via_expand.min, via_merge.min);
+        assert_eq!(via_expand.max, via_merge.max);
+        assert!((via_expand.range_sum - via_merge.range_sum).abs() < 1e-12);
     }
 }

@@ -1,5 +1,25 @@
 use crate::error::{RcfError, Result};
+use itertools::izip;
 use serde::{Deserialize, Serialize};
+
+fn lookahead_offset(dim: usize, input_dim: usize, look_ahead: usize) -> usize {
+    dim - input_dim * (1 + look_ahead)
+}
+
+fn l1_distance_slices(query: &[f32], stored: &[f32]) -> f64 {
+    query
+        .iter()
+        .zip(stored)
+        .map(|(a, b)| (a - b).abs() as f64)
+        .sum()
+}
+
+fn l1_distance_slices_ignore_missing(query: &[f32], stored: &[f32], missing: &[bool]) -> f64 {
+    izip!(query, stored, missing)
+        .filter(|(_, _, m)| !*m)
+        .map(|(a, b, _)| (a - b).abs() as f64)
+        .sum()
+}
 
 // ---------------------------------------------------------------------------
 // PointStore
@@ -197,23 +217,13 @@ impl PointStore {
     /// L1 distance between `query` and the stored point at `idx`.
     pub fn l1_distance(&self, query: &[f32], idx: usize) -> f64 {
         let stored = self.get(idx);
-        query
-            .iter()
-            .zip(stored)
-            .map(|(a, b)| (a - b).abs() as f64)
-            .sum()
+        l1_distance_slices(query, stored)
     }
 
     /// L1 distance ignoring `missing` dimensions.
     pub fn l1_distance_ignore_missing(&self, query: &[f32], idx: usize, missing: &[bool]) -> f64 {
         let stored = self.get(idx);
-        query
-            .iter()
-            .zip(stored)
-            .enumerate()
-            .filter(|(i, _)| !missing[*i])
-            .map(|(_, (a, b))| (a - b).abs() as f64)
-            .sum()
+        l1_distance_slices_ignore_missing(query, stored, missing)
     }
 
     /// Return a copy of the point at `idx`.
@@ -232,7 +242,7 @@ impl PointStore {
     /// `next_indices(0)` returns the positions that the *next* base observation
     /// would fill (the newest slot in the buffer).
     pub fn next_indices(&self, look_ahead: usize) -> Vec<usize> {
-        let offset = self.dim - self.input_dim * (1 + look_ahead);
+        let offset = lookahead_offset(self.dim, self.input_dim, look_ahead);
         (0..self.input_dim).map(|i| offset + i).collect()
     }
 
@@ -243,7 +253,7 @@ impl PointStore {
         look_ahead: usize,
         missing_base: &[usize],
     ) -> Vec<usize> {
-        let offset = self.dim - self.input_dim * (1 + look_ahead);
+        let offset = lookahead_offset(self.dim, self.input_dim, look_ahead);
         missing_base.iter().map(|&i| offset + i).collect()
     }
 
@@ -296,5 +306,31 @@ mod tests {
         let idx = ps.add(&[3.0, 4.0]).unwrap();
         assert!(ps.is_equal(&[3.0, 4.0], idx));
         assert!(!ps.is_equal(&[3.0, 5.0], idx));
+    }
+
+    #[test]
+    fn l1_helpers_match_expected() {
+        let q = [1.0f32, -1.0, 3.5, 0.0];
+        let s = [0.0f32, 2.0, 1.5, -2.0];
+        let missing = [false, true, false, true];
+
+        let full = l1_distance_slices(&q, &s);
+        let partial = l1_distance_slices_ignore_missing(&q, &s, &missing);
+
+        assert!((full - 8.0).abs() < 1e-12);
+        assert!((partial - 3.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn lookahead_offset_and_indices_are_consistent() {
+        let ps = PointStore::new(2, 3, 8, true);
+        let offset0 = lookahead_offset(ps.dim, ps.input_dim, 0);
+        let offset1 = lookahead_offset(ps.dim, ps.input_dim, 1);
+
+        assert_eq!(offset0, 4);
+        assert_eq!(offset1, 2);
+        assert_eq!(ps.next_indices(0), vec![4, 5]);
+        assert_eq!(ps.next_indices(1), vec![2, 3]);
+        assert_eq!(ps.missing_indices_with_lookahead(1, &[0, 1]), vec![2, 3]);
     }
 }

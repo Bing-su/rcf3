@@ -1,4 +1,34 @@
+use itertools::izip;
+
 use crate::bounding_box::BoundingBox;
+
+/// Return the dimension index that `pos` falls into when walking the cumulative range array.
+///
+/// `pos` is in `[0, total)`.  Dimensions with `ranges[i] == 0.0` are skipped.
+fn select_cut_dim(ranges: &[f64], mut pos: f64) -> usize {
+    let mut last_nonzero = ranges.len() - 1;
+    for (i, &r) in ranges.iter().enumerate() {
+        if r > 0.0 {
+            last_nonzero = i;
+        }
+        if pos < r {
+            return i;
+        }
+        pos -= r;
+    }
+    last_nonzero
+}
+
+/// Clamp `raw` into the half-open interval `[lo, hi)`.
+fn clamp_cut_val(raw: f32, lo: f32, hi: f32) -> f32 {
+    if raw <= lo {
+        lo
+    } else if raw >= hi {
+        lo + (hi - lo) * 0.999_999_9
+    } else {
+        raw
+    }
+}
 
 /// A single random cut: split on `dim` at threshold `val`.
 #[derive(Clone, Debug)]
@@ -16,15 +46,9 @@ pub struct Cut {
 /// Returns `None` when `bbox` is a degenerate single-point box that already
 /// equals `point` (no cut possible).
 pub fn random_cut(bbox: &BoundingBox, point: &[f32], factor: f64) -> Option<(Cut, bool)> {
-    let dim = bbox.min.len();
-
     // Per-dimension extended range: covers both the existing box and the new point.
-    let extended: Vec<f64> = (0..dim)
-        .map(|i| {
-            let lo = bbox.min[i].min(point[i]);
-            let hi = bbox.max[i].max(point[i]);
-            (hi - lo) as f64
-        })
+    let extended: Vec<f64> = izip!(&bbox.min, &bbox.max, point)
+        .map(|(&bmin, &bmax, &p)| (bmax.max(p) - bmin.min(p)) as f64)
         .collect();
 
     let total: f64 = extended.iter().sum();
@@ -35,32 +59,17 @@ pub fn random_cut(bbox: &BoundingBox, point: &[f32], factor: f64) -> Option<(Cut
     }
 
     // Walk the dimensions to find which one the random position falls into.
-    let mut pos = factor * total;
-    let mut cut_dim = dim - 1; // fallback to last non-zero dimension
-    for i in 0..dim {
-        if extended[i] > 0.0 {
-            cut_dim = i;
-        }
-        if pos < extended[i] {
-            cut_dim = i;
-            break;
-        }
-        pos -= extended[i];
-    }
+    let pos = factor * total;
+    let cut_dim = select_cut_dim(&extended, pos);
+    // pos after subtracting preceding dimensions — recompute for the chosen dim.
+    let preceding: f64 = extended[..cut_dim].iter().sum();
+    let pos_in_dim = (pos - preceding).max(0.0);
 
     let lo = bbox.min[cut_dim].min(point[cut_dim]);
     let hi = bbox.max[cut_dim].max(point[cut_dim]);
-    let range = hi - lo;
 
-    // Clamp cut value into [lo, hi).
-    let raw_val = lo + pos as f32;
-    let cut_val = if raw_val <= lo {
-        lo
-    } else if raw_val >= hi {
-        lo + range * 0.999_999_9
-    } else {
-        raw_val
-    };
+    let raw_val = lo + pos_in_dim as f32;
+    let cut_val = clamp_cut_val(raw_val, lo, hi);
 
     // Separation: the new cut isolates `point` from the existing box content.
     let in_box_lo = bbox.min[cut_dim];
@@ -100,6 +109,29 @@ mod tests {
     fn degenerate_box_equal_to_point_returns_none() {
         let bbox = BoundingBox::from_point(&[1.0f32, 2.0]);
         assert!(random_cut(&bbox, &[1.0, 2.0], 0.5).is_none());
+    }
+
+    #[test]
+    fn select_cut_dim_picks_correct_bucket() {
+        let ranges = [0.0f64, 2.0, 3.0, 1.0];
+        assert_eq!(select_cut_dim(&ranges, 0.0), 1); // pos=0 falls in bucket 1
+        assert_eq!(select_cut_dim(&ranges, 1.5), 1); // still bucket 1
+        assert_eq!(select_cut_dim(&ranges, 2.0), 2); // boundary: enters bucket 2
+        assert_eq!(select_cut_dim(&ranges, 4.9), 2); // still bucket 2 (ranges[2]=3 covers [2,5))
+    }
+
+    #[test]
+    fn select_cut_dim_skips_zero_ranges() {
+        // All-zero except last: must return last non-zero fallback.
+        let ranges = [0.0f64, 0.0, 5.0];
+        assert_eq!(select_cut_dim(&ranges, 0.0), 2);
+    }
+
+    #[test]
+    fn clamp_cut_val_stays_in_range() {
+        assert_eq!(clamp_cut_val(-1.0, 0.0, 1.0), 0.0);
+        assert!(clamp_cut_val(1.0, 0.0, 1.0) < 1.0);
+        assert_eq!(clamp_cut_val(0.5, 0.0, 1.0), 0.5);
     }
 
     #[test]

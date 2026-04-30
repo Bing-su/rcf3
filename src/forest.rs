@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use ordered_float::NotNan;
 use rand::prelude::*;
 use rand::rngs::StdRng;
 use rayon::prelude::*;
@@ -37,6 +38,40 @@ pub struct Forest {
     pub(crate) point_store: PointStore,
     entries_seen: u64,
     rng_seed: u64,
+}
+
+type NeighborCandidate = (f64, usize, f64);
+type NeighborResult = (f64, Vec<f32>, f64);
+
+fn make_missing_flags(missing: &[usize], dim: usize) -> Result<Vec<bool>> {
+    let mut missing_flags = vec![false; dim];
+    for &i in missing {
+        if i >= dim {
+            return Err(RcfError::IndexOutOfBounds(i));
+        }
+        missing_flags[i] = true;
+    }
+    Ok(missing_flags)
+}
+
+fn median_in_place(vals: &mut [f32]) -> f32 {
+    debug_assert!(!vals.is_empty(), "median_in_place requires non-empty input");
+    let n = vals.len();
+    let mid = n / 2;
+    vals.select_nth_unstable_by(mid, |a, b| {
+        NotNan::new(*a)
+            .unwrap_or(NotNan::new(f32::MAX).unwrap())
+            .cmp(&NotNan::new(*b).unwrap_or(NotNan::new(f32::MAX).unwrap()))
+    });
+    if n % 2 == 1 {
+        vals[mid]
+    } else {
+        let lo = vals[..mid]
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max);
+        (lo + vals[mid]) / 2.0
+    }
 }
 
 impl Forest {
@@ -281,33 +316,11 @@ impl Forest {
         query: &[f32],
         top_k: usize,
         percentile: usize,
-    ) -> Result<Vec<(f64, Vec<f32>, f64)>> {
+    ) -> Result<Vec<NeighborResult>> {
         let q = self.prepare_query(query)?;
         let mode = ScoreMode::standard();
-        let n = self.trees.len() as f64;
-
-        // Collect all candidates, deduplicate by idx (sum scores, min dist), sort by distance.
-        let results: Vec<(f64, Vec<f32>, f64)> = self
-            .trees
-            .par_iter()
-            .flat_map(|tree| tree.near_neighbors(&q, &self.point_store, &mode, percentile))
-            .collect::<Vec<_>>()
-            .into_iter()
-            .sorted_by_key(|(_, idx, _)| *idx)
-            .chunk_by(|(_, idx, _)| *idx)
-            .into_iter()
-            .map(|(idx, group)| {
-                let (score_sum, dist_min) = group
-                    .fold((0.0f64, f64::MAX), |(s, d), (score, _, dist)| {
-                        (s + score, d.min(dist))
-                    });
-                (score_sum / n, self.point_store.copy_point(idx), dist_min)
-            })
-            .sorted_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
-            .take(top_k)
-            .collect();
-
-        Ok(results)
+        let candidates = self.collect_neighbor_candidates(&q, &mode, percentile);
+        Ok(self.aggregate_neighbor_candidates(candidates, top_k))
     }
 
     // -----------------------------------------------------------------------
@@ -334,54 +347,20 @@ impl Forest {
             });
         }
 
-        let mut missing_flags = vec![false; dim];
-        for &i in missing {
-            if i >= dim {
-                return Err(RcfError::IndexOutOfBounds(i));
-            }
-            missing_flags[i] = true;
-        }
-
-        // Store indices only — avoids allocating a Vec<f32> per candidate.
-        let mut candidate_idxs: Vec<usize> = Vec::new();
-        let mut rng = StdRng::seed_from_u64(self.rng_seed ^ 0xdead_beef);
-
-        for tree in &self.trees {
-            let seed = rng.next_u64();
-            if let Some((_, idx, _)) =
-                tree.conditional_field(query, &missing_flags, &self.point_store, centrality, seed)
-            {
-                candidate_idxs.push(idx);
-            }
-        }
+        let missing_flags = make_missing_flags(missing, dim)?;
+        let candidate_idxs = self.collect_conditional_candidate_indices(
+            query,
+            &missing_flags,
+            centrality,
+            self.rng_seed ^ 0xdead_beef,
+        );
 
         if candidate_idxs.is_empty() {
             return Err(RcfError::NotReady);
         }
 
-        // Component-wise median — O(n) via select_nth_unstable.
         let mut result = query.to_vec();
-        for &mi in missing {
-            let mut vals: Vec<f32> = candidate_idxs
-                .iter()
-                .map(|&i| self.point_store.get(i)[mi])
-                .collect();
-            let n = vals.len();
-            let mid = n / 2;
-            vals.select_nth_unstable_by(mid, |a, b| {
-                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-            });
-            let median = if n % 2 == 1 {
-                vals[mid]
-            } else {
-                let lo = vals[..mid]
-                    .iter()
-                    .copied()
-                    .fold(f32::NEG_INFINITY, f32::max);
-                (lo + vals[mid]) / 2.0
-            };
-            result[mi] = median;
-        }
+        self.impute_dimensions_from_candidates(&mut result, missing, &candidate_idxs);
 
         Ok(result)
     }
@@ -419,52 +398,19 @@ impl Forest {
 
         for step in 0..look_ahead {
             let missing_indices = self.point_store.next_indices(step);
-            let mut missing_flags = vec![false; dim];
-            for &i in &missing_indices {
-                missing_flags[i] = true;
-            }
-
-            // Store indices only — avoids allocating a Vec<f32> per candidate.
-            let mut candidate_idxs: Vec<usize> = Vec::new();
-            for tree in &self.trees {
-                let seed = rng.next_u64();
-                if let Some((_, idx, _)) = tree.conditional_field(
-                    &fictitious,
-                    &missing_flags,
-                    &self.point_store,
-                    1.0,
-                    seed,
-                ) {
-                    candidate_idxs.push(idx);
-                }
-            }
+            let missing_flags = make_missing_flags(&missing_indices, dim)?;
+            let seed = rng.next_u64();
+            let candidate_idxs =
+                self.collect_conditional_candidate_indices(&fictitious, &missing_flags, 1.0, seed);
 
             if candidate_idxs.is_empty() {
                 return Err(RcfError::NotReady);
             }
 
-            // Median per missing dimension — O(n) via select_nth_unstable.
             for &mi in &missing_indices {
-                let mut vals: Vec<f32> = candidate_idxs
-                    .iter()
-                    .map(|&i| self.point_store.get(i)[mi])
-                    .collect();
-                let n = vals.len();
-                let mid = n / 2;
-                vals.select_nth_unstable_by(mid, |a, b| {
-                    a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-                });
-                let med = if n % 2 == 1 {
-                    vals[mid]
-                } else {
-                    let lo = vals[..mid]
-                        .iter()
-                        .copied()
-                        .fold(f32::NEG_INFINITY, f32::max);
-                    (lo + vals[mid]) / 2.0
-                };
-                fictitious[mi] = med;
-                result.push(med);
+                let median = self.median_for_dimension(&candidate_idxs, mi);
+                fictitious[mi] = median;
+                result.push(median);
             }
         }
 
@@ -548,6 +494,84 @@ impl Forest {
             .map(|t| t.raw_score(query, &self.point_store, mode))
             .sum();
         sum / self.trees.len() as f64
+    }
+
+    fn collect_neighbor_candidates(
+        &self,
+        query: &[f32],
+        mode: &ScoreMode,
+        percentile: usize,
+    ) -> Vec<NeighborCandidate> {
+        self.trees
+            .par_iter()
+            .flat_map(|tree| tree.near_neighbors(query, &self.point_store, mode, percentile))
+            .collect()
+    }
+
+    fn aggregate_neighbor_candidates(
+        &self,
+        candidates: Vec<NeighborCandidate>,
+        top_k: usize,
+    ) -> Vec<NeighborResult> {
+        let n = self.trees.len() as f64;
+        candidates
+            .into_iter()
+            .sorted_by_key(|(_, idx, _)| *idx)
+            .chunk_by(|(_, idx, _)| *idx)
+            .into_iter()
+            .map(|(idx, group)| {
+                let (score_sum, dist_min) = group
+                    .fold((0.0f64, f64::MAX), |(s, d), (score, _, dist)| {
+                        (s + score, d.min(dist))
+                    });
+                (score_sum / n, self.point_store.copy_point(idx), dist_min)
+            })
+            .sorted_by_key(|item| NotNan::new(item.2).unwrap_or(NotNan::new(f64::MAX).unwrap()))
+            .take(top_k)
+            .collect()
+    }
+
+    fn collect_conditional_candidate_indices(
+        &self,
+        query: &[f32],
+        missing_flags: &[bool],
+        centrality: f64,
+        seed: u64,
+    ) -> Vec<usize> {
+        let mut rng = StdRng::seed_from_u64(seed);
+        self.trees
+            .iter()
+            .filter_map(|tree| {
+                let tree_seed = rng.next_u64();
+                tree.conditional_field(
+                    query,
+                    missing_flags,
+                    &self.point_store,
+                    centrality,
+                    tree_seed,
+                )
+                .map(|(_, idx, _)| idx)
+            })
+            .collect()
+    }
+
+    fn impute_dimensions_from_candidates(
+        &self,
+        result: &mut [f32],
+        missing: &[usize],
+        candidate_idxs: &[usize],
+    ) {
+        for &mi in missing {
+            result[mi] = self.median_for_dimension(candidate_idxs, mi);
+        }
+    }
+
+    fn median_for_dimension(&self, candidate_idxs: &[usize], dim_idx: usize) -> f32 {
+        let mut vals: Vec<f32> = candidate_idxs
+            .iter()
+            .map(|&i| self.point_store.get(i)[dim_idx])
+            .collect();
+        median_in_place(&mut vals)
     }
 }
 
@@ -725,5 +749,35 @@ mod tests {
         assert!(f.is_ready());
         let s = f.score(&[0.0f32]).unwrap();
         assert!(s >= 0.0);
+    }
+
+    #[test]
+    fn near_neighbors_sorted_and_bounded() {
+        let mut f = make_forest();
+        for i in 0..300 {
+            let x = (i as f32 * 0.07).sin();
+            let y = (i as f32 * 0.11).cos();
+            f.update(&[x, y]).unwrap();
+        }
+
+        let top_k = 7;
+        let neighbors = f.near_neighbors(&[0.1, -0.2], top_k, 0).unwrap();
+        assert!(neighbors.len() <= top_k);
+
+        for w in neighbors.windows(2) {
+            assert!(w[0].2 <= w[1].2, "neighbors are not sorted by distance");
+        }
+    }
+
+    #[test]
+    fn median_in_place_handles_odd_and_even_lengths() {
+        let mut odd = vec![7.0f32, 1.0, 5.0];
+        let mut even = vec![8.0f32, 2.0, 6.0, 4.0];
+
+        let odd_median = median_in_place(&mut odd);
+        let even_median = median_in_place(&mut even);
+
+        assert_eq!(odd_median, 5.0);
+        assert_eq!(even_median, 5.0);
     }
 }

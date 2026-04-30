@@ -26,6 +26,30 @@ pub struct RcfTree {
     dims: usize,
 }
 
+fn split_children(query_value: f32, cut_val: f32, left: usize, right: usize) -> (usize, usize) {
+    if query_value <= cut_val {
+        (left, right)
+    } else {
+        (right, left)
+    }
+}
+
+fn split_child_only(query_value: f32, cut_val: f32, left: usize, right: usize) -> usize {
+    if query_value <= cut_val { left } else { right }
+}
+
+fn nn_threshold(percentile: usize) -> f64 {
+    percentile as f64 / 100.0
+}
+
+fn should_descend_primary(probability_of_cut: f64, depth: usize, threshold: f64) -> bool {
+    probability_of_cut > threshold || depth == 0
+}
+
+fn should_descend_secondary(probability_of_cut: f64) -> bool {
+    probability_of_cut > 0.5
+}
+
 impl RcfTree {
     pub fn new(dims: usize, capacity: usize, seed: u64) -> Self {
         RcfTree {
@@ -62,11 +86,7 @@ impl RcfTree {
                     cut_val,
                     ..
                 } => {
-                    let (child, sibling) = if point[*cut_dim] <= *cut_val {
-                        (*left, *right)
-                    } else {
-                        (*right, *left)
-                    };
+                    let (child, sibling) = split_children(point[*cut_dim], *cut_val, *left, *right);
                     path.push((cur, sibling));
                     cur = child;
                 }
@@ -384,11 +404,7 @@ impl RcfTree {
                 mass,
                 bbox,
             } => {
-                let (child, _sibling) = if query[*cut_dim] <= *cut_val {
-                    (*left, *right)
-                } else {
-                    (*right, *left)
-                };
+                let (child, _sibling) = split_children(query[*cut_dim], *cut_val, *left, *right);
 
                 let child_score = self.score_recursive(child, query, point_store, depth + 1, mode);
 
@@ -453,11 +469,7 @@ impl RcfTree {
                 mass,
                 bbox,
             } => {
-                let (child, _) = if query[*cut_dim] <= *cut_val {
-                    (*left, *right)
-                } else {
-                    (*right, *left)
-                };
+                let (child, _) = split_children(query[*cut_dim], *cut_val, *left, *right);
 
                 let prob = bbox.probability_of_cut(query);
                 if prob > 0.0 {
@@ -533,11 +545,7 @@ impl RcfTree {
                 mass,
                 bbox,
             } => {
-                let (child, _) = if query[*cut_dim] <= *cut_val {
-                    (*left, *right)
-                } else {
-                    (*right, *left)
-                };
+                let (child, _) = split_children(query[*cut_dim], *cut_val, *left, *right);
 
                 let child_density = self.density_recursive(child, query, point_store, depth + 1);
 
@@ -609,13 +617,10 @@ impl RcfTree {
             } => {
                 let prob = bbox.probability_of_cut(query);
                 // Only descend if this subtree is a viable candidate
-                let threshold = percentile as f64 / 100.0;
-                if prob > threshold || depth == 0 {
-                    let (primary, secondary) = if query[*cut_dim] <= *cut_val {
-                        (*left, *right)
-                    } else {
-                        (*right, *left)
-                    };
+                let threshold = nn_threshold(percentile);
+                if should_descend_primary(prob, depth, threshold) {
+                    let (primary, secondary) =
+                        split_children(query[*cut_dim], *cut_val, *left, *right);
                     self.nn_recursive(
                         primary,
                         query,
@@ -625,7 +630,7 @@ impl RcfTree {
                         percentile,
                         results,
                     );
-                    if prob > 0.5 {
+                    if should_descend_secondary(prob) {
                         self.nn_recursive(
                             secondary,
                             query,
@@ -736,11 +741,7 @@ impl RcfTree {
                         best,
                     );
                 } else {
-                    let child = if query[*cut_dim] <= *cut_val {
-                        *left
-                    } else {
-                        *right
-                    };
+                    let child = split_child_only(query[*cut_dim], *cut_val, *left, *right);
                     self.impute_recursive(
                         child,
                         query,
@@ -870,5 +871,26 @@ mod tests {
             tree.raw_score(&[1.0, 1.0], &store, &ScoreMode::standard()),
             0.0
         );
+    }
+
+    #[test]
+    fn split_children_respects_cut_direction() {
+        assert_eq!(split_children(0.2, 0.3, 10, 20), (10, 20));
+        assert_eq!(split_children(0.4, 0.3, 10, 20), (20, 10));
+        assert_eq!(split_child_only(0.2, 0.3, 10, 20), 10);
+        assert_eq!(split_child_only(0.4, 0.3, 10, 20), 20);
+    }
+
+    #[test]
+    fn near_neighbor_threshold_helpers_behave_as_expected() {
+        let th = nn_threshold(40);
+        assert!((th - 0.4).abs() < 1e-12);
+
+        assert!(should_descend_primary(0.41, 3, th));
+        assert!(should_descend_primary(0.0, 0, th));
+        assert!(!should_descend_primary(0.39, 2, th));
+
+        assert!(should_descend_secondary(0.51));
+        assert!(!should_descend_secondary(0.5));
     }
 }
