@@ -18,7 +18,7 @@ ordered-float = { version = "5.3", features = ["serde"] }
 pyo3 = { version = "0.28", features = [
   "extension-module",
   "generate-import-lib"
-] }
+], optional = true }
 rand = { version = "0.10", features = ["chacha", "serde"] }
 rayon = "1.12"
 serde = { version = "1", features = ["derive"] }
@@ -30,6 +30,9 @@ approx = "0.5"
 criterion = { version = "=0.5.1", features = ["html_reports"] }
 pprof = { version = "0.15", features = ["criterion", "flamegraph"] }
 rstest = "0.26"
+
+[features]
+python = ["pyo3"]
 
 [profile.release]
 strip = true
