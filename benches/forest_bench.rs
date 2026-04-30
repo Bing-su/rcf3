@@ -60,9 +60,33 @@ fn bench_near_neighbors(c: &mut Criterion) {
     });
 }
 
+fn bench_impute(c: &mut Criterion) {
+    // Build a shingled forest (shingle_size=4, input_dim=2) so impute is meaningful.
+    let mut f = Forest::builder(2, 4)
+        .num_trees(100)
+        .capacity(512)
+        .seed(99)
+        .build()
+        .unwrap();
+    let p = vec![0.5_f32; 2];
+    for i in 0..20_000 {
+        let obs = vec![(i as f32) * 0.001, (i as f32) * 0.002];
+        f.update(&obs).unwrap();
+    }
+    // Query has full dim = 8; mask out last 2 dims.
+    let query = vec![0.0f32; 8];
+    let missing = vec![6, 7];
+
+    c.bench_function("impute_2missing_of_8", |b| {
+        b.iter(|| {
+            let _ = f.impute(&query, &missing, 1.0).unwrap();
+        });
+    });
+}
+
 criterion_group!(
     name = benches;
     config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
-    targets = bench_update, bench_score, bench_near_neighbors
+    targets = bench_update, bench_score, bench_near_neighbors, bench_impute
 );
 criterion_main!(benches);

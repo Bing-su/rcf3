@@ -342,7 +342,8 @@ impl Forest {
             missing_flags[i] = true;
         }
 
-        let mut candidates: Vec<Vec<f32>> = Vec::new();
+        // Store indices only — avoids allocating a Vec<f32> per candidate.
+        let mut candidate_idxs: Vec<usize> = Vec::new();
         let mut rng = StdRng::seed_from_u64(self.rng_seed ^ 0xdead_beef);
 
         for tree in &self.trees {
@@ -350,23 +351,34 @@ impl Forest {
             if let Some((_, idx, _)) =
                 tree.conditional_field(query, &missing_flags, &self.point_store, centrality, seed)
             {
-                candidates.push(self.point_store.copy_point(idx));
+                candidate_idxs.push(idx);
             }
         }
 
-        if candidates.is_empty() {
+        if candidate_idxs.is_empty() {
             return Err(RcfError::NotReady);
         }
 
-        // Component-wise median over the candidate points.
+        // Component-wise median — O(n) via select_nth_unstable.
         let mut result = query.to_vec();
         for &mi in missing {
-            let mut vals: Vec<f32> = candidates.iter().map(|c| c[mi]).collect();
-            vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let median = if vals.len() % 2 == 1 {
-                vals[vals.len() / 2]
+            let mut vals: Vec<f32> = candidate_idxs
+                .iter()
+                .map(|&i| self.point_store.get(i)[mi])
+                .collect();
+            let n = vals.len();
+            let mid = n / 2;
+            vals.select_nth_unstable_by(mid, |a, b| {
+                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let median = if n % 2 == 1 {
+                vals[mid]
             } else {
-                (vals[vals.len() / 2 - 1] + vals[vals.len() / 2]) / 2.0
+                let lo = vals[..mid]
+                    .iter()
+                    .copied()
+                    .fold(f32::NEG_INFINITY, f32::max);
+                (lo + vals[mid]) / 2.0
             };
             result[mi] = median;
         }
@@ -412,7 +424,8 @@ impl Forest {
                 missing_flags[i] = true;
             }
 
-            let mut candidates: Vec<Vec<f32>> = Vec::new();
+            // Store indices only — avoids allocating a Vec<f32> per candidate.
+            let mut candidate_idxs: Vec<usize> = Vec::new();
             for tree in &self.trees {
                 let seed = rng.next_u64();
                 if let Some((_, idx, _)) = tree.conditional_field(
@@ -422,22 +435,33 @@ impl Forest {
                     1.0,
                     seed,
                 ) {
-                    candidates.push(self.point_store.copy_point(idx));
+                    candidate_idxs.push(idx);
                 }
             }
 
-            if candidates.is_empty() {
+            if candidate_idxs.is_empty() {
                 return Err(RcfError::NotReady);
             }
 
-            // Median per missing dimension.
+            // Median per missing dimension — O(n) via select_nth_unstable.
             for &mi in &missing_indices {
-                let mut vals: Vec<f32> = candidates.iter().map(|c| c[mi]).collect();
-                vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                let med = if vals.len() % 2 == 1 {
-                    vals[vals.len() / 2]
+                let mut vals: Vec<f32> = candidate_idxs
+                    .iter()
+                    .map(|&i| self.point_store.get(i)[mi])
+                    .collect();
+                let n = vals.len();
+                let mid = n / 2;
+                vals.select_nth_unstable_by(mid, |a, b| {
+                    a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                let med = if n % 2 == 1 {
+                    vals[mid]
                 } else {
-                    (vals[vals.len() / 2 - 1] + vals[vals.len() / 2]) / 2.0
+                    let lo = vals[..mid]
+                        .iter()
+                        .copied()
+                        .fold(f32::NEG_INFINITY, f32::max);
+                    (lo + vals[mid]) / 2.0
                 };
                 fictitious[mi] = med;
                 result.push(med);
