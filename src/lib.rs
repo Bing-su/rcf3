@@ -56,10 +56,11 @@ fn to_py_err(e: error::RcfError) -> PyErr {
 ///     Minimum observations before scoring starts (default 0 = auto).
 /// internal_shingling : bool, optional
 ///     When True, pass one base observation at a time and the forest
-///     maintains the rolling shingle buffer (default False).
+///     maintains the rolling shingle buffer (default True).
 /// seed : int, optional
 ///     Random seed for deterministic forests.
-#[pyclass(name = "Forest")]
+#[pyclass(name = "Forest", module = "arcf.arcf", skip_from_py_object)]
+#[derive(Clone, Debug)]
 struct PyForest {
     inner: Forest,
 }
@@ -74,7 +75,7 @@ impl PyForest {
         capacity = 256,
         time_decay = 0.0,
         output_after = 0,
-        internal_shingling = false,
+        internal_shingling = true,
         seed = None
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -169,34 +170,45 @@ impl PyForest {
     }
 
     /// Whether the forest has seen enough observations to return scores.
-    #[getter]
     fn is_ready(&self) -> bool {
         self.inner.is_ready()
     }
 
     /// Number of observations processed so far.
-    #[getter]
     fn entries_seen(&self) -> u64 {
         self.inner.entries_seen()
     }
 
     /// Number of trees.
-    #[getter]
     fn num_trees(&self) -> usize {
         self.inner.num_trees()
     }
 
+    /// Serialise the forest state to a JSON string.
+    fn to_json(&self) -> PyResult<String> {
+        self.inner.to_json().map_err(to_py_err)
+    }
+
+    /// Load a forest from a JSON string.
+    #[staticmethod]
+    fn from_json(json: &str) -> PyResult<Self> {
+        let inner = Forest::from_json(json).map_err(to_py_err)?;
+        Ok(PyForest { inner })
+    }
+
     /// Serialise the forest state to a JSON file.
-    fn save(&self, path: &str) -> PyResult<()> {
+    fn save_json(&self, path: &str) -> PyResult<()> {
         self.inner.save_json(path).map_err(to_py_err)
     }
 
     /// Load a forest from a JSON file.
     #[staticmethod]
-    fn load(path: &str) -> PyResult<Self> {
+    fn load_json(path: &str) -> PyResult<Self> {
         let inner = Forest::load_json(path).map_err(to_py_err)?;
         Ok(PyForest { inner })
     }
+
+    // Python Magic Methods
 
     fn __repr__(&self) -> String {
         let c = self.inner.config();
@@ -209,6 +221,29 @@ impl PyForest {
             self.inner.entries_seen(),
         )
     }
+
+    fn __str__(&self) -> String {
+        self.__repr__()
+    }
+
+    fn __copy__(&self) -> Self {
+        self.clone()
+    }
+
+    #[allow(unused_variables)]
+    fn __deepcopy__<'py>(&self, memo: Bound<'py, PyAny>) -> Self {
+        self.clone()
+    }
+
+    fn __getstate__(&self) -> PyResult<String> {
+        self.to_json()
+    }
+
+    fn __setstate__(&mut self, state: String) -> PyResult<()> {
+        let new = Self::from_json(&state)?;
+        *self = new;
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -216,7 +251,11 @@ impl PyForest {
 // ---------------------------------------------------------------------------
 
 #[pymodule]
-fn arcf(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyForest>()?;
-    Ok(())
+mod arcf {
+    #[pymodule_export]
+    #[allow(non_upper_case_globals)]
+    const __version__: &str = env!("CARGO_PKG_VERSION");
+
+    #[pymodule_export]
+    use super::PyForest;
 }
