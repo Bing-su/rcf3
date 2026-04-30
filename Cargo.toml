@@ -13,7 +13,8 @@ name = "forest_bench"
 
 [dependencies]
 itertools = "0.14"
-ordered-float = { version = "5.3.0", features = ["serde"] }
+ndarray = { version = "0.17", features = ["serde"] }
+ordered-float = { version = "5.3", features = ["serde"] }
 pyo3 = { version = "0.28", features = [
   "extension-module",
   "generate-import-lib"

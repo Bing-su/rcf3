@@ -1,5 +1,6 @@
 use crate::error::{RcfError, Result};
 use itertools::izip;
+use ndarray::{Array2, ArrayView1, s};
 use serde::{Deserialize, Serialize};
 
 fn lookahead_offset(dim: usize, input_dim: usize, look_ahead: usize) -> usize {
@@ -25,15 +26,20 @@ fn l1_distance_slices_ignore_missing(query: &[f32], stored: &[f32], missing: &[b
 // PointStore
 // ---------------------------------------------------------------------------
 
-/// Flat storage for all observed points shared across all trees in the forest.
+/// Row-indexed point matrix: each row `i` holds the `dim`-dimensional vector
+/// for point slot `i`.  In C (row-major) layout rows are contiguous, so
+/// `row(idx).as_slice()` is always `Some`.
+type PointMatrix = Array2<f32>;
+
+/// Row-indexed point storage shared across all trees in the forest.
 ///
 /// When `internal_shingling` is enabled, callers pass one base observation at
 /// a time and the store automatically maintains the rolling shingle buffer,
 /// exposing a full `input_dim * shingle_size`-dimensional vector.
 ///
-/// Memory layout: a flat `Vec<f32>` of length `capacity * dim`.  Individual
-/// points are stored at `index * dim .. (index+1) * dim`.  Freed slots are
-/// tracked in a free-list.
+/// Memory layout: an `Array2<f32>` of shape `(capacity, dim)` in C order.
+/// Each row is a stored point; rows are contiguous so `row(idx)` gives a
+/// zero-copy `ArrayView1<f32>` or `&[f32]` slice.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PointStore {
     /// Full dimensionality: `input_dim * shingle_size`.
@@ -45,8 +51,8 @@ pub struct PointStore {
     /// Whether the store manages the rolling shingle buffer.
     pub internal_shingling: bool,
 
-    /// Flat point buffer.
-    store: Vec<f32>,
+    /// Row-indexed point matrix (shape: `capacity × dim`).
+    store: PointMatrix,
     /// Whether each slot is occupied.
     occupied: Vec<bool>,
     /// Reference count for each slot (how many trees reference it).
@@ -82,7 +88,7 @@ impl PointStore {
             input_dim,
             shingle_size,
             internal_shingling,
-            store: vec![0.0f32; capacity * dim],
+            store: Array2::zeros((capacity, dim)),
             occupied: vec![false; capacity],
             ref_count: vec![0usize; capacity],
             next_free: 0,
@@ -151,8 +157,7 @@ impl PointStore {
         }
 
         let idx = self.allocate_slot()?;
-        let start = idx * self.dim;
-        self.store[start..start + self.dim].copy_from_slice(point);
+        self.store.row_mut(idx).assign(&ArrayView1::from(point));
         self.occupied[idx] = true;
         self.ref_count[idx] = 0;
         self.size += 1;
@@ -169,9 +174,13 @@ impl PointStore {
             self.next_free += 1;
             return Ok(idx);
         }
-        // Grow the store.
+        // Grow the store: allocate a larger matrix and copy the existing rows.
         let new_cap = self.capacity * 2 + 4;
-        self.store.resize(new_cap * self.dim, 0.0);
+        let mut new_store = Array2::zeros((new_cap, self.dim));
+        new_store
+            .slice_mut(s![..self.capacity, ..])
+            .assign(&self.store);
+        self.store = new_store;
         self.occupied.resize(new_cap, false);
         self.ref_count.resize(new_cap, 0);
         let idx = self.next_free;
@@ -204,14 +213,23 @@ impl PointStore {
     /// Return the point at `idx`.  Panics if `idx` is not occupied.
     pub fn get(&self, idx: usize) -> &[f32] {
         debug_assert!(self.occupied[idx], "accessing unoccupied slot {idx}");
-        let start = idx * self.dim;
-        &self.store[start..start + self.dim]
+        // `row()` returns a temporary ArrayView1 whose lifetime Rust can't
+        // propagate through `as_slice()`.  Instead, grab the underlying
+        // contiguous flat slice and index into it directly — same data,
+        // lifetime correctly tied to `&self`.
+        let flat = self.store.as_slice().expect("store must be contiguous");
+        &flat[idx * self.dim..(idx + 1) * self.dim]
+    }
+
+    /// Return the point at `idx` as an ndarray view (zero-copy).
+    pub fn point_view(&self, idx: usize) -> ArrayView1<'_, f32> {
+        debug_assert!(self.occupied[idx], "accessing unoccupied slot {idx}");
+        self.store.row(idx)
     }
 
     /// Check whether the stored point at `idx` equals `point` component-wise.
     pub fn is_equal(&self, point: &[f32], idx: usize) -> bool {
-        let start = idx * self.dim;
-        &self.store[start..start + self.dim] == point
+        self.store.row(idx) == ArrayView1::from(point)
     }
 
     /// L1 distance between `query` and the stored point at `idx`.
