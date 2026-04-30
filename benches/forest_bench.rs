@@ -68,7 +68,6 @@ fn bench_impute(c: &mut Criterion) {
         .seed(99)
         .build()
         .unwrap();
-    let p = vec![0.5_f32; 2];
     for i in 0..20_000 {
         let obs = vec![(i as f32) * 0.001, (i as f32) * 0.002];
         f.update(&obs).unwrap();
