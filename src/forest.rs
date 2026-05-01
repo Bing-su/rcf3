@@ -2,6 +2,7 @@ use itertools::Itertools;
 use ordered_float::NotNan;
 use rand::prelude::*;
 use rand::rngs::StdRng;
+use rand::rngs::Xoshiro256PlusPlus;
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -39,7 +40,7 @@ pub struct Forest {
     samplers: Vec<Sampler>,
     pub(crate) point_store: PointStore,
     entries_seen: u64,
-    rng_seed: u64,
+    rng: Xoshiro256PlusPlus,
 }
 
 type NeighborCandidate = (f64, usize, f64);
@@ -121,7 +122,7 @@ impl Forest {
             samplers,
             point_store,
             entries_seen: 0,
-            rng_seed: rng.next_u64(),
+            rng: Xoshiro256PlusPlus::seed_from_u64(rng.next_u64()),
         })
     }
 
@@ -176,13 +177,10 @@ impl Forest {
         let time_decay = self.config.effective_time_decay();
         let initial_frac = self.config.initial_accept_fraction;
 
-        let mut rng = StdRng::seed_from_u64(self.rng_seed);
-        self.rng_seed = rng.next_u64();
-
         let mut any_accepted = false;
 
         for t in 0..self.trees.len() {
-            let u: f64 = rng.random::<f64>();
+            let u: f64 = self.rng.random::<f64>();
             let weight = reservoir_weight(u, time_decay, self.entries_seen);
 
             // Determine initial-phase acceptance probability.
@@ -197,7 +195,7 @@ impl Forest {
                 } else {
                     1.0 - (fill - initial_frac) / (1.0 - initial_frac)
                 };
-                rng.random::<f64>() < prob
+                self.rng.random::<f64>() < prob
             };
 
             let result = self.samplers[t].accept(is_initial, weight, point_idx);
@@ -350,11 +348,12 @@ impl Forest {
         }
 
         let missing_flags = make_missing_flags(missing, dim)?;
+        let mut seed_rng = self.rng.clone();
         let candidate_idxs = self.collect_conditional_candidate_indices(
             query,
             &missing_flags,
             centrality,
-            self.rng_seed ^ 0xdead_beef,
+            seed_rng.next_u64(),
         );
 
         if candidate_idxs.is_empty() {
@@ -396,7 +395,8 @@ impl Forest {
         let mut fictitious = self.point_store.current_shingled().to_vec();
         let mut result = Vec::with_capacity(look_ahead * input_dim);
 
-        let mut rng = StdRng::seed_from_u64(self.rng_seed ^ 0xcafe_babe);
+        let mut rng = self.rng.clone();
+        let _ = rng.next_u64();
 
         for step in 0..look_ahead {
             let missing_indices = self.point_store.next_indices(step);
@@ -530,10 +530,11 @@ impl Forest {
                     .fold((0.0f64, f64::MAX), |(s, d), (score, _, dist)| {
                         (s + score, d.min(dist))
                     });
-                (score_sum / n, self.point_store.copy_point(idx), dist_min)
+                (score_sum / n, idx, dist_min)
             })
             .sorted_by_key(|item| NotNan::new(item.2).unwrap_or(NotNan::new(f64::MAX).unwrap()))
             .take(top_k)
+            .map(|(score, idx, dist)| (score, self.point_store.copy_point(idx), dist))
             .collect()
     }
 
@@ -646,6 +647,8 @@ impl ForestBuilder {
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_abs_diff_eq;
+
     use super::*;
     use rstest::*;
 
@@ -696,7 +699,7 @@ mod tests {
     fn score_zero_before_ready() {
         let f = make_forest();
         let s = f.score(&[1.0f32, 2.0]).unwrap();
-        assert_eq!(s, 0.0);
+        assert_abs_diff_eq!(s, 0.0, epsilon = 1e-12);
     }
 
     #[test]
@@ -733,9 +736,10 @@ mod tests {
         let f2 = Forest::load_json(path).unwrap();
         let score_after = f2.score(query).unwrap();
 
-        assert!(
-            (score_before - score_after).abs() < 1e-10,
-            "score changed after round-trip: {score_before} vs {score_after}"
+        assert_abs_diff_eq!(
+            score_before,
+            score_after,
+            epsilon = 1e-10
         );
     }
 
@@ -784,7 +788,7 @@ mod tests {
         let odd_median = median_in_place(&mut odd);
         let even_median = median_in_place(&mut even);
 
-        assert_eq!(odd_median, 5.0);
-        assert_eq!(even_median, 5.0);
+        assert_abs_diff_eq!(odd_median, 5.0, epsilon = f32::EPSILON);
+        assert_abs_diff_eq!(even_median, 5.0, epsilon = f32::EPSILON);
     }
 }

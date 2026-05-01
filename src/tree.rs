@@ -1,5 +1,5 @@
 use rand::prelude::*;
-use rand::rngs::StdRng;
+use rand::rngs::Xoshiro256PlusPlus;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -24,7 +24,7 @@ pub struct RcfTree {
     pub(crate) root: usize,
     pub(crate) tree_mass: usize,
     arena: NodeArena,
-    rng_seed: u64,
+    rng: Xoshiro256PlusPlus,
     dims: usize,
 }
 
@@ -58,19 +58,9 @@ impl RcfTree {
             root: NULL,
             tree_mass: 0,
             arena: NodeArena::new(2 * capacity + 4),
-            rng_seed: seed,
+            rng: Xoshiro256PlusPlus::seed_from_u64(seed),
             dims,
         }
-    }
-
-    // -----------------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------------
-
-    fn rng(&mut self) -> StdRng {
-        let mut rng = StdRng::seed_from_u64(self.rng_seed);
-        self.rng_seed = rng.next_u64();
-        rng
     }
 
     /// Descend to the leaf node whose point equals `point`, returning the path
@@ -172,7 +162,6 @@ impl RcfTree {
         let mut current_bbox = BoundingBox::from_point(leaf_point);
 
         // Find the highest-in-tree cut that separates the new point.
-        let mut rng = self.rng();
         let mut saved_cut_dim = NULL;
         let mut saved_cut_val = 0.0f32;
         let mut insert_above: usize = leaf_id; // node below which to insert the new split
@@ -181,7 +170,7 @@ impl RcfTree {
 
         // Scan from leaf upward, expanding the bounding box as we go.
         for step in 0..=path.len() {
-            let factor: f64 = rng.random::<f64>();
+            let factor: f64 = self.rng.random::<f64>();
             if let Some((cut, sep)) = random_cut(&current_bbox, point, factor) {
                 if sep {
                     saved_cut_dim = cut.dim;
@@ -668,7 +657,7 @@ impl RcfTree {
         if self.root == NULL || self.tree_mass == 0 {
             return None;
         }
-        let mut rng = StdRng::seed_from_u64(seed);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
         let mut best: Option<(f64, usize, f64)> = None;
         self.impute_recursive(
             self.root,
@@ -689,7 +678,7 @@ impl RcfTree {
         missing: &[bool],
         point_store: &PointStore,
         centrality: f64,
-        rng: &mut StdRng,
+        rng: &mut Xoshiro256PlusPlus,
         best: &mut Option<(f64, usize, f64)>,
     ) {
         match self.arena.get(node_id) {
@@ -790,22 +779,13 @@ pub(crate) fn subtree_bbox(
 }
 
 // ---------------------------------------------------------------------------
-// BoundingBox helper: merge and return new
-// ---------------------------------------------------------------------------
-
-impl BoundingBox {
-    pub fn merge_with(mut self, other: &BoundingBox) -> Self {
-        self.merge(other);
-        self
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_abs_diff_eq;
+
     use super::*;
     use crate::{point_store::PointStore, score::ScoreMode};
     use rstest::*;
@@ -869,9 +849,10 @@ mod tests {
     fn empty_tree_returns_zero_score() {
         let store = PointStore::new(2, 1, 4, false);
         let tree = RcfTree::new(2, 4, 0);
-        assert_eq!(
+        assert_abs_diff_eq!(
             tree.raw_score(&[1.0, 1.0], &store, &ScoreMode::standard()),
-            0.0
+            0.0,
+            epsilon = 1e-12
         );
     }
 
@@ -886,7 +867,7 @@ mod tests {
     #[test]
     fn near_neighbor_threshold_helpers_behave_as_expected() {
         let th = nn_threshold(40);
-        assert!((th - 0.4).abs() < 1e-12);
+        assert_abs_diff_eq!(th, 0.4, epsilon = 1e-12);
 
         assert!(should_descend_primary(0.41, 3, th));
         assert!(should_descend_primary(0.0, 0, th));

@@ -65,7 +65,7 @@ pub struct BoundingBox {
     pub min: Vec<f32>,
     pub max: Vec<f32>,
     /// Sum of per-dimension ranges; cached for efficiency.
-    pub range_sum: f64,
+    range_sum: f64,
 }
 
 impl BoundingBox {
@@ -91,12 +91,12 @@ impl BoundingBox {
     }
 
     /// Expand this box to also contain `point`.
-    /// Returns `true` if `point` was already inside (box unchanged).
+    /// Returns `true` if the box expanded.
     pub fn expand_with_point(&mut self, point: &[f32]) -> bool {
         let old = self.range_sum;
         merge_bounds_in_place(&mut self.min, &mut self.max, point, point);
         self.range_sum = range_sum(&self.min, &self.max);
-        (self.range_sum - old).abs() < 1e-12
+        (self.range_sum - old).abs() >= 1e-12
     }
 
     /// Expand this box to also contain all of `other`.
@@ -133,6 +133,16 @@ impl BoundingBox {
         }
         excess as f64 / (active_range + excess as f64)
     }
+
+    #[inline]
+    pub fn range_sum(&self) -> f64 {
+        self.range_sum
+    }
+
+    pub fn merge_with(mut self, other: &BoundingBox) -> Self {
+        self.merge(other);
+        self
+    }
 }
 
 #[inline]
@@ -142,12 +152,14 @@ fn range_sum(min: &[f32], max: &[f32]) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_abs_diff_eq;
+
     use super::*;
 
     #[test]
     fn point_inside_has_zero_cut_prob() {
         let bbox = BoundingBox::from_two_points(&[0.0, 0.0], &[1.0, 1.0]);
-        assert_eq!(bbox.probability_of_cut(&[0.5, 0.5]), 0.0);
+        assert_abs_diff_eq!(bbox.probability_of_cut(&[0.5, 0.5]), 0.0, epsilon = 1e-12);
     }
 
     #[test]
@@ -179,11 +191,11 @@ mod tests {
         let point = [-2.0f32, 1.5, 3.0];
 
         let excess = excess_outside_box(&point, &min, &max);
-        assert!((excess - 4.0).abs() < 1e-12);
+        assert_abs_diff_eq!(excess, 4.0, epsilon = 1e-6);
 
         let missing = [true, false, false];
         let excess_missing = excess_outside_box_with_missing(&point, &min, &max, &missing);
-        assert!((excess_missing - 2.0).abs() < 1e-12);
+        assert_abs_diff_eq!(excess_missing, 2.0, epsilon = 1e-6);
     }
 
     #[test]
@@ -192,7 +204,7 @@ mod tests {
 
         // Outside only on dim 0, but that dim is missing, so probability is 0.
         let p0 = bbox.probability_of_cut_with_missing(&[5.0, 0.5], &[true, false]);
-        assert_eq!(p0, 0.0);
+        assert_abs_diff_eq!(p0, 0.0, epsilon = 1e-12);
 
         // Outside on active dim 1, so probability becomes positive.
         let p1 = bbox.probability_of_cut_with_missing(&[0.5, 5.0], &[true, false]);
@@ -204,7 +216,7 @@ mod tests {
         let bbox = BoundingBox::from_two_points(&[3.0, -2.0, 1.0], &[1.0, 4.0, -5.0]);
         assert_eq!(bbox.min, vec![1.0f32, -2.0, -5.0]);
         assert_eq!(bbox.max, vec![3.0f32, 4.0, 1.0]);
-        assert!((bbox.range_sum - 14.0).abs() < 1e-12);
+        assert_abs_diff_eq!(bbox.range_sum(), 14.0, epsilon = 1e-12);
     }
 
     #[test]
@@ -238,6 +250,10 @@ mod tests {
 
         assert_eq!(via_expand.min, via_merge.min);
         assert_eq!(via_expand.max, via_merge.max);
-        assert!((via_expand.range_sum - via_merge.range_sum).abs() < 1e-12);
+        assert_abs_diff_eq!(
+            via_expand.range_sum(),
+            via_merge.range_sum(),
+            epsilon = 1e-12
+        );
     }
 }

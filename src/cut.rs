@@ -6,7 +6,10 @@ use crate::bounding_box::BoundingBox;
 ///
 /// `pos` is in `[0, total)`.  Dimensions with `ranges[i] == 0.0` are skipped.
 fn select_cut_dim(ranges: &[f64], mut pos: f64) -> usize {
-    let mut last_nonzero = ranges.len() - 1;
+    if ranges.is_empty() {
+        return 0;
+    }
+    let mut last_nonzero = 0;
     for (i, &r) in ranges.iter().enumerate() {
         if r > 0.0 {
             last_nonzero = i;
@@ -88,6 +91,8 @@ pub fn random_cut(bbox: &BoundingBox, point: &[f32], factor: f64) -> Option<(Cut
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_abs_diff_eq;
+
     use super::*;
 
     fn simple_bbox() -> BoundingBox {
@@ -129,9 +134,9 @@ mod tests {
 
     #[test]
     fn clamp_cut_val_stays_in_range() {
-        assert_eq!(clamp_cut_val(-1.0, 0.0, 1.0), 0.0);
+        assert_abs_diff_eq!(clamp_cut_val(-1.0, 0.0, 1.0), 0.0, epsilon = f32::EPSILON);
         assert!(clamp_cut_val(1.0, 0.0, 1.0) < 1.0);
-        assert_eq!(clamp_cut_val(0.5, 0.0, 1.0), 0.5);
+        assert_abs_diff_eq!(clamp_cut_val(0.5, 0.0, 1.0), 0.5, epsilon = f32::EPSILON);
     }
 
     #[test]

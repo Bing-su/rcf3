@@ -292,6 +292,8 @@ impl PointStore {
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_abs_diff_eq;
+
     use super::*;
 
     #[test]
@@ -337,8 +339,8 @@ mod tests {
         let full = l1_distance_slices(&q, &s);
         let partial = l1_distance_slices_ignore_missing(&q, &s, &missing);
 
-        assert!((full - 8.0).abs() < 1e-12);
-        assert!((partial - 3.0).abs() < 1e-12);
+        assert_abs_diff_eq!(full, 8.0, epsilon = 1e-12);
+        assert_abs_diff_eq!(partial, 3.0, epsilon = 1e-12);
     }
 
     #[test]

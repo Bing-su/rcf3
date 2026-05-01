@@ -34,6 +34,9 @@ pub fn normalizer(x: f64, y: usize) -> f64 {
 
 /// Damping applied when the query is a duplicate of a leaf point.
 pub fn damp(x: usize, y: usize) -> f64 {
+    if y == 0 {
+        return 1.0;
+    }
     1.0 - (x as f64) / (2.0 * y as f64)
 }
 

@@ -21,11 +21,11 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Sampler {
     capacity: usize,
-    weights: Vec<f32>,
+    weights: Vec<f64>,
     point_indices: Vec<usize>,
     size: usize,
     /// State saved between `accept` and `add_point`.
-    pending_weight: f32,
+    pending_weight: f64,
     pending_point: usize,
 }
 
@@ -42,7 +42,7 @@ impl Sampler {
     pub fn new(capacity: usize) -> Self {
         Sampler {
             capacity,
-            weights: vec![0.0f32; capacity],
+            weights: vec![0.0f64; capacity],
             point_indices: vec![usize::MAX; capacity],
             size: 0,
             pending_weight: 0.0,
@@ -91,9 +91,9 @@ impl Sampler {
     }
 
     /// Current maximum weight (root of max-heap).
-    fn max_weight(&self) -> f32 {
+    fn max_weight(&self) -> f64 {
         if self.size == 0 {
-            f32::MAX
+            f64::MAX
         } else {
             self.weights[0]
         }
@@ -114,7 +114,7 @@ impl Sampler {
     ///
     /// If accepted, the caller must follow up with [`add_point`] once the
     /// actual point index is known (after possible de-duplication by the tree).
-    pub fn accept(&mut self, is_initial: bool, weight: f32, point_idx: usize) -> AcceptResult {
+    pub fn accept(&mut self, is_initial: bool, weight: f64, point_idx: usize) -> AcceptResult {
         if is_initial || (self.size < self.capacity) {
             // Warm-up: always accept; no eviction yet.
             self.pending_weight = weight;
@@ -193,10 +193,9 @@ impl Sampler {
 ///
 /// `u` must be in `(0, 1)`.  Values at or outside this range are clamped to
 /// avoid NaN/infinity.
-pub fn reservoir_weight(u: f64, time_decay: f64, entries_seen: u64) -> f32 {
+pub fn reservoir_weight(u: f64, time_decay: f64, entries_seen: u64) -> f64 {
     let u = u.clamp(f64::EPSILON, 1.0 - f64::EPSILON);
-    let w = f64::ln(-f64::ln(u)) - time_decay * entries_seen as f64;
-    w as f32
+    f64::ln(-f64::ln(u)) - time_decay * entries_seen as f64
 }
 
 // ---------------------------------------------------------------------------
@@ -228,14 +227,14 @@ mod tests {
     fn sampler_evicts_max_weight() {
         let mut s = Sampler::new(2);
         // Fill with high-weight points.
-        let w_high = 100.0f32;
+        let w_high = 100.0f64;
         s.accept(true, w_high, 0);
         s.add_point(0);
         s.accept(true, w_high + 1.0, 1);
         s.add_point(1);
 
         // A new point with very low weight should evict the max.
-        let w_low = -100.0f32;
+        let w_low = -100.0f64;
         let result = s.accept(false, w_low, 2);
         assert!(result.accepted);
         assert!(result.evicted.is_some());
@@ -245,14 +244,14 @@ mod tests {
     #[test]
     fn sampler_rejects_higher_weight_when_full() {
         let mut s = Sampler::new(2);
-        let w = -10.0f32;
+        let w = -10.0f64;
         s.accept(true, w, 0);
         s.add_point(0);
         s.accept(true, w - 1.0, 1);
         s.add_point(1);
 
         // A point with weight > current max is rejected.
-        let result = s.accept(false, 999.0f32, 2);
+        let result = s.accept(false, 999.0f64, 2);
         assert!(!result.accepted);
     }
 }
