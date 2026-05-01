@@ -1,9 +1,11 @@
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// Hyperparameters for a Random Cut Forest.
 ///
 /// Use [`RcfConfig::new`] then chain the builder methods, or deserialise from JSON.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RcfConfig {
     /// Number of base feature dimensions per observation (before shingling).
     pub input_dim: usize,
@@ -11,34 +13,34 @@ pub struct RcfConfig {
     /// Temporal window size. When `internal_shingling` is true the forest
     /// maintains a rolling buffer and the effective model dimension is
     /// `input_dim * shingle_size`.
-    #[serde(default = "default_shingle_size")]
+    #[cfg_attr(feature = "serde", serde(default = "default_shingle_size"))]
     pub shingle_size: usize,
 
     /// Maximum number of points stored per tree.
-    #[serde(default = "default_capacity")]
+    #[cfg_attr(feature = "serde", serde(default = "default_capacity"))]
     pub capacity: usize,
 
     /// Number of trees in the forest.
-    #[serde(default = "default_num_trees")]
+    #[cfg_attr(feature = "serde", serde(default = "default_num_trees"))]
     pub num_trees: usize,
 
     /// Exponential time-decay rate applied to sampling weights.
     /// `0.0` means "use the default `0.1 / capacity`".
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub time_decay: f64,
 
     /// Minimum number of updates before `score` / `attribution` / etc. return
     /// non-trivial results.  `0` means "use `1 + capacity / 4`".
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub output_after: usize,
 
     /// When true the forest manages the shingle buffer automatically so callers
     /// pass one base observation at a time.
-    #[serde(default = "default_internal_shingling")]
+    #[cfg_attr(feature = "serde", serde(default = "default_internal_shingling"))]
     pub internal_shingling: bool,
 
     /// Controls how quickly the sampler fills to capacity during warm-up.
-    #[serde(default = "default_initial_accept_fraction")]
+    #[cfg_attr(feature = "serde", serde(default = "default_initial_accept_fraction"))]
     pub initial_accept_fraction: f64,
 }
 

@@ -1,4 +1,5 @@
 use itertools::izip;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[inline]
@@ -58,7 +59,8 @@ fn merge_bounds_in_place(min: &mut [f32], max: &mut [f32], other_min: &[f32], ot
 }
 
 /// Axis-aligned bounding box in `dim`-dimensional space.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct BoundingBox {
     pub min: Vec<f32>,
     pub max: Vec<f32>,

@@ -1,4 +1,5 @@
 use crate::bounding_box::BoundingBox;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 pub const NULL: usize = usize::MAX;
@@ -12,7 +13,8 @@ pub const NULL: usize = usize::MAX;
 /// Leaves track the point they contain and the number of duplicate arrivals.
 /// Internal nodes track the split criterion and the tight bounding-box of
 /// their entire sub-tree (kept up-to-date on every insert / delete).
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Node {
     Leaf {
         /// Index into the forest-wide [`crate::point_store::PointStore`].
@@ -49,7 +51,8 @@ impl Node {
 // ---------------------------------------------------------------------------
 
 /// Arena of [`Node`]s with O(1) alloc / free.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct NodeArena {
     nodes: Vec<Option<Node>>,
     free: Vec<usize>,

@@ -21,8 +21,8 @@ pyo3 = { version = "0.28", features = [
 ], optional = true }
 rand = { version = "0.10", features = ["chacha", "serde"] }
 rayon = "1.12"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
 thiserror = "2.0"
 
 [dev-dependencies]
@@ -32,7 +32,9 @@ pprof = { version = "0.15", features = ["criterion", "flamegraph"] }
 rstest = "0.26"
 
 [features]
-python = ["pyo3"]
+default = ["serde"]
+python = ["dep:pyo3", "serde"]
+serde = ["dep:serde", "dep:serde_json"]
 
 [profile.release]
 strip = true

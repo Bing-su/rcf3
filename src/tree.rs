@@ -1,5 +1,6 @@
 use rand::prelude::*;
 use rand::rngs::StdRng;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -17,7 +18,8 @@ use crate::{
 
 /// A single Random Cut Tree.  All point-data is owned by the shared
 /// [`PointStore`]; the tree only stores indices and bounding-box metadata.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RcfTree {
     pub(crate) root: usize,
     pub(crate) tree_mass: usize,

@@ -1,3 +1,4 @@
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -16,7 +17,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// This matches the exponential-reservoir scheme used in the reference
 /// implementation.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Sampler {
     capacity: usize,
     weights: Vec<f32>,

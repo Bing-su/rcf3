@@ -3,6 +3,7 @@ use ordered_float::NotNan;
 use rand::prelude::*;
 use rand::rngs::StdRng;
 use rayon::prelude::*;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -30,7 +31,8 @@ use crate::{
 ///     }
 /// }
 /// ```
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Forest {
     pub(crate) config: RcfConfig,
     trees: Vec<RcfTree>,
@@ -422,16 +424,19 @@ impl Forest {
     // -----------------------------------------------------------------------
 
     /// Serialise the entire forest state to a JSON string.
+    #[cfg(feature = "serde")]
     pub fn to_json(&self) -> Result<String> {
         serde_json::to_string(self).map_err(|e| RcfError::Io(e.to_string()))
     }
 
     /// Deserialise a forest from a JSON string previously written by [`to_json`].
+    #[cfg(feature = "serde")]
     pub fn from_json(json: &str) -> Result<Self> {
         serde_json::from_str(json).map_err(|e| RcfError::Io(e.to_string()))
     }
 
     /// Serialise the entire forest state to a JSON file.
+    #[cfg(feature = "serde")]
     pub fn save_json(&self, path: &str) -> Result<()> {
         let json = self.to_json()?;
         std::fs::write(path, json).map_err(|e| RcfError::Io(e.to_string()))
@@ -439,6 +444,7 @@ impl Forest {
 
     /// Deserialise a forest from a JSON file previously written by
     /// [`save_json`].
+    #[cfg(feature = "serde")]
     pub fn load_json(path: &str) -> Result<Self> {
         let data = std::fs::read_to_string(path).map_err(|e| RcfError::Io(e.to_string()))?;
         Self::from_json(&data)
@@ -713,6 +719,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn save_load_roundtrip() {
         let mut f = make_forest();
         for i in 0..200 {

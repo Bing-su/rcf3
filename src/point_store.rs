@@ -1,6 +1,7 @@
 use crate::error::{RcfError, Result};
 use itertools::izip;
 use ndarray::{Array2, ArrayView1, s};
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 fn lookahead_offset(dim: usize, input_dim: usize, look_ahead: usize) -> usize {
@@ -40,7 +41,8 @@ type PointMatrix = Array2<f32>;
 /// Memory layout: an `Array2<f32>` of shape `(capacity, dim)` in C order.
 /// Each row is a stored point; rows are contiguous so `row(idx)` gives a
 /// zero-copy `ArrayView1<f32>` or `&[f32]` slice.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct PointStore {
     /// Full dimensionality: `input_dim * shingle_size`.
     pub dim: usize,
