@@ -791,4 +791,150 @@ mod tests {
         let m = median_in_place(&mut data);
         assert_abs_diff_eq!(m, expected, epsilon = f32::EPSILON);
     }
+
+    // -----------------------------------------------------------------------
+    // Anomaly-detection simulation
+    // -----------------------------------------------------------------------
+
+    /// Build a forest tuned for anomaly simulation: 2-D input, 50 trees,
+    /// large capacity so the window never rolls over during the test.
+    fn make_anomaly_forest() -> Forest {
+        Forest::builder(2, 4)
+            .num_trees(50)
+            .capacity(512)
+            .output_after(50)
+            .internal_shingling(true)
+            .seed(1234)
+            .build()
+            .unwrap()
+    }
+
+    /// Generate `n` tight 2-D cluster points near (0.5, 0.5).
+    ///
+    /// Uses per-dimension uniform noise to keep the cluster within ±0.15
+    /// of centre and avoid any dependency on a Gaussian sampler.
+    /// All values are fully determined by `seed` and `n`.
+    fn normal_cluster_points(n: usize, seed: u64) -> Vec<[f32; 2]> {
+        let mut rng = SmallRng::seed_from_u64(seed);
+        (0..n)
+            .map(|_| {
+                let dx: f32 = rng.random_range(-0.15f32..0.15);
+                let dy: f32 = rng.random_range(-0.15f32..0.15);
+                [0.5 + dx, 0.5 + dy]
+            })
+            .collect()
+    }
+
+    /// Phase A+B: warm up the forest and return the normal-point score
+    /// baseline that subsequent anomaly assertions are relative to.
+    fn warm_up_forest(f: &mut Forest) -> f64 {
+        for pt in normal_cluster_points(250, 42) {
+            f.update(&pt).unwrap();
+        }
+        assert!(f.is_ready(), "forest must be ready after warm-up");
+        f.score(&[0.5f32, 0.5]).unwrap()
+    }
+
+    // Phase C: each case is an anomalous query.
+    // `dominant_direction`:
+    //   0 = attr[dim][0] (query > cut_val, "below") should dominate the total
+    //   1 = attr[dim][1] (query < cut_val, "above") should dominate the total
+    // This is determined purely by whether the anomaly is above or below the
+    // normal cluster, independent of which specific dimension the tree chose
+    // to cut in.
+    #[rstest]
+    #[case::far_positive([10.0f32, 10.0], 0)] // both dims above cuts → index-0 direction
+    #[case::far_negative([-8.0f32, -8.0], 1)] // both dims below cuts → index-1 direction
+    #[case::axis_spike([0.5f32, 15.0], 0)] // dim 1 far above cuts → index-0 direction
+    fn anomaly_detection_simulation(
+        #[case] anomaly: [f32; 2],
+        // 0 = "below" component (attr[][0]) should dominate; 1 = "above" (attr[][1])
+        #[case] dominant_direction: usize,
+    ) {
+        let mut f = make_anomaly_forest();
+
+        // ── Phase B: warm-up & normal baseline ────────────────────────────
+        let normal_score = warm_up_forest(&mut f);
+
+        // Normal point's attribution must be within plausible bounds.
+        let normal_attr = f.attribution(&[0.5f32, 0.5]).unwrap();
+        let normal_attr_total: f64 = normal_attr.iter().map(|[a, b]| a + b).sum();
+        let normal_ratio = if normal_score > 0.0 {
+            normal_attr_total / normal_score
+        } else {
+            1.0
+        };
+        assert!(
+            normal_ratio <= 1.01,
+            "attribution total {normal_attr_total:.4} exceeds score {normal_score:.4}"
+        );
+
+        // ── Phase C: anomaly score must be meaningfully higher ─────────────
+        let anomaly_score = f.score(&anomaly).unwrap();
+        assert!(
+            anomaly_score > normal_score * 2.0,
+            "anomaly score {anomaly_score:.4} not > 2× normal {normal_score:.4} \
+             for point {anomaly:?}"
+        );
+
+        // Displacement score must be positive for a genuine outlier.
+        let disp = f.displacement_score(&anomaly).unwrap();
+        assert!(
+            disp > 0.0,
+            "displacement score {disp:.4} should be positive for {anomaly:?}"
+        );
+
+        // Attribution: verify the dominant direction for the *current* shingle
+        // slot (last `input_dim` dimensions). With shingle_size > 1 the earlier
+        // slots may still hold normal-range values and dilute the total.
+        let attr = f.attribution(&anomaly).unwrap();
+        let input_dim = f.config().input_dim;
+        let current_slot = &attr[attr.len() - input_dim..];
+        let total_dir0: f64 = current_slot.iter().map(|a| a[0]).sum();
+        let total_dir1: f64 = current_slot.iter().map(|a| a[1]).sum();
+
+        // Keep a small margin to avoid borderline ties from floating-point noise.
+        let direction_margin = 1.01;
+
+        if dominant_direction == 0 {
+            assert!(
+                total_dir0 > total_dir1 * direction_margin,
+                "expected 'below' direction to dominate for {anomaly:?}: \
+                 dir0={total_dir0:.4} dir1={total_dir1:.4}. attr={attr:?}"
+            );
+        } else {
+            assert!(
+                total_dir1 > total_dir0 * direction_margin,
+                "expected 'above' direction to dominate for {anomaly:?}: \
+                 dir1={total_dir1:.4} dir0={total_dir0:.4}. attr={attr:?}"
+            );
+        }
+
+        // ── Phase D: near-neighbour sanity ────────────────────────────────
+        let anomaly_neighbors = f.near_neighbors(&anomaly, 5, 0).unwrap();
+        assert!(
+            !anomaly_neighbors.is_empty(),
+            "near_neighbors must return at least 1 result for {anomaly:?}"
+        );
+
+        // Neighbours must be sorted ascending by distance.
+        for w in anomaly_neighbors.windows(2) {
+            assert!(
+                w[0].2 <= w[1].2,
+                "neighbors not sorted by distance for {anomaly:?}"
+            );
+        }
+
+        // Anomalous query is far from the cluster: its nearest neighbour
+        // distance must exceed the nearest neighbour distance of the cluster
+        // centre.
+        let normal_neighbors = f.near_neighbors(&[0.5f32, 0.5], 5, 0).unwrap();
+        let normal_nn_dist = normal_neighbors.first().map(|r| r.2).unwrap_or(0.0);
+        let anomaly_nn_dist = anomaly_neighbors.first().map(|r| r.2).unwrap_or(0.0);
+        assert!(
+            anomaly_nn_dist > normal_nn_dist,
+            "anomaly nn-distance {anomaly_nn_dist:.4} should exceed \
+             normal nn-distance {normal_nn_dist:.4} for {anomaly:?}"
+        );
+    }
 }
