@@ -139,7 +139,11 @@ mod tests {
     #[case::at_upper(1.0, 0.999_999_9)]
     #[case::inside_range(0.5, 0.5)]
     fn clamp_cut_val_stays_in_range(#[case] raw: f32, #[case] expected: f32) {
-        assert_abs_diff_eq!(clamp_cut_val(raw, 0.0, 1.0), expected, epsilon = f32::EPSILON);
+        assert_abs_diff_eq!(
+            clamp_cut_val(raw, 0.0, 1.0),
+            expected,
+            epsilon = f32::EPSILON
+        );
     }
 
     #[rstest]

@@ -7,9 +7,10 @@ use crate::{
     bounding_box::BoundingBox,
     cut::random_cut,
     error::{RcfError, Result},
+    forest::NeighborCandidate,
     node_arena::{NULL, Node, NodeArena},
     point_store::PointStore,
-    score::ScoreMode,
+    score::{Attribution, ScoreMode},
 };
 
 // ---------------------------------------------------------------------------
@@ -50,6 +51,32 @@ fn should_descend_primary(probability_of_cut: f64, depth: usize, threshold: f64)
 
 fn should_descend_secondary(probability_of_cut: f64) -> bool {
     probability_of_cut > 0.5
+}
+
+fn consider_impute_candidate(
+    best: Option<NeighborCandidate>,
+    candidate: NeighborCandidate,
+    centrality: f64,
+    rng: &mut Xoshiro256PlusPlus,
+) -> Option<NeighborCandidate> {
+    match best {
+        None => Some(candidate),
+        Some(best_candidate) => {
+            let best_dist = best_candidate.distance;
+            let dist = candidate.distance;
+            let accept = if centrality >= 1.0 {
+                dist < best_dist
+            } else {
+                let r: f64 = rng.random::<f64>();
+                dist < best_dist || r < 1.0 - centrality
+            };
+            if accept {
+                Some(candidate)
+            } else {
+                Some(best_candidate)
+            }
+        }
+    }
 }
 
 impl RcfTree {
@@ -171,26 +198,26 @@ impl RcfTree {
         // Scan from leaf upward, expanding the bounding box as we go.
         for step in 0..=path.len() {
             let factor: f64 = self.rng.random::<f64>();
-            if let Some((cut, sep)) = random_cut(&current_bbox, point, factor) {
-                if sep {
-                    saved_cut_dim = cut.dim;
-                    saved_cut_val = cut.val;
-                    insert_above = if step == 0 {
-                        leaf_id
-                    } else {
-                        path[path.len() - step].0
-                    };
-                    parent_above = if step == path.len() {
-                        NULL
-                    } else if step == 0 {
-                        Self::parent_of(&path)
-                    } else {
-                        path[path.len() - step - 1].0
-                    };
-                    // Everything below insert_above is in path_below.
-                    path_below = path[path.len() - step..].to_vec();
-                    break;
-                }
+            if let Some((cut, sep)) = random_cut(&current_bbox, point, factor)
+                && sep
+            {
+                saved_cut_dim = cut.dim;
+                saved_cut_val = cut.val;
+                insert_above = if step == 0 {
+                    leaf_id
+                } else {
+                    path[path.len() - step].0
+                };
+                parent_above = if step == path.len() {
+                    NULL
+                } else if step == 0 {
+                    Self::parent_of(&path)
+                } else {
+                    path[path.len() - step - 1].0
+                };
+                // Everything below insert_above is in path_below.
+                path_below = path[path.len() - step..].to_vec();
+                break;
             }
             // Expand box upward by including the sibling subtree.
             if step < path.len() {
@@ -415,20 +442,20 @@ impl RcfTree {
 
     /// Compute per-dimension anomaly attribution.
     ///
-    /// Returns a `Vec<[f64; 2]>` of length `dims` where `[0]` is the
-    /// contribution from cuts *below* the query value and `[1]` is *above*.
-    pub fn attribution(
-        &self,
-        query: &[f32],
-        point_store: &PointStore,
-        mode: &ScoreMode,
-    ) -> Vec<[f64; 2]> {
-        let mut attr = vec![[0.0f64; 2]; self.dims];
+    /// Returns a `Vec<Attribution>` of length `dims`.
+    pub fn attribution(&self, query: &[f32], mode: &ScoreMode) -> Vec<Attribution> {
+        let mut attr = vec![
+            Attribution {
+                below: 0.0,
+                above: 0.0,
+            };
+            self.dims
+        ];
         if self.root == NULL || self.tree_mass == 0 {
             return attr;
         }
         let norm = mode.normalize(1.0, self.tree_mass);
-        self.attribution_recursive(self.root, query, point_store, 0, mode, 1.0, norm, &mut attr);
+        self.attribution_recursive(self.root, query, 0, mode, 1.0, norm, &mut attr);
         attr
     }
 
@@ -436,16 +463,16 @@ impl RcfTree {
     ///
     /// `weight` = product of `(1 - prob)` for all ancestors, starts at 1.0.
     /// `norm`   = mode normalizer pre-computed as `normalize(1.0, tree_mass)`.
+    #[allow(clippy::too_many_arguments)]
     fn attribution_recursive(
         &self,
         node_id: usize,
         query: &[f32],
-        point_store: &PointStore,
         depth: usize,
         mode: &ScoreMode,
         weight: f64,
         norm: f64,
-        attr: &mut Vec<[f64; 2]>,
+        attr: &mut Vec<Attribution>,
     ) {
         match self.arena.get(node_id) {
             Node::Leaf { .. } => {
@@ -468,15 +495,14 @@ impl RcfTree {
                     // contribution = weight * prob * base * norm
                     let contribution = weight * prob * base * norm;
                     if query[*cut_dim] <= *cut_val {
-                        attr[*cut_dim][1] += contribution;
+                        attr[*cut_dim].above += contribution;
                     } else {
-                        attr[*cut_dim][0] += contribution;
+                        attr[*cut_dim].below += contribution;
                     }
                     // Recurse with reduced weight.
                     self.attribution_recursive(
                         child,
                         query,
-                        point_store,
                         depth + 1,
                         mode,
                         weight * (1.0 - prob),
@@ -485,16 +511,7 @@ impl RcfTree {
                     );
                 } else {
                     // No probability of isolation at this node; continue descent.
-                    self.attribution_recursive(
-                        child,
-                        query,
-                        point_store,
-                        depth + 1,
-                        mode,
-                        weight,
-                        norm,
-                        attr,
-                    );
+                    self.attribution_recursive(child, query, depth + 1, mode, weight, norm, attr);
                 }
             }
         }
@@ -509,16 +526,10 @@ impl RcfTree {
         if self.root == NULL || self.tree_mass == 0 {
             return 0.0;
         }
-        self.density_recursive(self.root, query, point_store, 0)
+        self.density_recursive(self.root, query, point_store)
     }
 
-    fn density_recursive(
-        &self,
-        node_id: usize,
-        query: &[f32],
-        point_store: &PointStore,
-        depth: usize,
-    ) -> f64 {
+    fn density_recursive(&self, node_id: usize, query: &[f32], point_store: &PointStore) -> f64 {
         // Density uses score_unseen_displacement = y (tree mass), normalizer = identity.
         match self.arena.get(node_id) {
             Node::Leaf { point_idx, mass } => {
@@ -538,7 +549,7 @@ impl RcfTree {
             } => {
                 let (child, _) = split_children(query[*cut_dim], *cut_val, *left, *right);
 
-                let child_density = self.density_recursive(child, query, point_store, depth + 1);
+                let child_density = self.density_recursive(child, query, point_store);
 
                 let prob = bbox.probability_of_cut(query);
                 if prob == 0.0 {
@@ -555,7 +566,7 @@ impl RcfTree {
     // Near-neighbor traversal
     // -----------------------------------------------------------------------
 
-    /// Collect at most `max_results` candidate `(score, point_idx, distance)` tuples.
+    /// Collect at most `max_results` candidate neighbours.
     ///
     /// Candidates are leaf points that would receive a high isolation score
     /// relative to `query`.  Callers should deduplicate across trees.
@@ -565,7 +576,7 @@ impl RcfTree {
         point_store: &PointStore,
         mode: &ScoreMode,
         percentile: usize,
-    ) -> Vec<(f64, usize, f64)> {
+    ) -> Vec<NeighborCandidate> {
         if self.root == NULL || self.tree_mass == 0 {
             return Vec::new();
         }
@@ -582,6 +593,7 @@ impl RcfTree {
         results
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn nn_recursive(
         &self,
         node_id: usize,
@@ -590,13 +602,17 @@ impl RcfTree {
         depth: usize,
         mode: &ScoreMode,
         percentile: usize,
-        results: &mut Vec<(f64, usize, f64)>,
+        results: &mut Vec<NeighborCandidate>,
     ) {
         match self.arena.get(node_id) {
             Node::Leaf { point_idx, mass } => {
                 let score = mode.normalize(mode.score_unseen(depth, *mass), self.tree_mass);
                 let dist = point_store.l1_distance(query, *point_idx);
-                results.push((score, *point_idx, dist));
+                results.push(NeighborCandidate {
+                    score,
+                    point_idx: *point_idx,
+                    distance: dist,
+                });
             }
             Node::Internal {
                 left,
@@ -643,7 +659,7 @@ impl RcfTree {
 
     /// Find the leaf that best matches `query` with the given `missing_dims`.
     ///
-    /// Returns `(score, best_point_idx, distance)`.  Missing dimensions are
+    /// Returns the best matching candidate. Missing dimensions are
     /// treated as marginalized out (both children are explored when the cut
     /// falls on a missing dimension).
     pub fn conditional_field(
@@ -653,12 +669,11 @@ impl RcfTree {
         point_store: &PointStore,
         centrality: f64,
         seed: u64,
-    ) -> Option<(f64, usize, f64)> {
+    ) -> Option<NeighborCandidate> {
         if self.root == NULL || self.tree_mass == 0 {
             return None;
         }
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
-        let mut best: Option<(f64, usize, f64)> = None;
         self.impute_recursive(
             self.root,
             query,
@@ -666,11 +681,11 @@ impl RcfTree {
             point_store,
             centrality,
             &mut rng,
-            &mut best,
-        );
-        best
+            None,
+        )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn impute_recursive(
         &self,
         node_id: usize,
@@ -679,30 +694,18 @@ impl RcfTree {
         point_store: &PointStore,
         centrality: f64,
         rng: &mut Xoshiro256PlusPlus,
-        best: &mut Option<(f64, usize, f64)>,
-    ) {
+        best: Option<NeighborCandidate>,
+    ) -> Option<NeighborCandidate> {
         match self.arena.get(node_id) {
             Node::Leaf { point_idx, mass } => {
                 let dist = point_store.l1_distance_ignore_missing(query, *point_idx, missing);
                 let score = *mass as f64;
-                let candidate = (score, *point_idx, dist);
-                let accept = match best {
-                    None => true,
-                    Some((_, _, best_dist)) => {
-                        let r: f64 = rng.random::<f64>();
-                        // With probability centrality, always prefer the closer one.
-                        // Otherwise accept stochastically (mimics the original's
-                        // "centrality" parameter).
-                        if centrality >= 1.0 {
-                            dist < *best_dist
-                        } else {
-                            dist < *best_dist || r < 1.0 - centrality
-                        }
-                    }
+                let candidate = NeighborCandidate {
+                    score,
+                    point_idx: *point_idx,
+                    distance: dist,
                 };
-                if accept {
-                    *best = Some(candidate);
-                }
+                consider_impute_candidate(best, candidate, centrality, rng)
             }
             Node::Internal {
                 left,
@@ -712,8 +715,8 @@ impl RcfTree {
                 ..
             } => {
                 if missing[*cut_dim] {
-                    // Must explore both branches.
-                    self.impute_recursive(
+                    // Explore both branches while carrying forward the current best.
+                    let best = self.impute_recursive(
                         *left,
                         query,
                         missing,
@@ -730,18 +733,10 @@ impl RcfTree {
                         centrality,
                         rng,
                         best,
-                    );
+                    )
                 } else {
                     let child = split_child_only(query[*cut_dim], *cut_val, *left, *right);
-                    self.impute_recursive(
-                        child,
-                        query,
-                        missing,
-                        point_store,
-                        centrality,
-                        rng,
-                        best,
-                    );
+                    self.impute_recursive(child, query, missing, point_store, centrality, rng, best)
                 }
             }
         }

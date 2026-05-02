@@ -43,8 +43,51 @@ pub struct Forest {
     rng: Xoshiro256PlusPlus,
 }
 
-type NeighborCandidate = (f64, usize, f64);
-type NeighborResult = (f64, Vec<f32>, f64);
+#[derive(Clone, Debug, PartialEq)]
+pub struct NeighborCandidate {
+    pub score: f64,
+    pub point_idx: usize,
+    pub distance: f64,
+}
+
+impl From<(f64, usize, f64)> for NeighborCandidate {
+    fn from(value: (f64, usize, f64)) -> Self {
+        Self {
+            score: value.0,
+            point_idx: value.1,
+            distance: value.2,
+        }
+    }
+}
+
+impl From<NeighborCandidate> for (f64, usize, f64) {
+    fn from(value: NeighborCandidate) -> Self {
+        (value.score, value.point_idx, value.distance)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NeighborResult {
+    pub score: f64,
+    pub point: Vec<f32>,
+    pub distance: f64,
+}
+
+impl From<(f64, Vec<f32>, f64)> for NeighborResult {
+    fn from(value: (f64, Vec<f32>, f64)) -> Self {
+        Self {
+            score: value.0,
+            point: value.1,
+            distance: value.2,
+        }
+    }
+}
+
+impl From<NeighborResult> for (f64, Vec<f32>, f64) {
+    fn from(value: NeighborResult) -> Self {
+        (value.score, value.point, value.distance)
+    }
+}
 
 fn make_missing_flags(missing: &[usize], dim: usize) -> Result<Vec<bool>> {
     let mut missing_flags = vec![false; dim];
@@ -258,10 +301,8 @@ impl Forest {
 
     /// Per-dimension attribution of the anomaly score.
     ///
-    /// Returns a `Vec<[f64; 2]>` of length `input_dim * shingle_size` where
-    /// `[below, above]` are the contributions from cuts below and above the
-    /// query value in each dimension.
-    pub fn attribution(&self, query: &[f32]) -> Result<Attribution> {
+    /// Returns a `Vec<Attribution>` of length `input_dim * shingle_size`.
+    pub fn attribution(&self, query: &[f32]) -> Result<Vec<Attribution>> {
         let q = self.prepare_query(query)?;
         let dim = self.config.dim();
         let mode = ScoreMode::standard();
@@ -269,20 +310,31 @@ impl Forest {
         let total_attr = self
             .trees
             .par_iter()
-            .map(|tree| tree.attribution(&q, &self.point_store, &mode))
+            .map(|tree| tree.attribution(&q, &mode))
             .reduce(
-                || vec![[0.0f64; 2]; dim],
+                || {
+                    vec![
+                        Attribution {
+                            below: 0.0,
+                            above: 0.0,
+                        };
+                        dim
+                    ]
+                },
                 |mut acc, tree_attr| {
                     for i in 0..dim {
-                        acc[i][0] += tree_attr[i][0];
-                        acc[i][1] += tree_attr[i][1];
+                        acc[i].below += tree_attr[i].below;
+                        acc[i].above += tree_attr[i].above;
                     }
                     acc
                 },
             );
         Ok(total_attr
             .into_iter()
-            .map(|[a, b]| [a / n, b / n])
+            .map(|a| Attribution {
+                below: a.below / n,
+                above: a.above / n,
+            })
             .collect())
     }
 
@@ -522,19 +574,28 @@ impl Forest {
         let n = self.trees.len() as f64;
         candidates
             .into_iter()
-            .sorted_by_key(|(_, idx, _)| *idx)
-            .chunk_by(|(_, idx, _)| *idx)
+            .sorted_by_key(|item| item.point_idx)
+            .chunk_by(|item| item.point_idx)
             .into_iter()
             .map(|(idx, group)| {
-                let (score_sum, dist_min) = group
-                    .fold((0.0f64, f64::MAX), |(s, d), (score, _, dist)| {
-                        (s + score, d.min(dist))
-                    });
-                (score_sum / n, idx, dist_min)
+                let (score_sum, dist_min) = group.fold((0.0f64, f64::MAX), |(s, d), item| {
+                    (s + item.score, d.min(item.distance))
+                });
+                NeighborCandidate {
+                    score: score_sum / n,
+                    point_idx: idx,
+                    distance: dist_min,
+                }
             })
-            .sorted_by_key(|item| NotNan::new(item.2).unwrap_or(NotNan::new(f64::MAX).unwrap()))
+            .sorted_by_key(|item| {
+                NotNan::new(item.distance).unwrap_or(NotNan::new(f64::MAX).unwrap())
+            })
             .take(top_k)
-            .map(|(score, idx, dist)| (score, self.point_store.copy_point(idx), dist))
+            .map(|item| NeighborResult {
+                score: item.score,
+                point: self.point_store.copy_point(item.point_idx),
+                distance: item.distance,
+            })
             .collect()
     }
 
@@ -557,7 +618,7 @@ impl Forest {
                     centrality,
                     tree_seed,
                 )
-                .map(|(_, idx, _)| idx)
+                .map(|c| c.point_idx)
             })
             .collect()
     }
@@ -711,7 +772,7 @@ mod tests {
         let query = &[5.0f32, 0.5];
         let score = f.score(query).unwrap();
         let attr = f.attribution(query).unwrap();
-        let attr_total: f64 = attr.iter().map(|[a, b]| a + b).sum();
+        let attr_total: f64 = attr.iter().map(|a| a.below + a.above).sum();
         // Attribution total should be ≤ score (leaf contributions are unattributed)
         // and at least 5% of the score (some signal must come from internal nodes).
         let ratio = attr_total / score;
@@ -776,7 +837,10 @@ mod tests {
         assert!(neighbors.len() <= top_k);
 
         for w in neighbors.windows(2) {
-            assert!(w[0].2 <= w[1].2, "neighbors are not sorted by distance");
+            assert!(
+                w[0].distance <= w[1].distance,
+                "neighbors are not sorted by distance"
+            );
         }
     }
 
@@ -838,8 +902,8 @@ mod tests {
 
     // Phase C: each case is an anomalous query.
     // `dominant_direction`:
-    //   0 = attr[dim][0] (query > cut_val, "below") should dominate the total
-    //   1 = attr[dim][1] (query < cut_val, "above") should dominate the total
+    //   0 = attr[dim].below (query > cut_val) should dominate the total
+    //   1 = attr[dim].above (query < cut_val) should dominate the total
     // This is determined purely by whether the anomaly is above or below the
     // normal cluster, independent of which specific dimension the tree chose
     // to cut in.
@@ -849,7 +913,7 @@ mod tests {
     #[case::axis_spike([0.5f32, 15.0], 0)] // dim 1 far above cuts → index-0 direction
     fn anomaly_detection_simulation(
         #[case] anomaly: [f32; 2],
-        // 0 = "below" component (attr[][0]) should dominate; 1 = "above" (attr[][1])
+        // 0 = below component should dominate; 1 = above component should dominate
         #[case] dominant_direction: usize,
     ) {
         let mut f = make_anomaly_forest();
@@ -859,7 +923,7 @@ mod tests {
 
         // Normal point's attribution must be within plausible bounds.
         let normal_attr = f.attribution(&[0.5f32, 0.5]).unwrap();
-        let normal_attr_total: f64 = normal_attr.iter().map(|[a, b]| a + b).sum();
+        let normal_attr_total: f64 = normal_attr.iter().map(|a| a.below + a.above).sum();
         let normal_ratio = if normal_score > 0.0 {
             normal_attr_total / normal_score
         } else {
@@ -891,8 +955,8 @@ mod tests {
         let attr = f.attribution(&anomaly).unwrap();
         let input_dim = f.config().input_dim;
         let current_slot = &attr[attr.len() - input_dim..];
-        let total_dir0: f64 = current_slot.iter().map(|a| a[0]).sum();
-        let total_dir1: f64 = current_slot.iter().map(|a| a[1]).sum();
+        let total_dir0: f64 = current_slot.iter().map(|a| a.below).sum();
+        let total_dir1: f64 = current_slot.iter().map(|a| a.above).sum();
 
         // Keep a small margin to avoid borderline ties from floating-point noise.
         let direction_margin = 1.01;
@@ -921,7 +985,7 @@ mod tests {
         // Neighbours must be sorted ascending by distance.
         for w in anomaly_neighbors.windows(2) {
             assert!(
-                w[0].2 <= w[1].2,
+                w[0].distance <= w[1].distance,
                 "neighbors not sorted by distance for {anomaly:?}"
             );
         }
@@ -930,8 +994,8 @@ mod tests {
         // distance must exceed the nearest neighbour distance of the cluster
         // centre.
         let normal_neighbors = f.near_neighbors(&[0.5f32, 0.5], 5, 0).unwrap();
-        let normal_nn_dist = normal_neighbors.first().map(|r| r.2).unwrap_or(0.0);
-        let anomaly_nn_dist = anomaly_neighbors.first().map(|r| r.2).unwrap_or(0.0);
+        let normal_nn_dist = normal_neighbors.first().map(|r| r.distance).unwrap_or(0.0);
+        let anomaly_nn_dist = anomaly_neighbors.first().map(|r| r.distance).unwrap_or(0.0);
         assert!(
             anomaly_nn_dist > normal_nn_dist,
             "anomaly nn-distance {anomaly_nn_dist:.4} should exceed \

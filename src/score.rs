@@ -137,16 +137,20 @@ impl ScoreMode {
 
 /// Per-dimension anomaly attribution.
 ///
-/// For each dimension `i`: `[below, above]` where
+/// For each dimension `i`:
 /// - `below` = contribution from cuts whose threshold is *above* the query
 ///   value (i.e., the query was isolated because it is too *small* in dim `i`).
 /// - `above` = contribution from cuts whose threshold is *below* the query
 ///   value (isolated because it is too *large* in dim `i`).
-pub type Attribution = Vec<[f64; 2]>;
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Attribution {
+    pub below: f64,
+    pub above: f64,
+}
 
 /// Sum of all attribution components equals `score` (up to floating-point error).
-pub fn attribution_total(attr: &Attribution) -> f64 {
-    attr.iter().map(|[a, b]| a + b).sum()
+pub fn attribution_total(attr: &[Attribution]) -> f64 {
+    attr.iter().map(|a| a.below + a.above).sum()
 }
 
 #[cfg(test)]

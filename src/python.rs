@@ -5,7 +5,8 @@ use pyo3::prelude::*;
 use std::path::PathBuf;
 
 use crate::error;
-use crate::forest::Forest;
+use crate::forest::{Forest, NeighborResult};
+use crate::score::Attribution;
 
 /// Convert an [`RcfError`] to a Python exception.
 fn to_py_err(e: error::RcfError) -> PyErr {
@@ -21,6 +22,37 @@ fn to_py_err(e: error::RcfError) -> PyErr {
 // ---------------------------------------------------------------------------
 // PyForest
 // ---------------------------------------------------------------------------
+#[derive(IntoPyObject)]
+struct PyNeighborResult {
+    score: f64,
+    point: Vec<f32>,
+    distance: f64,
+}
+
+impl From<NeighborResult> for PyNeighborResult {
+    fn from(value: NeighborResult) -> Self {
+        Self {
+            score: value.score,
+            point: value.point,
+            distance: value.distance,
+        }
+    }
+}
+
+#[derive(IntoPyObject)]
+struct PyAttribution {
+    below: f64,
+    above: f64,
+}
+
+impl From<Attribution> for PyAttribution {
+    fn from(value: Attribution) -> Self {
+        Self {
+            below: value.below,
+            above: value.above,
+        }
+    }
+}
 
 /// A Random Cut Forest anomaly detector.
 ///
@@ -103,9 +135,12 @@ impl PyForest {
 
     /// Per-dimension attribution of the anomaly score.
     ///
-    /// Returns a list of [below, above] pairs for each dimension.
-    fn attribution(&self, point: Vec<f32>) -> PyResult<Vec<[f64; 2]>> {
-        self.inner.attribution(&point).map_err(to_py_err)
+    /// Returns a list of dict objects with keys: `below`, `above`.
+    fn attribution(&self, point: Vec<f32>) -> PyResult<Vec<PyAttribution>> {
+        self.inner
+            .attribution(&point)
+            .map(|items| items.into_iter().map(PyAttribution::from).collect())
+            .map_err(to_py_err)
     }
 
     /// Density estimate at `point`.
@@ -115,16 +150,17 @@ impl PyForest {
 
     /// Find approximate near-neighbours of `point`.
     ///
-    /// Returns a list of (score, point, distance) tuples.
+    /// Returns a list of dict objects with keys: `score`, `point`, `distance`.
     #[pyo3(signature = (point, top_k = 10, percentile = 50))]
     fn near_neighbors(
         &self,
         point: Vec<f32>,
         top_k: usize,
         percentile: usize,
-    ) -> PyResult<Vec<(f64, Vec<f32>, f64)>> {
+    ) -> PyResult<Vec<PyNeighborResult>> {
         self.inner
             .near_neighbors(&point, top_k, percentile)
+            .map(|items| items.into_iter().map(PyNeighborResult::from).collect())
             .map_err(to_py_err)
     }
 
