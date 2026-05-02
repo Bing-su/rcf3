@@ -2,6 +2,7 @@
 
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
+use std::path::PathBuf;
 
 use crate::error;
 use crate::forest::Forest;
@@ -180,13 +181,13 @@ impl PyForest {
     }
 
     /// Serialise the forest state to a JSON file.
-    fn save_json(&self, path: &str) -> PyResult<()> {
+    fn save_json(&self, path: PathBuf) -> PyResult<()> {
         self.inner.save_json(path).map_err(to_py_err)
     }
 
     /// Load a forest from a JSON file.
     #[staticmethod]
-    fn load_json(path: &str) -> PyResult<Self> {
+    fn load_json(path: PathBuf) -> PyResult<Self> {
         let inner = Forest::load_json(path).map_err(to_py_err)?;
         Ok(PyForest { inner })
     }

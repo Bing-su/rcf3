@@ -437,16 +437,16 @@ impl Forest {
 
     /// Serialise the entire forest state to a JSON file.
     #[cfg(feature = "serde")]
-    pub fn save_json(&self, path: &str) -> Result<()> {
+    pub fn save_json(&self, path: impl Into<std::path::PathBuf>) -> Result<()> {
         let json = self.to_json()?;
-        std::fs::write(path, json).map_err(|e| RcfError::Io(e.to_string()))
+        std::fs::write(path.into(), json).map_err(|e| RcfError::Io(e.to_string()))
     }
 
     /// Deserialise a forest from a JSON file previously written by
     /// [`save_json`].
     #[cfg(feature = "serde")]
-    pub fn load_json(path: &str) -> Result<Self> {
-        let data = std::fs::read_to_string(path).map_err(|e| RcfError::Io(e.to_string()))?;
+    pub fn load_json(path: impl Into<std::path::PathBuf>) -> Result<Self> {
+        let data = std::fs::read_to_string(path.into()).map_err(|e| RcfError::Io(e.to_string()))?;
         Self::from_json(&data)
     }
 
@@ -731,9 +731,10 @@ mod tests {
         let query = &[0.5f32, 0.5];
         let score_before = f.score(query).unwrap();
 
-        let path = "/tmp/rcf3_test_forest.json";
-        f.save_json(path).unwrap();
-        let f2 = Forest::load_json(path).unwrap();
+        let tmpdir = tempfile::tempdir().unwrap();
+        let path = tmpdir.path().join("forest.json");
+        f.save_json(&path).unwrap();
+        let f2 = Forest::load_json(&path).unwrap();
         let score_after = f2.score(query).unwrap();
 
         assert_abs_diff_eq!(score_before, score_after, epsilon = 1e-10);
