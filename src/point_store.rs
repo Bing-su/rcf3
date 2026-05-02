@@ -215,12 +215,10 @@ impl PointStore {
     /// Return the point at `idx`.  Panics if `idx` is not occupied.
     pub fn get(&self, idx: usize) -> &[f32] {
         debug_assert!(self.occupied[idx], "accessing unoccupied slot {idx}");
-        // `row()` returns a temporary ArrayView1 whose lifetime Rust can't
-        // propagate through `as_slice()`.  Instead, grab the underlying
-        // contiguous flat slice and index into it directly — same data,
-        // lifetime correctly tied to `&self`.
-        let flat = self.store.as_slice().expect("store must be contiguous");
-        &flat[idx * self.dim..(idx + 1) * self.dim]
+        self.store
+            .row(idx)
+            .to_slice()
+            .expect("store must be contiguous")
     }
 
     /// Return the point at `idx` as an ndarray view (zero-copy).
