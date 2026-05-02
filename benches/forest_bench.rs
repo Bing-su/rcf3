@@ -1,6 +1,6 @@
-use arcf::Forest;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use pprof::criterion::{Output, PProfProfiler};
+use rcf3::Forest;
 
 fn build_forest(dim: usize, trees: usize, capacity: usize) -> Forest {
     Forest::builder(dim, 1)

@@ -42,7 +42,7 @@ fn to_py_err(e: error::RcfError) -> PyErr {
 ///     maintains the rolling shingle buffer (default True).
 /// seed : int, optional
 ///     Random seed for deterministic forests.
-#[pyclass(name = "Forest", module = "arcf.arcf", skip_from_py_object)]
+#[pyclass(name = "Forest", module = "rcf3.rcf3", skip_from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyForest {
     inner: Forest,

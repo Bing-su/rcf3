@@ -1,5 +1,5 @@
 [project]
-name = "arcf"
+name = "rcf3"
 requires-python = ">=3.10"
 classifiers = [
   "Programming Language :: Python :: Implementation :: CPython",

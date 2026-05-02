@@ -731,16 +731,12 @@ mod tests {
         let query = &[0.5f32, 0.5];
         let score_before = f.score(query).unwrap();
 
-        let path = "/tmp/arcf_test_forest.json";
+        let path = "/tmp/rcf3_test_forest.json";
         f.save_json(path).unwrap();
         let f2 = Forest::load_json(path).unwrap();
         let score_after = f2.score(query).unwrap();
 
-        assert_abs_diff_eq!(
-            score_before,
-            score_after,
-            epsilon = 1e-10
-        );
+        assert_abs_diff_eq!(score_before, score_after, epsilon = 1e-10);
     }
 
     #[test]
