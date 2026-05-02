@@ -291,6 +291,7 @@ impl PointStore {
 #[cfg(test)]
 mod tests {
     use approx::assert_abs_diff_eq;
+    use rstest::rstest;
 
     use super::*;
 
@@ -311,13 +312,19 @@ mod tests {
         assert_eq!(ps.size, 0);
     }
 
-    #[test]
-    fn shingling_shifts_buffer() {
-        let mut ps = PointStore::new(1, 3, 8, true);
-        let _ = ps.shingled_point(&[1.0]).unwrap();
-        let _ = ps.shingled_point(&[2.0]).unwrap();
-        let full = ps.shingled_point(&[3.0]).unwrap();
-        assert_eq!(full, vec![1.0f32, 2.0, 3.0]);
+    #[rstest]
+    #[case::window_2(vec![1.0, 2.0], vec![1.0, 2.0])]
+    #[case::window_3(vec![1.0, 2.0, 3.0], vec![1.0, 2.0, 3.0])]
+    #[case::window_4(vec![1.0, 2.0, 3.0, 4.0], vec![1.0, 2.0, 3.0, 4.0])]
+    fn shingling_shifts_buffer(#[case] series: Vec<f32>, #[case] expected: Vec<f32>) {
+        let shingle_size = series.len();
+        let mut ps = PointStore::new(1, shingle_size, 8, true);
+        for point in &series[..shingle_size - 1] {
+            let _ = ps.shingled_point(&[*point]).unwrap();
+        }
+
+        let full = ps.shingled_point(&[series[shingle_size - 1]]).unwrap();
+        assert_eq!(full, expected);
     }
 
     #[test]
@@ -328,29 +335,39 @@ mod tests {
         assert!(!ps.is_equal(&[3.0, 5.0], idx));
     }
 
-    #[test]
-    fn l1_helpers_match_expected() {
+    #[rstest]
+    #[case::no_missing([false, false, false, false], 8.0)]
+    #[case::alternate_missing([false, true, false, true], 3.0)]
+    #[case::all_missing([true, true, true, true], 0.0)]
+    fn l1_helpers_match_expected(#[case] missing: [bool; 4], #[case] expected_partial: f64) {
         let q = [1.0f32, -1.0, 3.5, 0.0];
         let s = [0.0f32, 2.0, 1.5, -2.0];
-        let missing = [false, true, false, true];
 
         let full = l1_distance_slices(&q, &s);
         let partial = l1_distance_slices_ignore_missing(&q, &s, &missing);
 
         assert_abs_diff_eq!(full, 8.0, epsilon = 1e-12);
-        assert_abs_diff_eq!(partial, 3.0, epsilon = 1e-12);
+        assert_abs_diff_eq!(partial, expected_partial, epsilon = 1e-12);
+    }
+
+    #[rstest]
+    #[case::lookahead_0(0, vec![4, 5])]
+    #[case::lookahead_1(1, vec![2, 3])]
+    #[case::lookahead_2(2, vec![0, 1])]
+    fn lookahead_offset_and_indices_are_consistent(
+        #[case] look_ahead: usize,
+        #[case] expected_indices: Vec<usize>,
+    ) {
+        let ps = PointStore::new(2, 3, 8, true);
+        let offset = lookahead_offset(ps.dim, ps.input_dim, look_ahead);
+
+        assert_eq!(offset, expected_indices[0]);
+        assert_eq!(ps.next_indices(look_ahead), expected_indices);
     }
 
     #[test]
-    fn lookahead_offset_and_indices_are_consistent() {
+    fn missing_indices_with_lookahead_maps_base_indices() {
         let ps = PointStore::new(2, 3, 8, true);
-        let offset0 = lookahead_offset(ps.dim, ps.input_dim, 0);
-        let offset1 = lookahead_offset(ps.dim, ps.input_dim, 1);
-
-        assert_eq!(offset0, 4);
-        assert_eq!(offset1, 2);
-        assert_eq!(ps.next_indices(0), vec![4, 5]);
-        assert_eq!(ps.next_indices(1), vec![2, 3]);
         assert_eq!(ps.missing_indices_with_lookahead(1, &[0, 1]), vec![2, 3]);
     }
 }

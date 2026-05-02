@@ -153,19 +153,17 @@ fn range_sum(min: &[f32], max: &[f32]) -> f64 {
 #[cfg(test)]
 mod tests {
     use approx::assert_abs_diff_eq;
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
-    fn point_inside_has_zero_cut_prob() {
+    #[rstest]
+    #[case::inside([0.5, 0.5], 0.0)]
+    #[case::outside([5.0, 0.5], 4.0 / 6.0)]
+    fn probability_of_cut_matches_expected(#[case] point: [f32; 2], #[case] expected: f64) {
         let bbox = BoundingBox::from_two_points(&[0.0, 0.0], &[1.0, 1.0]);
-        assert_abs_diff_eq!(bbox.probability_of_cut(&[0.5, 0.5]), 0.0, epsilon = 1e-12);
-    }
-
-    #[test]
-    fn point_outside_has_positive_cut_prob() {
-        let bbox = BoundingBox::from_two_points(&[0.0, 0.0], &[1.0, 1.0]);
-        assert!(bbox.probability_of_cut(&[5.0, 0.5]) > 0.0);
+        let prob = bbox.probability_of_cut(&point);
+        assert_abs_diff_eq!(prob, expected, epsilon = 1e-12);
     }
 
     #[test]
@@ -185,30 +183,47 @@ mod tests {
     }
 
     #[test]
-    fn excess_outside_box_helpers_work() {
+    fn excess_outside_box_no_missing() {
         let min = [0.0f32, 0.0, -1.0];
         let max = [1.0f32, 2.0, 1.0];
         let point = [-2.0f32, 1.5, 3.0];
-
-        let excess = excess_outside_box(&point, &min, &max);
-        assert_abs_diff_eq!(excess, 4.0, epsilon = 1e-6);
-
-        let missing = [true, false, false];
-        let excess_missing = excess_outside_box_with_missing(&point, &min, &max, &missing);
-        assert_abs_diff_eq!(excess_missing, 2.0, epsilon = 1e-6);
+        // dim0: 0-(-2)=2, dim1: inside, dim2: 3-1=2 => total 4
+        assert_abs_diff_eq!(
+            excess_outside_box(&point, &min, &max),
+            4.0f32,
+            epsilon = 1e-6f32
+        );
     }
 
-    #[test]
-    fn probability_with_missing_ignores_masked_dims() {
+    #[rstest]
+    #[case::no_mask([-2.0, 1.5, 3.0], [false, false, false], 4.0)]
+    #[case::mask_first([-2.0, 1.5, 3.0], [true, false, false], 2.0)]
+    #[case::all_masked([-2.0, 1.5, 3.0], [true, true, true], 0.0)]
+    #[case::all_inside([0.5, 1.5, 0.0], [false, false, false], 0.0)]
+    fn excess_outside_box_with_missing_work(
+        #[case] point: [f32; 3],
+        #[case] missing: [bool; 3],
+        #[case] expected: f32,
+    ) {
+        let min = [0.0f32, 0.0, -1.0];
+        let max = [1.0f32, 2.0, 1.0];
+
+        let excess = excess_outside_box_with_missing(&point, &min, &max, &missing);
+        assert_abs_diff_eq!(excess, expected, epsilon = 1e-6f32);
+    }
+
+    #[rstest]
+    #[case::masked_outside_dim([5.0, 0.5], [true, false], 0.0)]
+    #[case::active_outside_dim([0.5, 5.0], [true, false], 4.0 / 5.0)]
+    #[case::boundary_is_inside([1.0, 1.0], [false, false], 0.0)]
+    fn probability_with_missing_ignores_masked_dims(
+        #[case] point: [f32; 2],
+        #[case] missing: [bool; 2],
+        #[case] expected: f64,
+    ) {
         let bbox = BoundingBox::from_two_points(&[0.0, 0.0], &[1.0, 1.0]);
-
-        // Outside only on dim 0, but that dim is missing, so probability is 0.
-        let p0 = bbox.probability_of_cut_with_missing(&[5.0, 0.5], &[true, false]);
-        assert_abs_diff_eq!(p0, 0.0, epsilon = 1e-12);
-
-        // Outside on active dim 1, so probability becomes positive.
-        let p1 = bbox.probability_of_cut_with_missing(&[0.5, 5.0], &[true, false]);
-        assert!(p1 > 0.0);
+        let prob = bbox.probability_of_cut_with_missing(&point, &missing);
+        assert_abs_diff_eq!(prob, expected, epsilon = 1e-12);
     }
 
     #[test]

@@ -758,8 +758,12 @@ mod tests {
         assert!(s >= 0.0);
     }
 
-    #[test]
-    fn near_neighbors_sorted_and_bounded() {
+    #[rstest]
+    #[case::top1(1)]
+    #[case::top5(5)]
+    #[case::top7(7)]
+    #[case::top15(15)]
+    fn near_neighbors_sorted_and_bounded(#[case] top_k: usize) {
         let mut f = make_forest();
         for i in 0..300 {
             let x = (i as f32 * 0.07).sin();
@@ -767,7 +771,6 @@ mod tests {
             f.update(&[x, y]).unwrap();
         }
 
-        let top_k = 7;
         let neighbors = f.near_neighbors(&[0.1, -0.2], top_k, 0).unwrap();
         assert!(neighbors.len() <= top_k);
 
@@ -776,15 +779,16 @@ mod tests {
         }
     }
 
-    #[test]
-    fn median_in_place_handles_odd_and_even_lengths() {
-        let mut odd = vec![7.0f32, 1.0, 5.0];
-        let mut even = vec![8.0f32, 2.0, 6.0, 4.0];
-
-        let odd_median = median_in_place(&mut odd);
-        let even_median = median_in_place(&mut even);
-
-        assert_abs_diff_eq!(odd_median, 5.0, epsilon = f32::EPSILON);
-        assert_abs_diff_eq!(even_median, 5.0, epsilon = f32::EPSILON);
+    #[rstest]
+    #[case::odd_3(vec![7.0f32, 1.0, 5.0], 5.0f32)]
+    #[case::even_4(vec![8.0f32, 2.0, 6.0, 4.0], 5.0f32)]
+    #[case::single(vec![3.0f32], 3.0f32)]
+    #[case::two(vec![2.0f32, 8.0], 5.0f32)]
+    fn median_in_place_handles_odd_and_even_lengths(
+        #[case] mut data: Vec<f32>,
+        #[case] expected: f32,
+    ) {
+        let m = median_in_place(&mut data);
+        assert_abs_diff_eq!(m, expected, epsilon = f32::EPSILON);
     }
 }

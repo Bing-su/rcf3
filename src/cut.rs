@@ -92,6 +92,7 @@ pub fn random_cut(bbox: &BoundingBox, point: &[f32], factor: f64) -> Option<(Cut
 #[cfg(test)]
 mod tests {
     use approx::assert_abs_diff_eq;
+    use rstest::rstest;
 
     use super::*;
 
@@ -99,15 +100,18 @@ mod tests {
         BoundingBox::from_two_points(&[0.0, 0.0], &[1.0, 1.0])
     }
 
-    #[test]
-    fn cut_outside_point_is_separating() {
+    /// factor=0.0: cut lands at lo of extended range, still inside box → no separation.
+    /// factor>0: cut rises above box max → separates the outside point.
+    #[rstest]
+    #[case::factor_zero_no_sep(0.0, false)]
+    #[case::factor_mid_separates(0.5, true)]
+    #[case::factor_high_separates(0.8, true)]
+    fn cut_outside_point_separation_by_factor(#[case] factor: f64, #[case] expected_sep: bool) {
         let bbox = simple_bbox();
         let point = &[5.0f32, 0.5];
-        // point is far outside; all random factors should give a separating cut
-        let (cut, sep) = random_cut(&bbox, point, 0.5).unwrap();
-        // dim 0 has the excess, so cut should be on dim 0
+        let (cut, sep) = random_cut(&bbox, point, factor).unwrap();
         assert_eq!(cut.dim, 0);
-        assert!(sep);
+        assert_eq!(sep, expected_sep);
     }
 
     #[test]
@@ -116,43 +120,44 @@ mod tests {
         assert!(random_cut(&bbox, &[1.0, 2.0], 0.5).is_none());
     }
 
-    #[test]
-    fn select_cut_dim_picks_correct_bucket() {
-        let ranges = [0.0f64, 2.0, 3.0, 1.0];
-        assert_eq!(select_cut_dim(&ranges, 0.0), 1); // pos=0 falls in bucket 1
-        assert_eq!(select_cut_dim(&ranges, 1.5), 1); // still bucket 1
-        assert_eq!(select_cut_dim(&ranges, 2.0), 2); // boundary: enters bucket 2
-        assert_eq!(select_cut_dim(&ranges, 4.9), 2); // still bucket 2 (ranges[2]=3 covers [2,5))
+    #[rstest]
+    #[case::first_non_zero([0.0, 2.0, 3.0, 1.0], 0.0, 1)]
+    #[case::middle_bucket([0.0, 2.0, 3.0, 1.0], 1.5, 1)]
+    #[case::boundary_next_bucket([0.0, 2.0, 3.0, 1.0], 2.0, 2)]
+    #[case::late_in_bucket([0.0, 2.0, 3.0, 1.0], 4.9, 2)]
+    #[case::skip_zero_ranges([0.0, 0.0, 5.0, 0.0], 0.0, 2)]
+    fn select_cut_dim_handles_bucket_boundaries(
+        #[case] ranges: [f64; 4],
+        #[case] pos: f64,
+        #[case] expected_dim: usize,
+    ) {
+        assert_eq!(select_cut_dim(&ranges, pos), expected_dim);
     }
 
-    #[test]
-    fn select_cut_dim_skips_zero_ranges() {
-        // All-zero except last: must return last non-zero fallback.
-        let ranges = [0.0f64, 0.0, 5.0];
-        assert_eq!(select_cut_dim(&ranges, 0.0), 2);
+    #[rstest]
+    #[case::below_lower(-1.0, 0.0)]
+    #[case::at_upper(1.0, 0.999_999_9)]
+    #[case::inside_range(0.5, 0.5)]
+    fn clamp_cut_val_stays_in_range(#[case] raw: f32, #[case] expected: f32) {
+        assert_abs_diff_eq!(clamp_cut_val(raw, 0.0, 1.0), expected, epsilon = f32::EPSILON);
     }
 
-    #[test]
-    fn clamp_cut_val_stays_in_range() {
-        assert_abs_diff_eq!(clamp_cut_val(-1.0, 0.0, 1.0), 0.0, epsilon = f32::EPSILON);
-        assert!(clamp_cut_val(1.0, 0.0, 1.0) < 1.0);
-        assert_abs_diff_eq!(clamp_cut_val(0.5, 0.0, 1.0), 0.5, epsilon = f32::EPSILON);
-    }
-
-    #[test]
-    fn cut_value_inside_extended_range() {
+    #[rstest]
+    #[case::f0(0.0)]
+    #[case::f25(0.25)]
+    #[case::f50(0.5)]
+    #[case::f75(0.75)]
+    #[case::f99(0.99)]
+    fn cut_value_inside_extended_range(#[case] factor: f64) {
         let bbox = simple_bbox();
         let point = &[0.5f32, 0.5];
-        // point is inside box; cut must be inside the box range
-        for factor in [0.0, 0.25, 0.5, 0.75, 0.99] {
-            let (cut, _) = random_cut(&bbox, point, factor).unwrap();
-            let lo = bbox.min[cut.dim].min(point[cut.dim]);
-            let hi = bbox.max[cut.dim].max(point[cut.dim]);
-            assert!(
-                cut.val >= lo && cut.val < hi,
-                "cut.val={} not in [{lo},{hi})",
-                cut.val
-            );
-        }
+        let (cut, _) = random_cut(&bbox, point, factor).unwrap();
+        let lo = bbox.min[cut.dim].min(point[cut.dim]);
+        let hi = bbox.max[cut.dim].max(point[cut.dim]);
+        assert!(
+            cut.val >= lo && cut.val < hi,
+            "cut.val={} not in [{lo},{hi})",
+            cut.val
+        );
     }
 }

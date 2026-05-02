@@ -856,18 +856,35 @@ mod tests {
         );
     }
 
-    #[test]
-    fn split_children_respects_cut_direction() {
-        assert_eq!(split_children(0.2, 0.3, 10, 20), (10, 20));
-        assert_eq!(split_children(0.4, 0.3, 10, 20), (20, 10));
-        assert_eq!(split_child_only(0.2, 0.3, 10, 20), 10);
-        assert_eq!(split_child_only(0.4, 0.3, 10, 20), 20);
+    #[rstest]
+    #[case::val_below_cut(0.2f32, 0.3f32, 10usize, 20usize, 10usize, 20usize)]
+    #[case::val_above_cut(0.4f32, 0.3f32, 10usize, 20usize, 20usize, 10usize)]
+    #[case::val_equal_cut(0.3f32, 0.3f32, 10usize, 20usize, 10usize, 20usize)]
+    fn split_children_respects_cut_direction(
+        #[case] val: f32,
+        #[case] cut: f32,
+        #[case] a: usize,
+        #[case] b: usize,
+        #[case] expected_primary: usize,
+        #[case] expected_secondary: usize,
+    ) {
+        let (primary, secondary) = split_children(val, cut, a, b);
+        assert_eq!(primary, expected_primary);
+        assert_eq!(secondary, expected_secondary);
+        assert_eq!(split_child_only(val, cut, a, b), expected_primary);
+    }
+
+    #[rstest]
+    #[case::mass_10(10, 0.1)]
+    #[case::mass_40(40, 0.4)]
+    #[case::mass_100(100, 1.0)]
+    fn nn_threshold_scales_with_tree_mass(#[case] mass: usize, #[case] expected: f64) {
+        assert_abs_diff_eq!(nn_threshold(mass), expected, epsilon = 1e-12);
     }
 
     #[test]
     fn near_neighbor_threshold_helpers_behave_as_expected() {
         let th = nn_threshold(40);
-        assert_abs_diff_eq!(th, 0.4, epsilon = 1e-12);
 
         assert!(should_descend_primary(0.41, 3, th));
         assert!(should_descend_primary(0.0, 0, th));

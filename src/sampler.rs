@@ -208,9 +208,11 @@ mod tests {
     use rstest::*;
 
     #[rstest]
-    #[case(1)]
-    #[case(4)]
-    #[case(16)]
+    #[case::cap_1(1)]
+    #[case::cap_4(4)]
+    #[case::cap_8(8)]
+    #[case::cap_16(16)]
+    #[case::cap_32(32)]
     fn sampler_fills_to_capacity(#[case] capacity: usize) {
         let mut s = Sampler::new(capacity);
         for i in 0..capacity as u64 {
@@ -223,22 +225,24 @@ mod tests {
         assert_eq!(s.points().len(), capacity);
     }
 
-    #[test]
-    fn sampler_evicts_max_weight() {
-        let mut s = Sampler::new(2);
-        // Fill with high-weight points.
-        let w_high = 100.0f64;
-        s.accept(true, w_high, 0);
-        s.add_point(0);
-        s.accept(true, w_high + 1.0, 1);
-        s.add_point(1);
+    #[rstest]
+    #[case::cap_2(2)]
+    #[case::cap_4(4)]
+    #[case::cap_8(8)]
+    fn sampler_evicts_max_weight(#[case] capacity: usize) {
+        let mut s = Sampler::new(capacity);
+        // Fill with ascending high weights so the max is deterministic.
+        for i in 0..capacity {
+            s.accept(true, 100.0 + i as f64, i);
+            s.add_point(i);
+        }
+        assert!(s.is_full());
 
-        // A new point with very low weight should evict the max.
-        let w_low = -100.0f64;
-        let result = s.accept(false, w_low, 2);
+        // A new point with very low weight should evict the current max.
+        let result = s.accept(false, -100.0f64, capacity);
         assert!(result.accepted);
         assert!(result.evicted.is_some());
-        s.add_point(2);
+        s.add_point(capacity);
     }
 
     #[test]
