@@ -12,7 +12,10 @@ dependencies = []
 dynamic = ["description", "keywords", "license", "urls", "version"]
 
 [project.optional-dependencies]
-tests = ["hypothesis[pytest]", "pytest-pretty"]
+test = ["hypothesis[pytest]", "pytest-pretty"]
+
+[dependency-groups]
+dev = ["nox"]
 
 [build-system]
 requires = ["maturin>=1.13,<2.0"]

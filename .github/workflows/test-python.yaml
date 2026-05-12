@@ -1,0 +1,53 @@
+name: Test - Python
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**/*.py"
+      - "src/python.rs"
+      - ".github/workflows/test-python.yaml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "**/*.py"
+      - "src/python.rs"
+      - ".github/workflows/test-python.yaml"
+  schedule:
+    - cron: "0 0 * * 0"
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  test:
+    name: pytest (${{ matrix.os }}, ${{ matrix.container || 'host' }}})
+    runs-on: ${{ matrix.os }}
+    container: ${{ case(contains(matrix.os, 'ubuntu'), matrix.container,  null) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            container: quay.io/pypa/manylinux_2_34
+          - os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_34
+          - os: ubuntu-latest
+            container: quay.io/pypa/musllinux_1_2_x86_64
+          - os: ubuntu-24.04-arm
+            container: quay.io/pypa/musllinux_1_2_aarch64
+          - os: macos-latest
+          - os: windows-latest
+          - os: windows-11-arm
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: mozilla-actions/sccache-action@v0.0.10
+      - name: Run tests
+        run: uvx nox -s test
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"

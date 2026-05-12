@@ -1,0 +1,44 @@
+name: Test - Rust
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**/*.rs"
+      - ".github/workflows/test-rust.yaml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "**/*.rs"
+      - ".github/workflows/test-rust.yaml"
+  schedule:
+    - cron: "0 0 * * 0"
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  test:
+    name: cargo test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+          - ubuntu-24.04-riscv
+          - macos-latest
+          - windows-latest
+          - windows-11-arm
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: mozilla-actions/sccache-action@v0.0.10
+      - name: Run tests
+        run: cargo test --all --verbose
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
