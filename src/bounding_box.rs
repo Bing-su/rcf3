@@ -2,7 +2,6 @@ use itertools::izip;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[inline]
 fn excess_component(p: f32, lo: f32, hi: f32) -> f32 {
     if p < lo {
         lo - p
@@ -13,14 +12,12 @@ fn excess_component(p: f32, lo: f32, hi: f32) -> f32 {
     }
 }
 
-#[inline]
 fn excess_outside_box(point: &[f32], min: &[f32], max: &[f32]) -> f32 {
     izip!(point, min, max)
         .map(|(&p, &lo, &hi)| excess_component(p, lo, hi))
         .sum()
 }
 
-#[inline]
 fn excess_outside_box_with_missing(
     point: &[f32],
     min: &[f32],
@@ -33,7 +30,6 @@ fn excess_outside_box_with_missing(
         .sum()
 }
 
-#[inline]
 fn active_range_sum_with_missing(min: &[f32], max: &[f32], missing: &[bool]) -> f64 {
     izip!(min, max, missing)
         .filter(|(_, _, is_missing)| !*is_missing)
@@ -41,12 +37,10 @@ fn active_range_sum_with_missing(min: &[f32], max: &[f32], missing: &[bool]) -> 
         .sum()
 }
 
-#[inline]
 fn componentwise_min_max(a: &[f32], b: &[f32]) -> (Vec<f32>, Vec<f32>) {
     izip!(a, b).map(|(&x, &y)| (x.min(y), x.max(y))).unzip()
 }
 
-#[inline]
 fn merge_bounds_in_place(min: &mut [f32], max: &mut [f32], other_min: &[f32], other_max: &[f32]) {
     debug_assert_eq!(min.len(), max.len());
     debug_assert_eq!(min.len(), other_min.len());
@@ -134,7 +128,6 @@ impl BoundingBox {
         excess as f64 / (active_range + excess as f64)
     }
 
-    #[inline]
     pub fn range_sum(&self) -> f64 {
         self.range_sum
     }
@@ -145,7 +138,6 @@ impl BoundingBox {
     }
 }
 
-#[inline]
 fn range_sum(min: &[f32], max: &[f32]) -> f64 {
     izip!(min, max).map(|(&lo, &hi)| (hi - lo) as f64).sum()
 }

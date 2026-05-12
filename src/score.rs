@@ -110,22 +110,18 @@ impl ScoreMode {
         }
     }
 
-    #[inline]
     pub fn score_seen(&self, depth: usize, mass: usize) -> f64 {
         (self.score_seen)(depth, mass)
     }
 
-    #[inline]
     pub fn score_unseen(&self, depth: usize, mass: usize) -> f64 {
         (self.score_unseen)(depth, mass)
     }
 
-    #[inline]
     pub fn damp(&self, mass: usize, tree_mass: usize) -> f64 {
         (self.damp)(mass, tree_mass)
     }
 
-    #[inline]
     pub fn normalize(&self, raw: f64, tree_mass: usize) -> f64 {
         (self.normalizer)(raw, tree_mass)
     }
@@ -150,13 +146,11 @@ pub struct Attribution {
 
 impl Attribution {
     /// Sum of both components: `below + above`.
-    #[inline]
     pub fn total(self) -> f64 {
         self.below + self.above
     }
 
     /// Scale both components by `factor`, returning a new `Attribution`.
-    #[inline]
     pub fn scale(self, factor: f64) -> Self {
         Attribution {
             below: self.below * factor,
