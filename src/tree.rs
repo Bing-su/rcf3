@@ -80,6 +80,11 @@ fn consider_impute_candidate(
 }
 
 impl RcfTree {
+    /// Treat a tree with no root or zero total mass as empty for traversal entry points.
+    fn is_effectively_empty(&self) -> bool {
+        self.root == NULL || self.tree_mass == 0
+    }
+
     pub fn new(dims: usize, capacity: usize, seed: u64) -> Self {
         RcfTree {
             root: NULL,
@@ -391,7 +396,7 @@ impl RcfTree {
     ///
     /// Returns `(raw_score, tree_mass)` so the caller can apply the normalizer.
     pub fn raw_score(&self, query: &[f32], point_store: &PointStore, mode: &ScoreMode) -> f64 {
-        if self.root == NULL || self.tree_mass == 0 {
+        if self.is_effectively_empty() {
             return 0.0;
         }
         let raw = self.score_recursive(self.root, query, point_store, 0, mode);
@@ -445,7 +450,7 @@ impl RcfTree {
     /// Returns a `Vec<Attribution>` of length `dims`.
     pub fn attribution(&self, query: &[f32], mode: &ScoreMode) -> Vec<Attribution> {
         let mut attr = vec![Attribution::default(); self.dims];
-        if self.root == NULL || self.tree_mass == 0 {
+        if self.is_effectively_empty() {
             return attr;
         }
         let norm = mode.normalize(1.0, self.tree_mass);
@@ -517,7 +522,7 @@ impl RcfTree {
 
     /// Density estimate at `query` (uses the displacement score function).
     pub fn density(&self, query: &[f32], point_store: &PointStore) -> f64 {
-        if self.root == NULL || self.tree_mass == 0 {
+        if self.is_effectively_empty() {
             return 0.0;
         }
         self.density_recursive(self.root, query, point_store)
@@ -571,7 +576,7 @@ impl RcfTree {
         mode: &ScoreMode,
         percentile: usize,
     ) -> Vec<NeighborCandidate> {
-        if self.root == NULL || self.tree_mass == 0 {
+        if self.is_effectively_empty() {
             return Vec::new();
         }
         let mut results = Vec::new();
@@ -664,7 +669,7 @@ impl RcfTree {
         centrality: f64,
         seed: u64,
     ) -> Option<NeighborCandidate> {
-        if self.root == NULL || self.tree_mass == 0 {
+        if self.is_effectively_empty() {
             return None;
         }
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
