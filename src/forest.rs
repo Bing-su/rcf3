@@ -312,30 +312,15 @@ impl Forest {
             .par_iter()
             .map(|tree| tree.attribution(&q, &mode))
             .reduce(
-                || {
-                    vec![
-                        Attribution {
-                            below: 0.0,
-                            above: 0.0,
-                        };
-                        dim
-                    ]
-                },
+                || vec![Attribution::default(); dim],
                 |mut acc, tree_attr| {
                     for i in 0..dim {
-                        acc[i].below += tree_attr[i].below;
-                        acc[i].above += tree_attr[i].above;
+                        acc[i] += tree_attr[i];
                     }
                     acc
                 },
             );
-        Ok(total_attr
-            .into_iter()
-            .map(|a| Attribution {
-                below: a.below / n,
-                above: a.above / n,
-            })
-            .collect())
+        Ok(total_attr.into_iter().map(|a| a.scale(1.0 / n)).collect())
     }
 
     // -----------------------------------------------------------------------
@@ -711,6 +696,7 @@ mod tests {
     use approx::assert_abs_diff_eq;
 
     use super::*;
+    use crate::score::attribution_total;
     use rstest::*;
 
     fn make_forest() -> Forest {
@@ -772,7 +758,7 @@ mod tests {
         let query = &[5.0f32, 0.5];
         let score = f.score(query).unwrap();
         let attr = f.attribution(query).unwrap();
-        let attr_total: f64 = attr.iter().map(|a| a.below + a.above).sum();
+        let attr_total: f64 = attribution_total(&attr);
         // Attribution total should be ≤ score (leaf contributions are unattributed)
         // and at least 5% of the score (some signal must come from internal nodes).
         let ratio = attr_total / score;
@@ -923,7 +909,7 @@ mod tests {
 
         // Normal point's attribution must be within plausible bounds.
         let normal_attr = f.attribution(&[0.5f32, 0.5]).unwrap();
-        let normal_attr_total: f64 = normal_attr.iter().map(|a| a.below + a.above).sum();
+        let normal_attr_total: f64 = attribution_total(&normal_attr);
         let normal_ratio = if normal_score > 0.0 {
             normal_attr_total / normal_score
         } else {

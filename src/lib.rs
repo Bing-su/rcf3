@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 // Public modules.
 pub mod bounding_box;
 pub mod config;

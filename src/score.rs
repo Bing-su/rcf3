@@ -148,9 +148,52 @@ pub struct Attribution {
     pub above: f64,
 }
 
+impl Attribution {
+    /// Sum of both components: `below + above`.
+    #[inline]
+    pub fn total(self) -> f64 {
+        self.below + self.above
+    }
+
+    /// Scale both components by `factor`, returning a new `Attribution`.
+    #[inline]
+    pub fn scale(self, factor: f64) -> Self {
+        Attribution {
+            below: self.below * factor,
+            above: self.above * factor,
+        }
+    }
+}
+
+impl Default for Attribution {
+    fn default() -> Self {
+        Attribution {
+            below: 0.0,
+            above: 0.0,
+        }
+    }
+}
+
+impl std::ops::Add for Attribution {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self {
+        Attribution {
+            below: self.below + rhs.below,
+            above: self.above + rhs.above,
+        }
+    }
+}
+
+impl std::ops::AddAssign for Attribution {
+    fn add_assign(&mut self, rhs: Self) {
+        self.below += rhs.below;
+        self.above += rhs.above;
+    }
+}
+
 /// Sum of all attribution components equals `score` (up to floating-point error).
 pub fn attribution_total(attr: &[Attribution]) -> f64 {
-    attr.iter().map(|a| a.below + a.above).sum()
+    attr.iter().map(|a| a.total()).sum()
 }
 
 #[cfg(test)]

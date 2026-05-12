@@ -444,13 +444,7 @@ impl RcfTree {
     ///
     /// Returns a `Vec<Attribution>` of length `dims`.
     pub fn attribution(&self, query: &[f32], mode: &ScoreMode) -> Vec<Attribution> {
-        let mut attr = vec![
-            Attribution {
-                below: 0.0,
-                above: 0.0,
-            };
-            self.dims
-        ];
+        let mut attr = vec![Attribution::default(); self.dims];
         if self.root == NULL || self.tree_mass == 0 {
             return attr;
         }
