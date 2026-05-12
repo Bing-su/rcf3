@@ -1,7 +1,6 @@
 use itertools::Itertools;
 use ordered_float::NotNan;
 use rand::prelude::*;
-use rand::rngs::StdRng;
 use rand::rngs::Xoshiro256PlusPlus;
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
@@ -171,7 +170,7 @@ impl Forest {
 
     /// Create a forest from a [`RcfConfig`] with a random seed.
     pub fn from_config(config: &RcfConfig) -> Result<Self> {
-        let mut seed_rng: StdRng = rand::make_rng();
+        let mut seed_rng: Xoshiro256PlusPlus = rand::make_rng();
         Self::new_internal(config.clone(), seed_rng.next_u64())
     }
 

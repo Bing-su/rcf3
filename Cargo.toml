@@ -22,18 +22,23 @@ harness = false
 name = "forest_bench"
 
 [dependencies]
-itertools = "0.14"
-ndarray = "0.17"
-ordered-float = "5.3"
+itertools = { version = "0.14", default-features = false, features = [
+  "use_alloc"
+] }
+ndarray = { version = "0.17", default-features = false }
+ordered-float = { version = "5.3", default-features = false }
 pyo3 = { version = "0.28", features = [
   "extension-module",
   "generate-import-lib"
 ], optional = true }
-rand = { version = "0.10", features = ["chacha"] }
-rayon = "1.12"
-serde = { version = "1", features = ["derive"], optional = true }
-serde_json = { version = "1", optional = true }
-thiserror = "2.0"
+rand = { version = "0.10", default-features = false, features = ["sys_rng"] }
+rayon = "1"
+serde = { version = "1", default-features = false, features = [
+  "alloc",
+  "derive"
+], optional = true }
+serde_json = { version = "1", default-features = false, features = ["alloc"], optional = true }
+thiserror = { version = "2", default-features = false }
 
 [dev-dependencies]
 approx = "0.5"
