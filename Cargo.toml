@@ -3,6 +3,7 @@ name = "rcf3"
 version = "0.1.0"
 edition = "2024"
 description = "A Rust implementation of the Random Cut Forest algorithm for anomaly detection."
+readme = "README.md"
 repository = "https://github.com/Bing-su/rcf3"
 license = "Apache-2.0"
 keywords = [
@@ -22,13 +23,13 @@ name = "forest_bench"
 
 [dependencies]
 itertools = "0.14"
-ndarray = { version = "0.17", features = ["serde"] }
-ordered-float = { version = "5.3", features = ["serde"] }
+ndarray = "0.17"
+ordered-float = "5.3"
 pyo3 = { version = "0.28", features = [
   "extension-module",
   "generate-import-lib"
 ], optional = true }
-rand = { version = "0.10", features = ["chacha", "serde"] }
+rand = { version = "0.10", features = ["chacha"] }
 rayon = "1.12"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
@@ -46,7 +47,13 @@ pprof = { version = "0.15", features = ["criterion", "flamegraph"] }
 [features]
 default = ["serde"]
 python = ["dep:pyo3", "serde"]
-serde = ["dep:serde", "dep:serde_json"]
+serde = [
+  "dep:serde",
+  "dep:serde_json",
+  "ndarray/serde",
+  "ordered-float/serde",
+  "rand/serde"
+]
 
 [profile.release]
 strip = true
