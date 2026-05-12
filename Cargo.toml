@@ -36,10 +36,12 @@ thiserror = "2.0"
 
 [dev-dependencies]
 approx = "0.5"
-criterion = { version = "=0.5.1", features = ["html_reports"] }
-pprof = { version = "0.15", features = ["criterion", "flamegraph"] }
 rstest = "0.26"
 tempfile = "3"
+
+[target.'cfg(not(windows))'.dev-dependencies]
+criterion = { version = "=0.5.1", features = ["html_reports"] }
+pprof = { version = "0.15", features = ["criterion", "flamegraph"] }
 
 [features]
 default = ["serde"]
