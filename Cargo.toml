@@ -2,6 +2,15 @@
 name = "rcf3"
 version = "0.1.0"
 edition = "2024"
+description = "A Rust implementation of the Random Cut Forest algorithm for anomaly detection."
+repository = "https://github.com/Bing-su/rcf3"
+license = "Apache-2.0"
+keywords = [
+  "anomaly",
+  "anomaly detection",
+  "machine learning",
+  "random cut forest"
+]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
