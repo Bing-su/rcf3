@@ -139,7 +139,7 @@ impl Forest {
             return Err(RcfError::InvalidArgument("num_trees must be > 0".into()));
         }
 
-        let mut rng = StdRng::seed_from_u64(seed);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
         let dim = config.dim();
         let capacity = config.capacity;
         let num_trees = config.num_trees;
@@ -171,7 +171,7 @@ impl Forest {
 
     /// Create a forest from a [`RcfConfig`] with a random seed.
     pub fn from_config(config: &RcfConfig) -> Result<Self> {
-        let mut seed_rng = rand::make_rng::<StdRng>();
+        let mut seed_rng: StdRng = rand::make_rng();
         Self::new_internal(config.clone(), seed_rng.next_u64())
     }
 
@@ -606,7 +606,7 @@ impl Forest {
         centrality: f64,
         seed: u64,
     ) -> Vec<usize> {
-        let mut rng = StdRng::seed_from_u64(seed);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
         self.trees
             .iter()
             .filter_map(|tree| {
