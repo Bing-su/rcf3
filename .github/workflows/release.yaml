@@ -9,7 +9,7 @@ on:
 jobs:
   sdist:
     name: Build sdist
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     defaults:
       run:
         shell: nu {0}
@@ -32,7 +32,7 @@ jobs:
           if-no-files-found: error
 
   wheel:
-    name: Build wheel
+    name: Build wheel (${{ matrix.os }}, ${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -83,6 +83,8 @@ jobs:
       - uses: hustcer/setup-nu@v3
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
       - uses: astral-sh/setup-uv@v8.1.0
 
       - name: Build wheel
