@@ -264,4 +264,9 @@ impl PyForest {
         *self = new;
         Ok(())
     }
+
+    fn __getnewargs__(&self) -> (usize,) {
+        let c = self.inner.config();
+        (c.input_dim,)
+    }
 }

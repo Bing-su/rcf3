@@ -410,7 +410,8 @@ impl Forest {
     /// Predict the next `look_ahead` base observations beyond the current
     /// shingle buffer.
     ///
-    /// Requires `internal_shingling = true` and `shingle_size > 1`.
+    /// Requires `internal_shingling = true`, `shingle_size > 1`,
+    /// and `look_ahead <= shingle_size`.
     /// Returns a vector of length `look_ahead * input_dim`.
     pub fn extrapolate(&self, look_ahead: usize) -> Result<Vec<f32>> {
         if !self.config.internal_shingling {
@@ -425,6 +426,13 @@ impl Forest {
         }
         if look_ahead == 0 {
             return Ok(Vec::new());
+        }
+        let shingle_size = self.config.shingle_size;
+        if look_ahead > shingle_size {
+            return Err(RcfError::InvalidArgument(format!(
+                "extrapolation requires look_ahead <= shingle_size (got {look_ahead}, shingle_size={})",
+                shingle_size
+            )));
         }
 
         let input_dim = self.config.input_dim;
@@ -804,6 +812,70 @@ mod tests {
         assert!(f.is_ready());
         let s = f.score(&[0.0f32]).unwrap();
         assert!(s >= 0.0);
+    }
+
+    #[test]
+    fn extrapolate_returns_expected_length() {
+        let mut f = Forest::builder(1, 4)
+            .num_trees(10)
+            .capacity(64)
+            .output_after(10)
+            .internal_shingling(true)
+            .seed(17)
+            .build()
+            .unwrap();
+
+        for i in 0..200 {
+            let v = (i as f32 * 0.1).sin();
+            f.update(&[v]).unwrap();
+        }
+
+        let look_ahead = 3;
+        let out = f.extrapolate(look_ahead).unwrap();
+        assert_eq!(out.len(), look_ahead * f.config().input_dim);
+        assert!(out.iter().all(|x| x.is_finite()));
+    }
+
+    #[test]
+    fn extrapolate_requires_internal_shingling() {
+        let mut f = Forest::builder(1, 4)
+            .num_trees(10)
+            .capacity(64)
+            .output_after(10)
+            .internal_shingling(false)
+            .seed(19)
+            .build()
+            .unwrap();
+
+        for i in 0..200 {
+            let v = (i as f32 * 0.1).sin();
+            f.update(&[v, v, v, v]).unwrap();
+        }
+
+        let err = f.extrapolate(1).unwrap_err();
+        assert!(
+            matches!(err, RcfError::InvalidArgument(msg) if msg.contains("internal_shingling"))
+        );
+    }
+
+    #[test]
+    fn extrapolate_rejects_look_ahead_beyond_shingle_size() {
+        let mut f = Forest::builder(1, 4)
+            .num_trees(10)
+            .capacity(64)
+            .output_after(10)
+            .internal_shingling(true)
+            .seed(23)
+            .build()
+            .unwrap();
+
+        for i in 0..200 {
+            let v = (i as f32 * 0.1).sin();
+            f.update(&[v]).unwrap();
+        }
+
+        let err = f.extrapolate(5).unwrap_err();
+        assert!(matches!(err, RcfError::InvalidArgument(msg) if msg.contains("look_ahead")));
     }
 
     #[rstest]
