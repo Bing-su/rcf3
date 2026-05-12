@@ -24,7 +24,7 @@ jobs:
   test:
     name: pytest (${{ matrix.os }}, ${{ matrix.container || 'host' }}})
     runs-on: ${{ matrix.os }}
-    container: ${{ case(contains(matrix.os, 'ubuntu'), matrix.container,  null) }}
+    container: ${{ case(contains(matrix.os, 'ubuntu'), matrix.container, null) }}
     strategy:
       fail-fast: false
       matrix:
