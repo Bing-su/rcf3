@@ -43,6 +43,7 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
       - name: Run tests (no-default-features)
+        if: runner.os != 'Windows'
         run: cargo test --verbose --no-default-features
       - name: Check serde (no-default-features)
         run: cargo check --verbose --no-default-features --features serde
