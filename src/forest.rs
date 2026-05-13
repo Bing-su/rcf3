@@ -1,3 +1,8 @@
+#[cfg(all(not(feature = "std"), feature = "serde"))]
+use alloc::string::{String, ToString};
+#[cfg(not(feature = "std"))]
+use alloc::{format, vec, vec::Vec};
+
 use itertools::Itertools;
 use ordered_float::NotNan;
 use rand::prelude::*;
@@ -484,7 +489,7 @@ impl Forest {
     }
 
     /// Serialise the entire forest state to a JSON file.
-    #[cfg(feature = "serde")]
+    #[cfg(all(feature = "serde", feature = "std"))]
     pub fn save_json(&self, path: impl Into<std::path::PathBuf>) -> Result<()> {
         let json = self.to_json()?;
         std::fs::write(path.into(), json).map_err(|e| RcfError::Io(e.to_string()))
@@ -492,7 +497,7 @@ impl Forest {
 
     /// Deserialise a forest from a JSON file previously written by
     /// [`save_json`].
-    #[cfg(feature = "serde")]
+    #[cfg(all(feature = "serde", feature = "std"))]
     pub fn load_json(path: impl Into<std::path::PathBuf>) -> Result<Self> {
         let data = std::fs::read_to_string(path.into()).map_err(|e| RcfError::Io(e.to_string()))?;
         Self::from_json(&data)
@@ -720,10 +725,10 @@ impl ForestBuilder {
 #[cfg(test)]
 mod tests {
     use approx::assert_abs_diff_eq;
+    use rstest::*;
 
     use super::*;
     use crate::score::attribution_total;
-    use rstest::*;
 
     fn make_forest() -> Forest {
         Forest::builder(2, 1)
@@ -795,7 +800,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "serde")]
+    #[cfg(all(feature = "serde", feature = "std"))]
     fn save_load_roundtrip() {
         let mut f = make_forest();
         for i in 0..200 {

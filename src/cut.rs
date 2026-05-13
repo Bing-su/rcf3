@@ -1,3 +1,6 @@
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
 use itertools::izip;
 
 use crate::bounding_box::BoundingBox;

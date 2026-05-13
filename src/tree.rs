@@ -1,3 +1,6 @@
+#[cfg(not(feature = "std"))]
+use alloc::{vec, vec::Vec};
+
 use rand::prelude::*;
 use rand::rngs::Xoshiro256PlusPlus;
 #[cfg(feature = "serde")]
@@ -331,9 +334,7 @@ impl RcfTree {
         };
 
         if leaf_mass == 0 {
-            return Err(RcfError::InvalidArgument(
-                "leaf mass is already 0".to_string(),
-            ));
+            return Err(RcfError::InvalidArgument("leaf mass is already 0".into()));
         }
 
         self.tree_mass -= 1;
@@ -751,8 +752,8 @@ impl RcfTree {
 
     /// Approximate heap size in bytes.
     pub fn size_bytes(&self) -> usize {
-        self.arena.slot_count() * std::mem::size_of::<Option<Node>>()
-            + std::mem::size_of::<RcfTree>()
+        self.arena.slot_count() * core::mem::size_of::<Option<Node>>()
+            + core::mem::size_of::<RcfTree>()
     }
 }
 
@@ -779,10 +780,10 @@ pub(crate) fn subtree_bbox(
 #[cfg(test)]
 mod tests {
     use approx::assert_abs_diff_eq;
+    use rstest::*;
 
     use super::*;
     use crate::{point_store::PointStore, score::ScoreMode};
-    use rstest::*;
 
     fn make_store_and_tree(points: &[Vec<f32>]) -> (PointStore, RcfTree) {
         let dim = points[0].len();

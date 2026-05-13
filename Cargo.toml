@@ -25,6 +25,7 @@ name = "forest_bench"
 itertools = { version = "0.14", default-features = false, features = [
   "use_alloc"
 ] }
+libm = "0.2"
 ndarray = { version = "0.17", default-features = false }
 ordered-float = { version = "5.3", default-features = false }
 pyo3 = { version = "0.28", features = [
@@ -49,8 +50,8 @@ criterion = { version = "=0.5.1", features = ["html_reports"] }
 pprof = { version = "0.15", features = ["criterion", "flamegraph"] }
 
 [features]
-default = ["serde"]
-python = ["dep:pyo3", "serde"]
+default = ["serde", "std"]
+python = ["dep:pyo3", "serde", "std"]
 serde = [
   "dep:serde",
   "dep:serde_json",
@@ -58,6 +59,7 @@ serde = [
   "ordered-float/serde",
   "rand/serde"
 ]
+std = []
 
 [profile.release]
 strip = true

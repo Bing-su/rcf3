@@ -1,3 +1,6 @@
+#[cfg(not(feature = "std"))]
+use alloc::string::String;
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -16,4 +19,4 @@ pub enum RcfError {
     Io(String),
 }
 
-pub type Result<T> = std::result::Result<T, RcfError>;
+pub type Result<T> = core::result::Result<T, RcfError>;
