@@ -1,6 +1,5 @@
 [project]
 name = "rcf3"
-readme = "README.md"
 requires-python = ">=3.11"
 classifiers = [
   "Programming Language :: Python :: 3",
@@ -9,7 +8,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = []
-dynamic = ["description", "keywords", "license", "urls", "version"]
+dynamic = ["description", "keywords", "license", "readme", "urls", "version"]
 
 [project.optional-dependencies]
 test = ["hypothesis[pytest]", "pytest-pretty"]
@@ -27,6 +26,7 @@ features = [
   "python",
   { feature = "pyo3/abi3-py311", python-version = ">=3.11" }
 ]
+profile = "release"
 python-source = "python"
 strip = true
 
