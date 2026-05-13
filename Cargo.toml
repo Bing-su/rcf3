@@ -25,6 +25,7 @@ name = "forest_bench"
 itertools = { version = "0.14", default-features = false, features = [
   "use_alloc"
 ] }
+libm = "0.2"
 ndarray = { version = "0.17", default-features = false }
 ordered-float = { version = "5.3", default-features = false }
 pyo3 = { version = "0.28", features = [

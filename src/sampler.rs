@@ -192,13 +192,23 @@ impl Sampler {
 // Weight formula
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "std")]
+fn ln_f64(x: f64) -> f64 {
+    x.ln()
+}
+
+#[cfg(not(feature = "std"))]
+fn ln_f64(x: f64) -> f64 {
+    libm::log(x)
+}
+
 /// Compute the exponential-reservoir weight for a new point.
 ///
 /// `u` must be in `(0, 1)`.  Values at or outside this range are clamped to
 /// avoid NaN/infinity.
 pub fn reservoir_weight(u: f64, time_decay: f64, entries_seen: u64) -> f64 {
     let u = u.clamp(f64::EPSILON, 1.0 - f64::EPSILON);
-    f64::ln(-f64::ln(u)) - time_decay * entries_seen as f64
+    ln_f64(-ln_f64(u)) - time_decay * entries_seen as f64
 }
 
 // ---------------------------------------------------------------------------
