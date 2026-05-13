@@ -800,7 +800,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "serde")]
+    #[cfg(all(feature = "serde", feature = "std"))]
     fn save_load_roundtrip() {
         let mut f = make_forest();
         for i in 0..200 {
