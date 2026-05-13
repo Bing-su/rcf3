@@ -2,7 +2,6 @@ use itertools::Itertools;
 use ordered_float::NotNan;
 use rand::prelude::*;
 use rand::rngs::Xoshiro256PlusPlus;
-use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -302,23 +301,24 @@ impl Forest {
     ///
     /// Returns a `Vec<Attribution>` of length `input_dim * shingle_size`.
     pub fn attribution(&self, query: &[f32]) -> Result<Vec<Attribution>> {
+        self.attribution_sequential(query)
+    }
+
+    fn attribution_sequential(&self, query: &[f32]) -> Result<Vec<Attribution>> {
         let q = self.prepare_query(query)?;
         let dim = self.config.dim();
         let mode = ScoreMode::standard();
         let n = self.trees.len() as f64;
         let total_attr = self
             .trees
-            .par_iter()
+            .iter()
             .map(|tree| tree.attribution(&q, &mode))
-            .reduce(
-                || vec![Attribution::default(); dim],
-                |mut acc, tree_attr| {
-                    for i in 0..dim {
-                        acc[i] += tree_attr[i];
-                    }
-                    acc
-                },
-            );
+            .fold(vec![Attribution::default(); dim], |mut acc, tree_attr| {
+                for i in 0..dim {
+                    acc[i] += tree_attr[i];
+                }
+                acc
+            });
         Ok(total_attr.into_iter().map(|a| a.scale(1.0 / n)).collect())
     }
 
@@ -328,10 +328,14 @@ impl Forest {
 
     /// Density estimate at `query`.  Higher → denser neighbourhood.
     pub fn density(&self, query: &[f32]) -> Result<f64> {
+        self.density_sequential(query)
+    }
+
+    fn density_sequential(&self, query: &[f32]) -> Result<f64> {
         let q = self.prepare_query(query)?;
         let raw: f64 = self
             .trees
-            .par_iter()
+            .iter()
             .map(|t| t.density(&q, &self.point_store))
             .sum::<f64>()
             / self.trees.len() as f64;
@@ -535,12 +539,17 @@ impl Forest {
     }
 
     fn forest_score(&self, query: &[f32], mode: &ScoreMode) -> f64 {
+        self.forest_score_sequential(query, mode)
+    }
+
+    /// Average score across trees using sequential traversal.
+    fn forest_score_sequential(&self, query: &[f32], mode: &ScoreMode) -> f64 {
         if self.trees.is_empty() {
             return 0.0;
         }
         let sum: f64 = self
             .trees
-            .par_iter()
+            .iter()
             .map(|t| t.raw_score(query, &self.point_store, mode))
             .sum();
         sum / self.trees.len() as f64
@@ -552,8 +561,18 @@ impl Forest {
         mode: &ScoreMode,
         percentile: usize,
     ) -> Vec<NeighborCandidate> {
+        self.collect_neighbor_candidates_sequential(query, mode, percentile)
+    }
+
+    /// Collect neighbor candidates by traversing trees sequentially.
+    fn collect_neighbor_candidates_sequential(
+        &self,
+        query: &[f32],
+        mode: &ScoreMode,
+        percentile: usize,
+    ) -> Vec<NeighborCandidate> {
         self.trees
-            .par_iter()
+            .iter()
             .flat_map(|tree| tree.near_neighbors(query, &self.point_store, mode, percentile))
             .collect()
     }

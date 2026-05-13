@@ -44,6 +44,17 @@ fn bench_score(c: &mut Criterion) {
             let _ = f.score(&p).unwrap();
         });
     });
+
+    let mut f_large = build_forest(8, 1024, 512);
+    for _ in 0..20_000 {
+        f_large.update(&p).unwrap();
+    }
+
+    c.bench_function("score_ready_t1024", |b| {
+        b.iter(|| {
+            let _ = f_large.score(&p).unwrap();
+        });
+    });
 }
 
 fn bench_near_neighbors(c: &mut Criterion) {
@@ -56,6 +67,17 @@ fn bench_near_neighbors(c: &mut Criterion) {
     c.bench_function("near_neighbors_top10_p50", |b| {
         b.iter(|| {
             let _ = f.near_neighbors(&p, 10, 50).unwrap();
+        });
+    });
+
+    let mut f_large = build_forest(8, 1024, 512);
+    for _ in 0..20_000 {
+        f_large.update(&p).unwrap();
+    }
+
+    c.bench_function("near_neighbors_top10_p50_t1024", |b| {
+        b.iter(|| {
+            let _ = f_large.near_neighbors(&p, 10, 50).unwrap();
         });
     });
 }
