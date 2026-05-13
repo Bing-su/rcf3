@@ -173,6 +173,7 @@ mod readme_examples {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn test_serialization() -> Result<(), Box<dyn std::error::Error>> {
         let mut forest = Forest::builder(2, 1).capacity(256).num_trees(50).build()?;
 
