@@ -41,11 +41,11 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             args: --out dist --interpreter 3.11 3.14t pypy3.11
-            manylinux: auto
+            manylinux: manylinux_2_28
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             args: --out dist --interpreter 3.11 3.14t pypy3.11
-            manylinux: auto
+            manylinux: manylinux_2_28
           - os: ubuntu-24.04-riscv
             target: riscv64gc-unknown-linux-gnu
             args: --out dist --interpreter 3.11 3.14t
@@ -133,3 +133,10 @@ jobs:
       - name: Publish to PyPI
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
         uses: pypa/gh-action-pypi-publish@release/v1
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+      - name: Publish to PyPI dry-run
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: uv publish --dry-run
