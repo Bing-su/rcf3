@@ -49,8 +49,8 @@ criterion = { version = "=0.5.1", features = ["html_reports"] }
 pprof = { version = "0.15", features = ["criterion", "flamegraph"] }
 
 [features]
-default = ["serde"]
-python = ["dep:pyo3", "serde"]
+default = ["serde", "std"]
+python = ["dep:pyo3", "serde", "std"]
 serde = [
   "dep:serde",
   "dep:serde_json",
@@ -58,6 +58,7 @@ serde = [
   "ordered-float/serde",
   "rand/serde"
 ]
+std = ["serde"]  # std is currently only used in combination with serde.
 
 [profile.release]
 strip = true

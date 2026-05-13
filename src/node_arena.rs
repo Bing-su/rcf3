@@ -1,6 +1,10 @@
-use crate::bounding_box::BoundingBox;
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use crate::bounding_box::BoundingBox;
 
 pub const NULL: usize = usize::MAX;
 

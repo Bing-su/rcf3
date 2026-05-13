@@ -168,7 +168,7 @@ impl Default for Attribution {
     }
 }
 
-impl std::ops::Add for Attribution {
+impl core::ops::Add for Attribution {
     type Output = Self;
     fn add(self, rhs: Self) -> Self {
         Attribution {
@@ -178,7 +178,7 @@ impl std::ops::Add for Attribution {
     }
 }
 
-impl std::ops::AddAssign for Attribution {
+impl core::ops::AddAssign for Attribution {
     fn add_assign(&mut self, rhs: Self) {
         self.below += rhs.below;
         self.above += rhs.above;

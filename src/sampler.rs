@@ -1,3 +1,6 @@
+#[cfg(not(feature = "std"))]
+use alloc::{vec, vec::Vec};
+
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -204,8 +207,9 @@ pub fn reservoir_weight(u: f64, time_decay: f64, entries_seen: u64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rstest::*;
+
+    use super::*;
 
     #[rstest]
     #[case::cap_1(1)]

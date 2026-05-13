@@ -1,3 +1,8 @@
+#[cfg(all(not(feature = "std"), test))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
 use itertools::izip;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

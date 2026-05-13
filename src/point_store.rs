@@ -1,8 +1,12 @@
-use crate::error::{RcfError, Result};
+#[cfg(not(feature = "std"))]
+use alloc::{vec, vec::Vec};
+
 use itertools::izip;
 use ndarray::{Array2, ArrayView1, s};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use crate::error::{RcfError, Result};
 
 fn lookahead_offset(dim: usize, input_dim: usize, look_ahead: usize) -> usize {
     dim - input_dim * (1 + look_ahead)

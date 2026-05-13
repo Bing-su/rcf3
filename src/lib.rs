@@ -1,4 +1,8 @@
 #![deny(unsafe_code)]
+#![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(not(feature = "std"))]
+extern crate alloc;
 // Public modules.
 pub mod bounding_box;
 pub mod config;

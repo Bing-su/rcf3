@@ -1,8 +1,9 @@
 #![cfg(feature = "python")]
 
+use std::path::PathBuf;
+
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use std::path::PathBuf;
 
 use crate::error;
 use crate::forest::{Forest, NeighborResult};
