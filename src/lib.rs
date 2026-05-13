@@ -24,6 +24,20 @@ pub use forest::{Forest, ForestBuilder};
 pub use score::{Attribution, ScoreMode};
 
 // ---------------------------------------------------------------------------
+// Windows-specific test panic handler and allocator (for no-std builds testing on Windows).
+// ---------------------------------------------------------------------------
+
+#[cfg(all(target_os = "windows", test, not(feature = "std")))]
+#[panic_handler]
+fn _panic(_info: &core::panic::PanicInfo) -> ! {
+    std::process::abort()
+}
+
+#[cfg(all(target_os = "windows", test, not(feature = "std")))]
+#[global_allocator]
+static _ALLOC: std::alloc::System = std::alloc::System;
+
+// ---------------------------------------------------------------------------
 // Module registration
 // ---------------------------------------------------------------------------
 
