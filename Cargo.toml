@@ -8,9 +8,9 @@ repository = "https://github.com/Bing-su/rcf3"
 license = "Apache-2.0"
 keywords = [
   "anomaly",
-  "anomaly detection",
-  "machine learning",
-  "random cut forest"
+  "anomaly-detection",
+  "machine-learning",
+  "random-cut-forest"
 ]
 
 [lib]
