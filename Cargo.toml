@@ -59,7 +59,7 @@ serde = [
   "ordered-float/serde",
   "rand/serde"
 ]
-std = ["serde"]  # std is currently only used in combination with serde.
+std = []
 
 [profile.release]
 strip = true
