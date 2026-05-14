@@ -7,7 +7,6 @@ use alloc::{format, vec, vec::Vec};
 #[cfg(feature = "std")]
 use std::collections::BTreeMap;
 
-use ordered_float::NotNan;
 use rand::prelude::*;
 use rand::rngs::Xoshiro256PlusPlus;
 #[cfg(feature = "serde")]
@@ -110,11 +109,7 @@ fn median_in_place(vals: &mut [f32]) -> f32 {
     debug_assert!(!vals.is_empty(), "median_in_place requires non-empty input");
     let n = vals.len();
     let mid = n / 2;
-    vals.select_nth_unstable_by(mid, |a, b| {
-        NotNan::new(*a)
-            .unwrap_or(NotNan::new(f32::MAX).unwrap())
-            .cmp(&NotNan::new(*b).unwrap_or(NotNan::new(f32::MAX).unwrap()))
-    });
+    vals.select_nth_unstable_by(mid, |a, b| a.total_cmp(b));
     if n % 2 == 1 {
         vals[mid]
     } else {
