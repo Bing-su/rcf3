@@ -5,7 +5,7 @@ from rcf3 import Forest
 
 
 def test_creating_forest_basic():
-    """Test creating a basic forest."""
+    """Verify basic Forest construction with explicit 2D defaults."""
     forest = Forest(
         input_dim=2,
         shingle_size=1,
@@ -31,7 +31,7 @@ def test_creating_forest_with_time_series():
 
 
 def test_basic_operations():
-    """Test basic operations."""
+    """Test update/is_ready/score/entries_seen usage sequence."""
     forest = Forest(input_dim=2, capacity=256, num_trees=50)
 
     # Update the forest
@@ -50,7 +50,7 @@ def test_basic_operations():
 
 
 def test_scoring_methods():
-    """Test different scoring methods."""
+    """Test anomaly score, displacement score, and density on one query."""
     forest = Forest(input_dim=3, capacity=256, num_trees=50)
 
     # Feed some data to warm up
@@ -135,7 +135,7 @@ def test_missing_value_imputation():
     for i in range(100):
         forest.update([1.0 + i * 0.01, 2.0, 3.0])
 
-    # Test imputation with missing value at index 1
+    # Use centrality=1.0 for deterministic nearest-candidate imputation.
     point = [1.5, float("nan"), 3.0]
     missing = [1]
     imputed = forest.impute(point, missing, centrality=1.0)
@@ -148,7 +148,7 @@ def test_missing_value_imputation():
 
 
 def test_time_series_forecasting():
-    """Test time series forecasting."""
+    """Test forecasting with internal shingling enabled."""
     forest = Forest(
         input_dim=4,
         shingle_size=8,
@@ -172,7 +172,7 @@ def test_time_series_forecasting():
     for point in stream:
         forest.update(point)
 
-    # Predict next 5 observations
+    # Predict next 5 observations; look_ahead must be <= shingle_size.
     if forest.is_ready():
         predictions = forest.extrapolate(5)
         print(f"Predictions length: {len(predictions)}")

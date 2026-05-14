@@ -144,9 +144,9 @@ impl ScoreMode {
 /// Per-dimension anomaly attribution.
 ///
 /// For each dimension `i`:
-/// - `below` = contribution from cuts whose threshold is *above* the query
+/// - `above` = contribution from cuts whose threshold is *above* the query
 ///   value (i.e., the query was isolated because it is too *small* in dim `i`).
-/// - `above` = contribution from cuts whose threshold is *below* the query
+/// - `below` = contribution from cuts whose threshold is *below* the query
 ///   value (isolated because it is too *large* in dim `i`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Attribution {

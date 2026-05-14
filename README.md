@@ -175,7 +175,10 @@ for (i, attr) in attribution.iter().enumerate() {
 }
 ```
 
-Each dimension returns `below` and `above` scores indicating how much that dimension contributes to the overall anomaly.
+Each dimension returns `below` and `above` scores indicating how much that dimension contributes to the overall anomaly:
+
+- `above`: contribution from cuts above the query value (query is unusually small)
+- `below`: contribution from cuts below the query value (query is unusually large)
 
 ### Neighborhood Search
 
@@ -212,7 +215,7 @@ Parameters:
 
 - `point`: Full-dimensional query (missing values will be ignored)
 - `missing`: Indices of dimensions to impute
-- `centrality`: Controls how deterministic the imputation is (1.0 = always pick nearest)
+- `centrality`: Controls how deterministic the imputation is (1.0 = always pick nearest candidate)
 
 ### Time Series Forecasting
 
@@ -227,7 +230,7 @@ for point in stream {
     forest.update(&point)?;
 }
 
-// Predict the next 5 observations
+// Predict the next 5 observations (look_ahead must be <= shingle_size)
 let predictions = forest.extrapolate(5)?;
 // Returns a flat list of length 5 * input_dim
 ```

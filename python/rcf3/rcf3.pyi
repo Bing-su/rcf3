@@ -63,11 +63,13 @@ class Forest:
         Per-dimension attribution of the anomaly score.
 
         Returns a list of dict objects with keys: `below`, `above`.
+        `above` captures contribution from cuts above the query value;
+        `below` captures contribution from cuts below the query value.
         """
     def density(self, /, point: Sequence[SupportsFloat]) -> float:
-        "Density estimate at `point`."
+        "Density estimate at `point` (higher means more typical)."
     def displacement_score(self, /, point: Sequence[SupportsFloat]) -> float:
-        "Displacement-based anomaly score for `point`."
+        "Displacement-based anomaly score for `point` (higher means more anomalous)."
     def entries_seen(self, /) -> int:
         "Number of observations processed so far."
     def extrapolate(self, /, look_ahead: SupportsInt) -> list[float]:
@@ -103,7 +105,7 @@ class Forest:
         "Whether the forest has seen enough observations to return scores."
     @staticmethod
     def load_json(path: str | PathLike[str]) -> Forest:
-        "Load a forest from a JSON file."
+        "Load a forest from a JSON file path."
     def near_neighbors(
         self,
         /,
@@ -119,9 +121,9 @@ class Forest:
     def num_trees(self, /) -> int:
         "Number of trees."
     def save_json(self, /, path: str | PathLike[str]) -> None:
-        "Serialise the forest state to a JSON file."
+        "Serialise the forest state to a JSON file path."
     def score(self, /, point: Sequence[SupportsFloat]) -> float:
-        "Anomaly score for `point`.  Returns 0.0 before the forest is ready."
+        "Anomaly score for `point` (higher means more anomalous). Returns 0.0 before ready."
     def to_json(self, /) -> str:
         "Serialise the forest state to a JSON string."
     def update(self, /, point: Sequence[SupportsFloat]) -> None:

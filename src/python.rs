@@ -137,6 +137,8 @@ impl PyForest {
     /// Per-dimension attribution of the anomaly score.
     ///
     /// Returns a list of dict objects with keys: `below`, `above`.
+    /// `above` captures contribution from cuts above the query value;
+    /// `below` captures contribution from cuts below the query value.
     fn attribution(&self, point: Vec<f32>) -> PyResult<Vec<PyAttribution>> {
         self.inner
             .attribution(&point)
@@ -144,7 +146,7 @@ impl PyForest {
             .map_err(to_py_err)
     }
 
-    /// Density estimate at `point`.
+    /// Density estimate at `point` (higher means more typical).
     fn density(&self, point: Vec<f32>) -> PyResult<f64> {
         self.inner.density(&point).map_err(to_py_err)
     }

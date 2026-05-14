@@ -37,6 +37,7 @@ def make_forest(  # noqa: PLR0913
     capacity: int = DEFAULT_CAPACITY,
     output_after: int = DEFAULT_OUTPUT_AFTER,
 ) -> Forest:
+    """Create a Forest test fixture with deterministic defaults."""
     return Forest(
         input_dim=input_dim,
         shingle_size=shingle_size,
@@ -56,6 +57,7 @@ def warm_forest(
     seed: int = 7,
     updates: int = 64,
 ) -> Forest:
+    """Create a forest and warm it with synthetic observations."""
     forest = make_forest(
         input_dim=input_dim,
         seed=seed,
@@ -139,6 +141,8 @@ def test_is_ready_threshold_contract(
 
 
 class TestRoundTrip:
+    """Round-trip serialization tests preserving state and scoring."""
+
     def _inner(
         self,
         input_dim: int,
@@ -146,6 +150,7 @@ class TestRoundTrip:
         data: st.DataObject,
         roundtrip: Callable[[Forest], Forest],
     ) -> None:
+        """Assert that a round-trip transform preserves entries and score."""
         forest = make_forest(input_dim=input_dim, seed=seed)
         points = [
             data.draw(vector_strategy(input_dim), label=f"u{i}") for i in range(48)

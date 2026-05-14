@@ -120,7 +120,9 @@ impl BoundingBox {
         excess as f64 / (self.range_sum + excess as f64)
     }
 
-    /// Probability of cut ignoring dimensions listed in `missing`.
+    /// Probability of cut, ignoring dimensions marked `true` in `missing`.
+    ///
+    /// `missing` is a per-dimension mask with the same length as `point`.
     pub fn probability_of_cut_with_missing(&self, point: &[f32], missing: &[bool]) -> f64 {
         let excess = excess_outside_box_with_missing(point, &self.min, &self.max, missing);
         let active_range = active_range_sum_with_missing(&self.min, &self.max, missing);
@@ -133,6 +135,7 @@ impl BoundingBox {
         excess as f64 / (active_range + excess as f64)
     }
 
+    /// Sum of per-dimension ranges for this box.
     pub fn range_sum(&self) -> f64 {
         self.range_sum
     }

@@ -61,6 +61,7 @@ fn default_initial_accept_fraction() -> f64 {
 }
 
 impl RcfConfig {
+    /// Create a config with defaults for all optional parameters.
     pub fn new(input_dim: usize) -> Self {
         Self {
             input_dim,
@@ -74,30 +75,47 @@ impl RcfConfig {
         }
     }
 
+    /// Set the temporal window size. `1` disables shingling.
     pub fn with_shingle_size(mut self, v: usize) -> Self {
         self.shingle_size = v;
         self
     }
+
+    /// Set the maximum number of points retained per tree.
     pub fn with_capacity(mut self, v: usize) -> Self {
         self.capacity = v;
         self
     }
+
+    /// Set the number of trees in the forest ensemble.
     pub fn with_num_trees(mut self, v: usize) -> Self {
         self.num_trees = v;
         self
     }
+
+    /// Set the exponential time-decay rate for sampling weights.
+    ///
+    /// Use `0.0` to keep the default behavior (`0.1 / capacity`).
     pub fn with_time_decay(mut self, v: f64) -> Self {
         self.time_decay = v;
         self
     }
+
+    /// Set the minimum updates before non-trivial scores are returned.
+    ///
+    /// Use `0` to keep the default behavior (`1 + capacity / 4`).
     pub fn with_output_after(mut self, v: usize) -> Self {
         self.output_after = v;
         self
     }
+
+    /// Enable or disable internal shingle buffer management.
     pub fn with_internal_shingling(mut self, v: bool) -> Self {
         self.internal_shingling = v;
         self
     }
+
+    /// Set the warm-up acceptance fraction for the sampler.
     pub fn with_initial_accept_fraction(mut self, v: f64) -> Self {
         self.initial_accept_fraction = v;
         self

@@ -170,10 +170,12 @@ impl Sampler {
         self.pending_point = usize::MAX;
     }
 
+    /// Whether the sampler has reached capacity.
     pub fn is_full(&self) -> bool {
         self.size == self.capacity
     }
 
+    /// Fraction of capacity currently used, in the range `[0.0, 1.0]`.
     pub fn fill_fraction(&self) -> f64 {
         self.size as f64 / self.capacity as f64
     }
@@ -183,6 +185,7 @@ impl Sampler {
         &self.point_indices[..self.size]
     }
 
+    /// Maximum number of points this sampler can retain.
     pub fn capacity(&self) -> usize {
         self.capacity
     }

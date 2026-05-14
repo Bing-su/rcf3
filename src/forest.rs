@@ -353,9 +353,12 @@ impl Forest {
 
     /// Find approximate near-neighbours of `query`.
     ///
-    /// Returns a `Vec<(score, point, distance)>` sorted by distance
-    /// (ascending), with duplicates removed.  At most `top_k` results are
-    /// returned.
+    /// `percentile` controls per-tree traversal aggressiveness in `[0, 100]`;
+    /// lower values visit more branches and usually return more candidates.
+    ///
+    /// Returns a `Vec<NeighborResult>` sorted by distance (ascending), with
+    /// duplicate points across trees merged by point index. At most `top_k`
+    /// results are returned.
     pub fn near_neighbors(
         &self,
         query: &[f32],
@@ -663,53 +666,62 @@ impl Forest {
 // ForestBuilder
 // ---------------------------------------------------------------------------
 
-/// Fluent builder for [`Forest`].
+/// Fluent builder for constructing a [`Forest`] with custom hyperparameters.
 pub struct ForestBuilder {
     config: RcfConfig,
     seed: Option<u64>,
 }
 
 impl ForestBuilder {
+    /// Create a builder for the given base dimension and shingle size.
     pub fn new(input_dim: usize, shingle_size: usize) -> Self {
         let config = RcfConfig::new(input_dim).with_shingle_size(shingle_size);
         ForestBuilder { config, seed: None }
     }
 
+    /// Set the number of trees in the ensemble.
     pub fn num_trees(mut self, n: usize) -> Self {
         self.config = self.config.with_num_trees(n);
         self
     }
 
+    /// Set the maximum number of points retained per tree.
     pub fn capacity(mut self, c: usize) -> Self {
         self.config = self.config.with_capacity(c);
         self
     }
 
+    /// Set the exponential time-decay rate for sampling weights.
     pub fn time_decay(mut self, d: f64) -> Self {
         self.config = self.config.with_time_decay(d);
         self
     }
 
+    /// Set the minimum updates before non-trivial scores are returned.
     pub fn output_after(mut self, n: usize) -> Self {
         self.config = self.config.with_output_after(n);
         self
     }
 
+    /// Enable or disable internal shingle buffer management.
     pub fn internal_shingling(mut self, v: bool) -> Self {
         self.config = self.config.with_internal_shingling(v);
         self
     }
 
+    /// Set the warm-up acceptance fraction for the sampler.
     pub fn initial_accept_fraction(mut self, f: f64) -> Self {
         self.config = self.config.with_initial_accept_fraction(f);
         self
     }
 
+    /// Set a deterministic seed for all trees in the forest.
     pub fn seed(mut self, s: u64) -> Self {
         self.seed = Some(s);
         self
     }
 
+    /// Build a forest from the accumulated configuration.
     pub fn build(self) -> Result<Forest> {
         match self.seed {
             Some(s) => Forest::from_config_seeded(&self.config, s),
@@ -794,7 +806,7 @@ mod tests {
         // and at least 5% of the score (some signal must come from internal nodes).
         let ratio = attr_total / score;
         assert!(
-            ratio <= 1.01 && ratio >= 0.05,
+            (0.05..=1.01).contains(&ratio),
             "attr_total={attr_total:.4} score={score:.4} ratio={ratio:.4}"
         );
     }

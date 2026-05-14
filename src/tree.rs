@@ -88,6 +88,8 @@ impl RcfTree {
         self.root == NULL || self.tree_mass == 0
     }
 
+    /// Create a new random-cut tree with the given dimensionality, point
+    /// capacity hint, and RNG seed.
     pub fn new(dims: usize, capacity: usize, seed: u64) -> Self {
         RcfTree {
             root: NULL,
@@ -99,7 +101,9 @@ impl RcfTree {
     }
 
     /// Descend to the leaf node whose point equals `point`, returning the path
-    /// as a Vec of `(node_id, sibling_id)` pairs in root-to-parent order.
+    /// as a Vec of `(node_id, sibling_id)` pairs in root-to-leaf traversal
+    /// order. The last pair's first component is the parent of the returned
+    /// leaf.
     fn path_to_leaf(&self, point: &[f32]) -> (Vec<(usize, usize)>, usize) {
         let mut path: Vec<(usize, usize)> = Vec::new();
         let mut cur = self.root;
@@ -566,10 +570,10 @@ impl RcfTree {
     // Near-neighbor traversal
     // -----------------------------------------------------------------------
 
-    /// Collect at most `max_results` candidate neighbours.
+    /// Collect candidate neighbours from this tree.
     ///
     /// Candidates are leaf points that would receive a high isolation score
-    /// relative to `query`.  Callers should deduplicate across trees.
+    /// relative to `query`. Callers should deduplicate/merge across trees.
     pub fn near_neighbors(
         &self,
         query: &[f32],
@@ -746,6 +750,7 @@ impl RcfTree {
     // Accessors
     // -----------------------------------------------------------------------
 
+    /// Whether the tree currently has no root node.
     pub fn is_empty(&self) -> bool {
         self.root == NULL
     }

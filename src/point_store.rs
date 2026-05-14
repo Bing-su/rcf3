@@ -257,8 +257,8 @@ impl PointStore {
     // Imputation helpers
     // -----------------------------------------------------------------------
 
-    /// Compute the indices of the `missing` base-dimensions for look-ahead
-    /// step `look_ahead` inside the shingle buffer.
+    /// Compute the indices of the base dimensions that would be filled at
+    /// look-ahead step `look_ahead` inside the shingle buffer.
     ///
     /// For a shingle buffer `[t-k+1, …, t]` (k slots of `input_dim` each),
     /// `next_indices(0)` returns the positions that the *next* base observation
@@ -283,6 +283,7 @@ impl PointStore {
     // Statistics
     // -----------------------------------------------------------------------
 
+    /// Number of points currently retained in the store.
     pub fn num_points(&self) -> usize {
         self.size
     }

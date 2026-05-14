@@ -69,7 +69,7 @@ mod readme_examples {
 
         // Feed some data to warm up the forest
         for _ in 0..100 {
-            forest.update(&vec![1.5, 2.3, -0.5])?;
+            forest.update(&[1.5, 2.3, -0.5])?;
         }
 
         let point = vec![1.5, 2.3, -0.5];
@@ -98,7 +98,7 @@ mod readme_examples {
 
         // Feed normal data first
         for _ in 0..100 {
-            forest.update(&vec![1.0, 2.0, 3.0])?;
+            forest.update(&[1.0, 2.0, 3.0])?;
         }
 
         // Test with anomalous point
@@ -134,7 +134,7 @@ mod readme_examples {
         ];
 
         for point in &data {
-            forest.update(&point)?;
+            forest.update(point)?;
         }
 
         let query_point = vec![1.5, 2.3];
@@ -157,7 +157,7 @@ mod readme_examples {
 
         // Feed some complete data to train
         for i in 0..100 {
-            forest.update(&vec![1.0 + (i as f32) * 0.01, 2.0, 3.0])?;
+            forest.update(&[1.0 + (i as f32) * 0.01, 2.0, 3.0])?;
         }
 
         // Test imputation with a missing value at index 1
@@ -179,7 +179,7 @@ mod readme_examples {
 
         // Feed some data
         for _ in 0..50 {
-            forest.update(&vec![1.5, 2.3])?;
+            forest.update(&[1.5, 2.3])?;
         }
 
         // Save to string
@@ -201,7 +201,7 @@ mod readme_examples {
         // Warm up the forest with many normal data points
         for i in 0..200 {
             let val = (i as f32) * 0.01;
-            forest.update(&vec![1.0 + val, 2.0 + val, 3.0 + val])?;
+            forest.update(&[1.0 + val, 2.0 + val, 3.0 + val])?;
         }
 
         let data = vec![
