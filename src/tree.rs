@@ -597,7 +597,7 @@ impl RcfTree {
         results
     }
 
-    pub fn near_neighbors_into(
+    pub(crate) fn near_neighbors_into(
         &self,
         query: &[f32],
         point_store: &PointStore,
