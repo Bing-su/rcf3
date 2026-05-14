@@ -106,7 +106,8 @@ impl PyForest {
         internal_shingling: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
-        let mut b = Forest::builder(input_dim, shingle_size)
+        let mut b = Forest::builder(input_dim)
+            .shingle_size(shingle_size)
             .num_trees(num_trees)
             .capacity(capacity)
             .time_decay(time_decay)

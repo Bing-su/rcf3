@@ -3,7 +3,8 @@ use pprof::criterion::{Output, PProfProfiler};
 use rcf3::Forest;
 
 fn build_forest(dim: usize, trees: usize, capacity: usize) -> Forest {
-    Forest::builder(dim, 1)
+    Forest::builder(dim)
+        .shingle_size(1)
         .num_trees(trees)
         .capacity(capacity)
         .seed(42)
@@ -84,7 +85,8 @@ fn bench_near_neighbors(c: &mut Criterion) {
 
 fn bench_impute(c: &mut Criterion) {
     // Build a shingled forest (shingle_size=4, input_dim=2) so impute is meaningful.
-    let mut f = Forest::builder(2, 4)
+    let mut f = Forest::builder(2)
+        .shingle_size(4)
         .num_trees(100)
         .capacity(512)
         .seed(99)

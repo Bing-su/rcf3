@@ -29,7 +29,11 @@ use crate::{
 ///
 /// # Typical usage
 /// ```ignore
-/// let mut forest = Forest::builder(2, 1).num_trees(50).capacity(256).build()?;
+/// let mut forest = Forest::builder(2)
+///     .shingle_size(1)
+///     .num_trees(50)
+///     .capacity(256)
+///     .build()?;
 /// for point in stream {
 ///     forest.update(&point)?;
 ///     if forest.is_ready() {
@@ -186,8 +190,8 @@ impl Forest {
     // -----------------------------------------------------------------------
 
     /// Convenience entry point.
-    pub fn builder(input_dim: usize, shingle_size: usize) -> ForestBuilder {
-        ForestBuilder::new(input_dim, shingle_size)
+    pub fn builder(input_dim: usize) -> ForestBuilder {
+        ForestBuilder::new(input_dim)
     }
 
     // -----------------------------------------------------------------------
@@ -694,10 +698,16 @@ pub struct ForestBuilder {
 }
 
 impl ForestBuilder {
-    /// Create a builder for the given base dimension and shingle size.
-    pub fn new(input_dim: usize, shingle_size: usize) -> Self {
-        let config = RcfConfig::new(input_dim).with_shingle_size(shingle_size);
+    /// Create a builder for the given base dimension.
+    pub fn new(input_dim: usize) -> Self {
+        let config = RcfConfig::new(input_dim);
         ForestBuilder { config, seed: None }
+    }
+
+    /// Set the shingle size.
+    pub fn shingle_size(mut self, n: usize) -> Self {
+        self.config = self.config.with_shingle_size(n);
+        self
     }
 
     /// Set the number of trees in the ensemble.
@@ -764,13 +774,26 @@ mod tests {
     use crate::score::attribution_total;
 
     fn make_forest() -> Forest {
-        Forest::builder(2, 1)
+        Forest::builder(2)
+            .shingle_size(1)
             .num_trees(10)
             .capacity(64)
             .output_after(10)
             .seed(42)
             .build()
             .unwrap()
+    }
+
+    #[test]
+    fn builder_uses_default_shingle_size() {
+        let f = Forest::builder(2).build().unwrap();
+        assert_eq!(f.config().shingle_size, 1);
+    }
+
+    #[test]
+    fn builder_applies_explicit_shingle_size() {
+        let f = Forest::builder(2).shingle_size(4).build().unwrap();
+        assert_eq!(f.config().shingle_size, 4);
     }
 
     #[test]
@@ -853,7 +876,8 @@ mod tests {
 
     #[test]
     fn shingling_forest_update_and_score() {
-        let mut f = Forest::builder(1, 4)
+        let mut f = Forest::builder(1)
+            .shingle_size(4)
             .num_trees(10)
             .capacity(64)
             .output_after(10)
@@ -872,7 +896,8 @@ mod tests {
 
     #[test]
     fn extrapolate_returns_expected_length() {
-        let mut f = Forest::builder(1, 4)
+        let mut f = Forest::builder(1)
+            .shingle_size(4)
             .num_trees(10)
             .capacity(64)
             .output_after(10)
@@ -894,7 +919,8 @@ mod tests {
 
     #[test]
     fn extrapolate_requires_internal_shingling() {
-        let mut f = Forest::builder(1, 4)
+        let mut f = Forest::builder(1)
+            .shingle_size(4)
             .num_trees(10)
             .capacity(64)
             .output_after(10)
@@ -916,7 +942,8 @@ mod tests {
 
     #[test]
     fn extrapolate_rejects_look_ahead_beyond_shingle_size() {
-        let mut f = Forest::builder(1, 4)
+        let mut f = Forest::builder(1)
+            .shingle_size(4)
             .num_trees(10)
             .capacity(64)
             .output_after(10)
@@ -978,7 +1005,8 @@ mod tests {
     /// Build a forest tuned for anomaly simulation: 2-D input, 50 trees,
     /// large capacity so the window never rolls over during the test.
     fn make_anomaly_forest() -> Forest {
-        Forest::builder(2, 4)
+        Forest::builder(2)
+            .shingle_size(4)
             .num_trees(50)
             .capacity(512)
             .output_after(50)

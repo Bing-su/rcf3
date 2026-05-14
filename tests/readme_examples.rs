@@ -6,7 +6,8 @@ mod readme_examples {
 
     #[test]
     fn test_creating_forest_basic() -> Result<(), Box<dyn std::error::Error>> {
-        let forest = Forest::builder(2, 1) // 2D input, no shingling
+        let forest = Forest::builder(2) // 2D input, no shingling
+            .shingle_size(1)
             .num_trees(50)
             .capacity(256)
             .build()?;
@@ -17,7 +18,8 @@ mod readme_examples {
 
     #[test]
     fn test_creating_forest_with_time_series() -> Result<(), Box<dyn std::error::Error>> {
-        let forest = Forest::builder(4, 8) // 4D input, window size 8
+        let forest = Forest::builder(4) // 4D input, window size 8
+            .shingle_size(8)
             .internal_shingling(true)
             .num_trees(100)
             .capacity(512)
@@ -44,7 +46,11 @@ mod readme_examples {
 
     #[test]
     fn test_basic_operations() -> Result<(), Box<dyn std::error::Error>> {
-        let mut forest = Forest::builder(2, 1).capacity(256).num_trees(50).build()?;
+        let mut forest = Forest::builder(2)
+            .shingle_size(1)
+            .capacity(256)
+            .num_trees(50)
+            .build()?;
 
         // Update the forest with a new observation
         let point = vec![1.5, 2.3];
@@ -65,7 +71,11 @@ mod readme_examples {
 
     #[test]
     fn test_scoring_methods() -> Result<(), Box<dyn std::error::Error>> {
-        let mut forest = Forest::builder(3, 1).capacity(256).num_trees(50).build()?;
+        let mut forest = Forest::builder(3)
+            .shingle_size(1)
+            .capacity(256)
+            .num_trees(50)
+            .build()?;
 
         // Feed some data to warm up the forest
         for _ in 0..100 {
@@ -94,7 +104,11 @@ mod readme_examples {
 
     #[test]
     fn test_feature_attribution() -> Result<(), Box<dyn std::error::Error>> {
-        let mut forest = Forest::builder(3, 1).capacity(256).num_trees(50).build()?;
+        let mut forest = Forest::builder(3)
+            .shingle_size(1)
+            .capacity(256)
+            .num_trees(50)
+            .build()?;
 
         // Feed normal data first
         for _ in 0..100 {
@@ -119,7 +133,11 @@ mod readme_examples {
 
     #[test]
     fn test_neighborhood_search() -> Result<(), Box<dyn std::error::Error>> {
-        let mut forest = Forest::builder(2, 1).capacity(256).num_trees(50).build()?;
+        let mut forest = Forest::builder(2)
+            .shingle_size(1)
+            .capacity(256)
+            .num_trees(50)
+            .build()?;
 
         // Feed some data points to build up the forest
         let data = vec![
@@ -153,7 +171,11 @@ mod readme_examples {
 
     #[test]
     fn test_missing_value_imputation() -> Result<(), Box<dyn std::error::Error>> {
-        let mut forest = Forest::builder(3, 1).capacity(256).num_trees(50).build()?;
+        let mut forest = Forest::builder(3)
+            .shingle_size(1)
+            .capacity(256)
+            .num_trees(50)
+            .build()?;
 
         // Feed some complete data to train
         for i in 0..100 {
@@ -175,7 +197,11 @@ mod readme_examples {
     #[test]
     #[cfg(feature = "serde")]
     fn test_serialization() -> Result<(), Box<dyn std::error::Error>> {
-        let mut forest = Forest::builder(2, 1).capacity(256).num_trees(50).build()?;
+        let mut forest = Forest::builder(2)
+            .shingle_size(1)
+            .capacity(256)
+            .num_trees(50)
+            .build()?;
 
         // Feed some data
         for _ in 0..50 {
@@ -196,7 +222,11 @@ mod readme_examples {
 
     #[test]
     fn test_anomaly_detection_example() -> Result<(), Box<dyn std::error::Error>> {
-        let mut forest = Forest::builder(3, 1).capacity(256).num_trees(50).build()?;
+        let mut forest = Forest::builder(3)
+            .shingle_size(1)
+            .capacity(256)
+            .num_trees(50)
+            .build()?;
 
         // Warm up the forest with many normal data points
         for i in 0..200 {
@@ -242,7 +272,8 @@ mod readme_examples {
 
     #[test]
     fn test_time_series_forecasting() -> Result<(), Box<dyn std::error::Error>> {
-        let mut forest = Forest::builder(4, 8)
+        let mut forest = Forest::builder(4)
+            .shingle_size(8)
             .internal_shingling(true)
             .capacity(512)
             .num_trees(50)

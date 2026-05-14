@@ -74,7 +74,8 @@ Use the builder pattern to create a configured forest:
 ```rust
 use rcf3::Forest;
 
-let forest = Forest::builder(2, 1)  // 2D input, shingle size 1 (default)
+let forest = Forest::builder(2)  // 2D input, shingle size 1 (default)
+    .shingle_size(1)
     .num_trees(50)
     .capacity(256)
     .build()?;
@@ -83,7 +84,8 @@ let forest = Forest::builder(2, 1)  // 2D input, shingle size 1 (default)
 With time series (shingling):
 
 ```rust
-let forest = Forest::builder(4, 8)  // 4D input, window size 8
+let forest = Forest::builder(4)  // 4D input, window size 8
+    .shingle_size(8)
     .num_trees(100)
     .capacity(512)
     .time_decay(0.01)
@@ -222,7 +224,8 @@ Parameters:
 Predict future observations (requires `internal_shingling = true` and `shingle_size > 1`):
 
 ```rust
-let forest = Forest::builder(4, 8)
+let forest = Forest::builder(4)
+    .shingle_size(8)
     .build()?;
 
 // Feed observations one at a time
@@ -402,7 +405,8 @@ with open("forest.pkl", "rb") as f:
 use rcf3::Forest;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut forest = Forest::builder(3, 1)
+    let mut forest = Forest::builder(3)
+        .shingle_size(1)
         .capacity(256)
         .num_trees(50)
         .build()?;
