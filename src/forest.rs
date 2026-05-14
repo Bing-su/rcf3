@@ -21,6 +21,60 @@ use crate::{
     tree::RcfTree,
 };
 
+/// Intermediate candidate collected from a single tree during near-neighbour search.
+///
+/// Gathered per-tree inside [`Forest::near_neighbors`] and then aggregated
+/// and converted into [`NeighborResult`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct NeighborCandidate {
+    /// Anomaly score of this candidate point.
+    pub score: f64,
+    /// Index of the point in the [`PointStore`].
+    pub point_idx: usize,
+    /// L1 distance to the query point.
+    pub distance: f64,
+}
+
+impl From<(f64, usize, f64)> for NeighborCandidate {
+    fn from(value: (f64, usize, f64)) -> Self {
+        Self {
+            score: value.0,
+            point_idx: value.1,
+            distance: value.2,
+        }
+    }
+}
+
+impl From<NeighborCandidate> for (f64, usize, f64) {
+    fn from(value: NeighborCandidate) -> Self {
+        (value.score, value.point_idx, value.distance)
+    }
+}
+
+/// A near-neighbour result returned by [`Forest::near_neighbors`].
+///
+/// [`NeighborCandidate`]s collected across all trees are deduplicated and
+/// aggregated by point index, then returned sorted by distance (ascending).
+#[derive(Clone, Debug, PartialEq)]
+pub struct NeighborResult {
+    /// Anomaly score of this point.
+    pub score: f64,
+    /// Coordinate vector of the point (length = `input_dim * shingle_size`).
+    pub point: Vec<f32>,
+    /// L1 distance to the query point.
+    pub distance: f64,
+}
+
+impl From<(f64, Vec<f32>, f64)> for NeighborResult {
+    fn from(value: (f64, Vec<f32>, f64)) -> Self {
+        Self {
+            score: value.0,
+            point: value.1,
+            distance: value.2,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Forest
 // ---------------------------------------------------------------------------
@@ -50,46 +104,6 @@ pub struct Forest {
     pub(crate) point_store: PointStore,
     entries_seen: u64,
     rng: Xoshiro256PlusPlus,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct NeighborCandidate {
-    pub score: f64,
-    pub point_idx: usize,
-    pub distance: f64,
-}
-
-impl From<(f64, usize, f64)> for NeighborCandidate {
-    fn from(value: (f64, usize, f64)) -> Self {
-        Self {
-            score: value.0,
-            point_idx: value.1,
-            distance: value.2,
-        }
-    }
-}
-
-impl From<NeighborCandidate> for (f64, usize, f64) {
-    fn from(value: NeighborCandidate) -> Self {
-        (value.score, value.point_idx, value.distance)
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct NeighborResult {
-    pub score: f64,
-    pub point: Vec<f32>,
-    pub distance: f64,
-}
-
-impl From<(f64, Vec<f32>, f64)> for NeighborResult {
-    fn from(value: (f64, Vec<f32>, f64)) -> Self {
-        Self {
-            score: value.0,
-            point: value.1,
-            distance: value.2,
-        }
-    }
 }
 
 impl From<NeighborResult> for (f64, Vec<f32>, f64) {
