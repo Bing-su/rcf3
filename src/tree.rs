@@ -44,6 +44,24 @@ fn split_child_only(query_value: f32, cut_val: f32, left: usize, right: usize) -
     if query_value <= cut_val { left } else { right }
 }
 
+fn child_for_query(
+    query: &[f32],
+    cut_dim: usize,
+    cut_val: f32,
+    left: usize,
+    right: usize,
+) -> usize {
+    split_child_only(query[cut_dim], cut_val, left, right)
+}
+
+fn blend_with_cut_probability(prob: f64, child_score: f64, fallback_score: f64) -> f64 {
+    if prob == 0.0 {
+        child_score
+    } else {
+        (1.0 - prob) * child_score + prob * fallback_score
+    }
+}
+
 fn nn_threshold(percentile: usize) -> f64 {
     percentile as f64 / 100.0
 }
@@ -432,16 +450,13 @@ impl RcfTree {
                 mass,
                 bbox,
             } => {
-                let (child, _sibling) = split_children(query[*cut_dim], *cut_val, *left, *right);
+                // Shared branch-choice helper keeps traversal expressions uniform.
+                let child = child_for_query(query, *cut_dim, *cut_val, *left, *right);
 
                 let child_score = self.score_recursive(child, query, point_store, depth + 1, mode);
 
                 let prob = bbox.probability_of_cut(query);
-                if prob == 0.0 {
-                    child_score
-                } else {
-                    (1.0 - prob) * child_score + prob * mode.score_unseen(depth, *mass)
-                }
+                blend_with_cut_probability(prob, child_score, mode.score_unseen(depth, *mass))
             }
         }
     }
@@ -491,7 +506,7 @@ impl RcfTree {
                 mass,
                 bbox,
             } => {
-                let (child, _) = split_children(query[*cut_dim], *cut_val, *left, *right);
+                let child = child_for_query(query, *cut_dim, *cut_val, *left, *right);
 
                 let prob = bbox.probability_of_cut(query);
                 if prob > 0.0 {
@@ -551,17 +566,13 @@ impl RcfTree {
                 mass,
                 bbox,
             } => {
-                let (child, _) = split_children(query[*cut_dim], *cut_val, *left, *right);
+                let child = child_for_query(query, *cut_dim, *cut_val, *left, *right);
 
                 let child_density = self.density_recursive(child, query, point_store);
 
                 let prob = bbox.probability_of_cut(query);
-                if prob == 0.0 {
-                    child_density
-                } else {
-                    // density mode: score_unseen(depth, mass) = mass (weighted by depth-inverse)
-                    (1.0 - prob) * child_density + prob * (*mass as f64)
-                }
+                // density mode: score_unseen(depth, mass) = mass (weighted by depth-inverse)
+                blend_with_cut_probability(prob, child_density, *mass as f64)
             }
         }
     }
@@ -581,20 +592,24 @@ impl RcfTree {
         mode: &ScoreMode,
         percentile: usize,
     ) -> Vec<NeighborCandidate> {
-        if self.is_effectively_empty() {
-            return Vec::new();
-        }
         let mut results = Vec::new();
-        self.nn_recursive(
-            self.root,
-            query,
-            point_store,
-            0,
-            mode,
-            percentile,
-            &mut results,
-        );
+        self.near_neighbors_into(query, point_store, mode, percentile, &mut results);
         results
+    }
+
+    pub fn near_neighbors_into(
+        &self,
+        query: &[f32],
+        point_store: &PointStore,
+        mode: &ScoreMode,
+        percentile: usize,
+        results: &mut Vec<NeighborCandidate>,
+    ) {
+        if self.is_effectively_empty() {
+            return;
+        }
+        let threshold = nn_threshold(percentile);
+        self.nn_recursive(self.root, query, point_store, 0, mode, threshold, results);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -605,7 +620,7 @@ impl RcfTree {
         point_store: &PointStore,
         depth: usize,
         mode: &ScoreMode,
-        percentile: usize,
+        threshold: f64,
         results: &mut Vec<NeighborCandidate>,
     ) {
         match self.arena.get(node_id) {
@@ -628,7 +643,6 @@ impl RcfTree {
             } => {
                 let prob = bbox.probability_of_cut(query);
                 // Only descend if this subtree is a viable candidate
-                let threshold = nn_threshold(percentile);
                 if should_descend_primary(prob, depth, threshold) {
                     let (primary, secondary) =
                         split_children(query[*cut_dim], *cut_val, *left, *right);
@@ -638,7 +652,7 @@ impl RcfTree {
                         point_store,
                         depth + 1,
                         mode,
-                        percentile,
+                        threshold,
                         results,
                     );
                     if should_descend_secondary(prob) {
@@ -648,7 +662,7 @@ impl RcfTree {
                             point_store,
                             depth + 1,
                             mode,
-                            percentile,
+                            threshold,
                             results,
                         );
                     }
@@ -739,7 +753,7 @@ impl RcfTree {
                         best,
                     )
                 } else {
-                    let child = split_child_only(query[*cut_dim], *cut_val, *left, *right);
+                    let child = child_for_query(query, *cut_dim, *cut_val, *left, *right);
                     self.impute_recursive(child, query, missing, point_store, centrality, rng, best)
                 }
             }

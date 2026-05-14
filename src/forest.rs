@@ -1,9 +1,12 @@
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap;
 #[cfg(all(not(feature = "std"), feature = "serde"))]
 use alloc::string::{String, ToString};
 #[cfg(not(feature = "std"))]
 use alloc::{format, vec, vec::Vec};
+#[cfg(feature = "std")]
+use std::collections::BTreeMap;
 
-use itertools::Itertools;
 use ordered_float::NotNan;
 use rand::prelude::*;
 use rand::rngs::Xoshiro256PlusPlus;
@@ -579,10 +582,12 @@ impl Forest {
         mode: &ScoreMode,
         percentile: usize,
     ) -> Vec<NeighborCandidate> {
-        self.trees
-            .iter()
-            .flat_map(|tree| tree.near_neighbors(query, &self.point_store, mode, percentile))
-            .collect()
+        // Reuse one output buffer across trees to avoid per-tree temporary Vec allocations.
+        let mut candidates = Vec::with_capacity(self.trees.len() * 2);
+        for tree in &self.trees {
+            tree.near_neighbors_into(query, &self.point_store, mode, percentile, &mut candidates);
+        }
+        candidates
     }
 
     fn aggregate_neighbor_candidates(
@@ -590,26 +595,38 @@ impl Forest {
         candidates: Vec<NeighborCandidate>,
         top_k: usize,
     ) -> Vec<NeighborResult> {
+        if candidates.is_empty() || top_k == 0 {
+            return Vec::new();
+        }
+
         let n = self.trees.len() as f64;
-        candidates
+        let mut merged: BTreeMap<usize, (f64, f64)> = BTreeMap::new();
+        for item in candidates {
+            let entry = merged.entry(item.point_idx).or_insert((0.0, f64::MAX));
+            entry.0 += item.score;
+            entry.1 = entry.1.min(item.distance);
+        }
+
+        let mut aggregated: Vec<NeighborCandidate> = merged
             .into_iter()
-            .sorted_by_key(|item| item.point_idx)
-            .chunk_by(|item| item.point_idx)
+            .map(|(point_idx, (score_sum, dist_min))| NeighborCandidate {
+                score: score_sum / n,
+                point_idx,
+                distance: dist_min,
+            })
+            .collect();
+
+        let limit = top_k.min(aggregated.len());
+        if limit < aggregated.len() {
+            // Partition once around kth element, then sort only the kept prefix.
+            aggregated
+                .select_nth_unstable_by(limit - 1, |a, b| cmp_distance(a.distance, b.distance));
+            aggregated.truncate(limit);
+        }
+        aggregated.sort_unstable_by(|a, b| cmp_distance(a.distance, b.distance));
+
+        aggregated
             .into_iter()
-            .map(|(idx, group)| {
-                let (score_sum, dist_min) = group.fold((0.0f64, f64::MAX), |(s, d), item| {
-                    (s + item.score, d.min(item.distance))
-                });
-                NeighborCandidate {
-                    score: score_sum / n,
-                    point_idx: idx,
-                    distance: dist_min,
-                }
-            })
-            .sorted_by_key(|item| {
-                NotNan::new(item.distance).unwrap_or(NotNan::new(f64::MAX).unwrap())
-            })
-            .take(top_k)
             .map(|item| NeighborResult {
                 score: item.score,
                 point: self.point_store.copy_point(item.point_idx),
@@ -659,6 +676,15 @@ impl Forest {
             .map(|&i| self.point_store.get(i)[dim_idx])
             .collect();
         median_in_place(&mut vals)
+    }
+}
+
+fn cmp_distance(a: f64, b: f64) -> core::cmp::Ordering {
+    match (a.is_nan(), b.is_nan()) {
+        (true, true) => core::cmp::Ordering::Equal,
+        (true, false) => core::cmp::Ordering::Greater,
+        (false, true) => core::cmp::Ordering::Less,
+        (false, false) => a.total_cmp(&b),
     }
 }
 

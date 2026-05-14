@@ -7,20 +7,22 @@ use itertools::izip;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-fn excess_component(p: f32, lo: f32, hi: f32) -> f32 {
-    if p < lo {
-        lo - p
-    } else if p > hi {
-        p - hi
-    } else {
-        0.0
-    }
-}
-
 fn excess_outside_box(point: &[f32], min: &[f32], max: &[f32]) -> f32 {
-    izip!(point, min, max)
-        .map(|(&p, &lo, &hi)| excess_component(p, lo, hi))
-        .sum()
+    debug_assert_eq!(point.len(), min.len());
+    debug_assert_eq!(min.len(), max.len());
+
+    let mut excess = 0.0f32;
+    for i in 0..point.len() {
+        let p = point[i];
+        let lo = min[i];
+        let hi = max[i];
+        if p < lo {
+            excess += lo - p;
+        } else if p > hi {
+            excess += p - hi;
+        }
+    }
+    excess
 }
 
 fn excess_outside_box_with_missing(
@@ -29,17 +31,38 @@ fn excess_outside_box_with_missing(
     max: &[f32],
     missing: &[bool],
 ) -> f32 {
-    izip!(point, min, max, missing)
-        .filter(|(_, _, _, is_missing)| !*is_missing)
-        .map(|(&p, &lo, &hi, _)| excess_component(p, lo, hi))
-        .sum()
+    debug_assert_eq!(point.len(), min.len());
+    debug_assert_eq!(min.len(), max.len());
+    debug_assert_eq!(max.len(), missing.len());
+
+    let mut excess = 0.0f32;
+    for i in 0..point.len() {
+        if missing[i] {
+            continue;
+        }
+        let p = point[i];
+        let lo = min[i];
+        let hi = max[i];
+        if p < lo {
+            excess += lo - p;
+        } else if p > hi {
+            excess += p - hi;
+        }
+    }
+    excess
 }
 
 fn active_range_sum_with_missing(min: &[f32], max: &[f32], missing: &[bool]) -> f64 {
-    izip!(min, max, missing)
-        .filter(|(_, _, is_missing)| !*is_missing)
-        .map(|(&lo, &hi, _)| (hi - lo) as f64)
-        .sum()
+    debug_assert_eq!(min.len(), max.len());
+    debug_assert_eq!(max.len(), missing.len());
+
+    let mut sum = 0.0f64;
+    for i in 0..min.len() {
+        if !missing[i] {
+            sum += (max[i] - min[i]) as f64;
+        }
+    }
+    sum
 }
 
 fn componentwise_min_max(a: &[f32], b: &[f32]) -> (Vec<f32>, Vec<f32>) {
