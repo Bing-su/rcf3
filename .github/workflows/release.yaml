@@ -135,7 +135,10 @@ jobs:
 
       - name: Generate PyPI attestation
         run: |
-          glob dist/* | each { |file| uvx pypi-attestations convert --output-file $"($file).publish.attestation" ${{ steps.attest.outputs.bundle-path }} }
+          let tmpfile = $"(random uuid).json"
+          uvx pypi-attestations convert --output-file $tmpfile ${{ steps.attest.outputs.bundle-path }}
+          glob dist/* | each { |file| cp $tmpfile $"($file).publish.attestation" }
+          rm $tmpfile
 
       - name: Publish to PyPI
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
