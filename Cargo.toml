@@ -15,7 +15,13 @@ keywords = [
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+doctest = false
 name = "rcf3"
+
+[[test]]
+name = "readme_examples"
+path = "tests/readme_examples.rs"
+required-features = ["std"]
 
 [[bench]]
 harness = false
