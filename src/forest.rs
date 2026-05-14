@@ -489,22 +489,22 @@ impl Forest {
 
     /// Deserialise a forest from a JSON string previously written by [`to_json`].
     #[cfg(feature = "serde")]
-    pub fn from_json(json: &str) -> Result<Self> {
-        serde_json::from_str(json).map_err(|e| RcfError::Io(e.to_string()))
+    pub fn from_json(json: impl AsRef<[u8]>) -> Result<Self> {
+        serde_json::from_slice(json.as_ref()).map_err(|e| RcfError::Io(e.to_string()))
     }
 
     /// Serialise the entire forest state to a JSON file.
     #[cfg(all(feature = "serde", feature = "std"))]
-    pub fn save_json(&self, path: impl Into<std::path::PathBuf>) -> Result<()> {
+    pub fn save_json(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         let json = self.to_json()?;
-        std::fs::write(path.into(), json).map_err(|e| RcfError::Io(e.to_string()))
+        std::fs::write(path.as_ref(), json).map_err(|e| RcfError::Io(e.to_string()))
     }
 
     /// Deserialise a forest from a JSON file previously written by
     /// [`save_json`].
     #[cfg(all(feature = "serde", feature = "std"))]
-    pub fn load_json(path: impl Into<std::path::PathBuf>) -> Result<Self> {
-        let data = std::fs::read_to_string(path.into()).map_err(|e| RcfError::Io(e.to_string()))?;
+    pub fn load_json(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        let data = std::fs::read(path.as_ref()).map_err(|e| RcfError::Io(e.to_string()))?;
         Self::from_json(&data)
     }
 
