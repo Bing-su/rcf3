@@ -1,6 +1,4 @@
-#[cfg(not(feature = "std"))]
-use alloc::{vec, vec::Vec};
-
+use ndarray::{Array1, Array2, Array3};
 use rand::prelude::*;
 use rand::rngs::Xoshiro256PlusPlus;
 
@@ -15,14 +13,14 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub(crate) struct NumericSketch {
     num_buckets: usize,
-    count: Vec<f64>,
+    count: Array1<f64>,
 }
 
 impl NumericSketch {
     pub(crate) fn new(num_buckets: usize) -> Self {
         Self {
             num_buckets,
-            count: vec![0.0; num_buckets],
+            count: Array1::zeros(num_buckets),
         }
     }
 
@@ -43,9 +41,7 @@ impl NumericSketch {
     }
 
     pub(crate) fn lower(&mut self, factor: f64) {
-        for v in &mut self.count {
-            *v *= factor;
-        }
+        self.count.mapv_inplace(|v| v * factor);
     }
 }
 
@@ -54,26 +50,25 @@ impl NumericSketch {
 pub(crate) struct CategoricalSketch {
     num_rows: usize,
     num_buckets: usize,
-    hash_a: Vec<i64>,
-    hash_b: Vec<i64>,
-    count: Vec<Vec<f64>>,
+    hash_a: Array1<i64>,
+    hash_b: Array1<i64>,
+    count: Array2<f64>,
 }
 
 impl CategoricalSketch {
     pub(crate) fn new(num_rows: usize, num_buckets: usize, rng: &mut Xoshiro256PlusPlus) -> Self {
-        let mut hash_a = vec![0_i64; num_rows];
-        let mut hash_b = vec![0_i64; num_rows];
-        for i in 0..num_rows {
-            hash_a[i] = (rng.next_u64() % (num_buckets as u64 - 1) + 1) as i64;
-            hash_b[i] = (rng.next_u64() % num_buckets as u64) as i64;
-        }
+        let hash_a = Array1::from_shape_simple_fn(num_rows, || {
+            (rng.next_u64() % (num_buckets as u64 - 1) + 1) as i64
+        });
+        let hash_b =
+            Array1::from_shape_simple_fn(num_rows, || (rng.next_u64() % num_buckets as u64) as i64);
 
         Self {
             num_rows,
             num_buckets,
             hash_a,
             hash_b,
-            count: vec![vec![0.0; num_buckets]; num_rows],
+            count: Array2::zeros((num_rows, num_buckets)),
         }
     }
 
@@ -88,7 +83,7 @@ impl CategoricalSketch {
     pub(crate) fn insert(&mut self, value: i64, weight: f64) {
         for row in 0..self.num_rows {
             let bucket = self.hash(value, row);
-            self.count[row][bucket] += weight;
+            self.count[[row, bucket]] += weight;
         }
     }
 
@@ -96,17 +91,13 @@ impl CategoricalSketch {
         let mut min_count = f64::INFINITY;
         for row in 0..self.num_rows {
             let bucket = self.hash(value, row);
-            min_count = min_count.min(self.count[row][bucket]);
+            min_count = min_count.min(self.count[[row, bucket]]);
         }
         min_count
     }
 
     pub(crate) fn lower(&mut self, factor: f64) {
-        for row in &mut self.count {
-            for v in row {
-                *v *= factor;
-            }
-        }
+        self.count.mapv_inplace(|v| v * factor);
     }
 }
 
@@ -118,9 +109,9 @@ pub(crate) struct RecordSketch {
     numeric_dim: usize,
     categorical_dim: usize,
     log_buckets: usize,
-    numeric_planes: Vec<Vec<Vec<f64>>>,
-    categorical_coeffs: Vec<Vec<i64>>,
-    count: Vec<Vec<f64>>,
+    numeric_planes: Array3<f64>,
+    categorical_coeffs: Array2<i64>,
+    count: Array2<f64>,
 }
 
 impl RecordSketch {
@@ -133,27 +124,19 @@ impl RecordSketch {
     ) -> Result<Self> {
         let log_buckets = ceil_log2(num_buckets)?;
 
-        let mut numeric_planes = vec![vec![vec![0.0; numeric_dim]; log_buckets]; num_rows];
-        for row_planes in &mut numeric_planes {
-            for plane in row_planes {
-                for w in plane {
-                    *w = uniform_symmetric(rng);
-                }
-            }
-        }
+        let numeric_planes =
+            Array3::from_shape_simple_fn((num_rows, log_buckets, numeric_dim), || {
+                uniform_symmetric(rng.next_u64())
+            });
 
-        let mut categorical_coeffs = vec![vec![0_i64; categorical_dim]; num_rows];
-        for row_coeffs in &mut categorical_coeffs {
-            if categorical_dim > 0 {
-                for coeff in row_coeffs
-                    .iter_mut()
-                    .take(categorical_dim.saturating_sub(1))
-                {
-                    *coeff = (rng.next_u64() % (num_buckets as u64 - 1) + 1) as i64;
-                }
-                row_coeffs[categorical_dim - 1] = (rng.next_u64() % num_buckets as u64) as i64;
+        let categorical_coeffs = Array2::from_shape_fn((num_rows, categorical_dim), |(row, k)| {
+            if k + 1 == categorical_dim {
+                (rng.next_u64() % num_buckets as u64) as i64
+            } else {
+                let _ = row;
+                (rng.next_u64() % (num_buckets as u64 - 1) + 1) as i64
             }
-        }
+        });
 
         Ok(Self {
             num_rows,
@@ -163,7 +146,7 @@ impl RecordSketch {
             log_buckets,
             numeric_planes,
             categorical_coeffs,
-            count: vec![vec![0.0; num_buckets]; num_rows],
+            count: Array2::zeros((num_rows, num_buckets)),
         })
     }
 
@@ -176,7 +159,7 @@ impl RecordSketch {
         for iter in 0..self.log_buckets {
             let mut sum = 0.0;
             for (k, value) in numeric.iter().enumerate().take(self.numeric_dim) {
-                sum += self.numeric_planes[row][iter][k] * value;
+                sum += self.numeric_planes[[row, iter, k]] * value;
             }
             if sum >= 0.0 && iter < usize::BITS as usize {
                 bits |= 1usize << iter;
@@ -193,8 +176,8 @@ impl RecordSketch {
         let mut resid = 0_i128;
         let m = self.num_buckets as i128;
         for (k, value) in categorical.iter().enumerate().take(self.categorical_dim) {
-            resid =
-                (resid + self.categorical_coeffs[row][k] as i128 * (*value as i128)).rem_euclid(m);
+            resid = (resid + self.categorical_coeffs[[row, k]] as i128 * (*value as i128))
+                .rem_euclid(m);
         }
         resid as usize
     }
@@ -204,7 +187,7 @@ impl RecordSketch {
             let bucket1 = self.numeric_hash(numeric, row);
             let bucket2 = self.categorical_hash(categorical, row);
             let bucket = (bucket1 + bucket2) % self.num_buckets;
-            self.count[row][bucket] += weight;
+            self.count[[row, bucket]] += weight;
         }
     }
 
@@ -214,16 +197,12 @@ impl RecordSketch {
             let bucket1 = self.numeric_hash(numeric, row);
             let bucket2 = self.categorical_hash(categorical, row);
             let bucket = (bucket1 + bucket2) % self.num_buckets;
-            min_count = min_count.min(self.count[row][bucket]);
+            min_count = min_count.min(self.count[[row, bucket]]);
         }
         min_count
     }
 
     pub(crate) fn lower(&mut self, factor: f64) {
-        for row in &mut self.count {
-            for v in row {
-                *v *= factor;
-            }
-        }
+        self.count.mapv_inplace(|v| v * factor);
     }
 }

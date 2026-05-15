@@ -1,6 +1,3 @@
-use rand::prelude::*;
-use rand::rngs::Xoshiro256PlusPlus;
-
 use crate::error::{RcfError, Result};
 
 pub(crate) fn counts_to_anom(total: f64, current: f64, current_time: u64) -> f64 {
@@ -30,8 +27,8 @@ pub(crate) fn ceil_log2(value: usize) -> Result<usize> {
     Ok(bits)
 }
 
-pub(crate) fn uniform_symmetric(rng: &mut Xoshiro256PlusPlus) -> f64 {
-    let u = (rng.next_u64() as f64) / (u64::MAX as f64);
+pub(crate) fn uniform_symmetric(x: u64) -> f64 {
+    let u = (x as f64) / (u64::MAX as f64);
     u * 2.0 - 1.0
 }
 

@@ -32,6 +32,10 @@ required-features = ["std"]
 harness = false
 name = "forest_bench"
 
+[[bench]]
+harness = false
+name = "mstream_bench"
+
 [dependencies]
 itertools = { version = "0.14", default-features = false, features = [
   "use_alloc"
