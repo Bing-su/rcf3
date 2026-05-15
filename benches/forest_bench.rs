@@ -1,5 +1,6 @@
+use std::time::Duration;
+
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use pprof::criterion::{Output, PProfProfiler};
 use rcf3::Forest;
 
 fn build_forest(dim: usize, trees: usize, capacity: usize) -> Forest {
@@ -109,7 +110,7 @@ fn bench_impute(c: &mut Criterion) {
 
 criterion_group!(
     name = benches;
-    config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
+    config = Criterion::default().measurement_time(Duration::from_secs(10));
     targets = bench_update, bench_score, bench_near_neighbors, bench_impute
 );
 criterion_main!(benches);
