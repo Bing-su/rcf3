@@ -375,4 +375,69 @@ mod tests {
         let ps = PointStore::new(2, 3, 8, true);
         assert_eq!(ps.missing_indices_with_lookahead(1, &[0, 1]), vec![2, 3]);
     }
+
+    #[cfg(feature = "std")]
+    mod proptest_tests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn l1_distance_symmetric(
+                a0 in -100f32..100f32,
+                a1 in -100f32..100f32,
+                b0 in -100f32..100f32,
+                b1 in -100f32..100f32,
+            ) {
+                let a = [a0, a1];
+                let b = [b0, b1];
+                let d_ab = l1_distance_slices(&a, &b);
+                let d_ba = l1_distance_slices(&b, &a);
+                prop_assert!((d_ab - d_ba).abs() < 1e-9, "d_ab={d_ab} d_ba={d_ba}");
+            }
+
+            #[test]
+            fn l1_distance_non_negative(
+                a0 in -100f32..100f32,
+                a1 in -100f32..100f32,
+                b0 in -100f32..100f32,
+                b1 in -100f32..100f32,
+            ) {
+                let a = [a0, a1];
+                let b = [b0, b1];
+                let d = l1_distance_slices(&a, &b);
+                prop_assert!(d >= 0.0, "distance={d}");
+            }
+
+            #[test]
+            fn l1_missing_leq_full(
+                a0 in -100f32..100f32,
+                a1 in -100f32..100f32,
+                b0 in -100f32..100f32,
+                b1 in -100f32..100f32,
+                m0 in any::<bool>(),
+                m1 in any::<bool>(),
+            ) {
+                let a = [a0, a1];
+                let b = [b0, b1];
+                let missing = [m0, m1];
+                let full = l1_distance_slices(&a, &b);
+                let partial = l1_distance_slices_ignore_missing(&a, &b, &missing);
+                prop_assert!(partial <= full + 1e-9, "partial={partial} > full={full}");
+            }
+
+            #[test]
+            fn l1_all_missing_is_zero(
+                a0 in -100f32..100f32,
+                a1 in -100f32..100f32,
+                b0 in -100f32..100f32,
+                b1 in -100f32..100f32,
+            ) {
+                let a = [a0, a1];
+                let b = [b0, b1];
+                let d = l1_distance_slices_ignore_missing(&a, &b, &[true, true]);
+                prop_assert_eq!(d, 0.0);
+            }
+        }
+    }
 }

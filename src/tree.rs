@@ -907,4 +907,47 @@ mod tests {
         assert!(should_descend_secondary(0.51));
         assert!(!should_descend_secondary(0.5));
     }
+
+    #[cfg(feature = "std")]
+    mod proptest_tests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn raw_score_non_negative(
+                x in -10f32..10f32,
+                y in -10f32..10f32,
+            ) {
+                let pts: Vec<Vec<f32>> = vec![
+                    vec![0.0, 0.0],
+                    vec![1.0, 0.0],
+                    vec![0.0, 1.0],
+                    vec![1.0, 1.0],
+                    vec![0.5, 0.5],
+                ];
+                let (store, tree) = make_store_and_tree(&pts);
+                let score = tree.raw_score(&[x, y], &store, &ScoreMode::standard());
+                prop_assert!(score >= 0.0, "score={score}");
+            }
+
+            #[test]
+            fn insert_delete_restores_mass(n in 2usize..=16) {
+                let pts: Vec<Vec<f32>> = (0..n).map(|i| vec![i as f32, 0.0]).collect();
+                let dim = 2;
+                let mut store = PointStore::new(dim, 1, 64, false);
+                let mut tree = RcfTree::new(dim, 32, 42);
+                let mut idxs = Vec::new();
+                for p in &pts {
+                    let idx = store.add(p).unwrap();
+                    idxs.push(idx);
+                    tree.insert(idx, &store).unwrap();
+                }
+                let mass_before = tree.tree_mass;
+                let last_idx = idxs[n - 1];
+                tree.delete(last_idx, &store).unwrap();
+                prop_assert_eq!(tree.tree_mass, mass_before - 1);
+            }
+        }
+    }
 }

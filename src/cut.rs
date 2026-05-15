@@ -27,13 +27,7 @@ fn select_cut_dim(ranges: &[f64], mut pos: f64) -> usize {
 
 /// Clamp `raw` into the half-open interval `[lo, hi)`.
 fn clamp_cut_val(raw: f32, lo: f32, hi: f32) -> f32 {
-    if raw <= lo {
-        lo
-    } else if raw >= hi {
-        lo + (hi - lo) * 0.999_999_9
-    } else {
-        raw
-    }
+    raw.clamp(lo, hi.next_down().max(lo))
 }
 
 /// A single random cut: split on `dim` at threshold `val`.
@@ -166,5 +160,49 @@ mod tests {
             "cut.val={} not in [{lo},{hi})",
             cut.val
         );
+    }
+
+    #[cfg(feature = "std")]
+    mod proptest_tests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn clamp_cut_val_within_bounds(
+                lo in -1000f32..0f32,
+                hi in 0f32..1000f32,
+                raw in -2000f32..2000f32,
+            ) {
+                let result = clamp_cut_val(raw, lo, hi);
+                prop_assert!(result >= lo, "result={result} < lo={lo}");
+                prop_assert!(result < hi, "result={result} >= hi={hi}");
+            }
+
+            #[test]
+            fn clamp_cut_val_idempotent(
+                lo in -1000f32..0f32,
+                hi in 0f32..1000f32,
+                raw in -2000f32..2000f32,
+            ) {
+                let once = clamp_cut_val(raw, lo, hi);
+                let twice = clamp_cut_val(once, lo, hi);
+                prop_assert_eq!(once, twice);
+            }
+
+            #[test]
+            fn select_cut_dim_in_valid_range(
+                r0 in 0.1f64..10.0,
+                r1 in 0.1f64..10.0,
+                r2 in 0.1f64..10.0,
+                factor in 0.0f64..1.0,
+            ) {
+                let ranges = [r0, r1, r2];
+                let total = r0 + r1 + r2;
+                let pos = factor * total;
+                let dim = select_cut_dim(&ranges, pos);
+                prop_assert!(dim < ranges.len(), "dim={dim} >= len={}", ranges.len());
+            }
+        }
     }
 }

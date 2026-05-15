@@ -275,4 +275,50 @@ mod tests {
         let result = s.accept(false, 999.0f64, 2);
         assert!(!result.accepted);
     }
+
+    #[cfg(feature = "std")]
+    mod proptest_tests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn fill_fraction_in_unit_interval(capacity in 1usize..=64, n_adds in 0usize..=64) {
+                let n = n_adds.min(capacity);
+                let mut s = Sampler::new(capacity);
+                for i in 0..n as u64 {
+                    let w = reservoir_weight(0.5, 0.0, i);
+                    s.accept(true, w, i as usize);
+                    s.add_point(i as usize);
+                }
+                let frac = s.fill_fraction();
+                prop_assert!(frac >= 0.0 && frac <= 1.0, "fill_fraction={frac}");
+            }
+
+            #[test]
+            fn sampler_never_exceeds_capacity(capacity in 1usize..=32, n_adds in 1usize..=128) {
+                let mut s = Sampler::new(capacity);
+                for i in 0..n_adds as u64 {
+                    let w = reservoir_weight(0.5, 0.0, i);
+                    s.accept(true, w, i as usize);
+                    s.add_point(i as usize);
+                }
+                prop_assert!(
+                    s.points().len() <= capacity,
+                    "len={} > capacity={capacity}",
+                    s.points().len()
+                );
+            }
+
+            #[test]
+            fn reservoir_weight_finite(
+                u in 0.001f64..0.999,
+                time_decay in 0.0f64..1.0,
+                entries_seen in 0u64..10_000,
+            ) {
+                let w = reservoir_weight(u, time_decay, entries_seen);
+                prop_assert!(w.is_finite(), "reservoir_weight={w} is not finite");
+            }
+        }
+    }
 }

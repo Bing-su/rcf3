@@ -1158,4 +1158,27 @@ mod tests {
              normal nn-distance {normal_nn_dist:.4} for {anomaly:?}"
         );
     }
+
+    #[cfg(feature = "std")]
+    mod proptest_tests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn entries_seen_monotonic(n in 1usize..=20) {
+                let mut f = Forest::builder(2)
+                    .num_trees(10)
+                    .capacity(64)
+                    .output_after(1)
+                    .seed(42)
+                    .build()
+                    .unwrap();
+                for i in 0..n {
+                    f.update(&[i as f32, 0.0]).unwrap();
+                }
+                prop_assert_eq!(f.entries_seen(), n as u64);
+            }
+        }
+    }
 }

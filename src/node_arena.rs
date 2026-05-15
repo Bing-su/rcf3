@@ -108,3 +108,43 @@ impl NodeArena {
         self.nodes.len()
     }
 }
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn leaf_node() -> Node {
+        Node::Leaf {
+            point_idx: 0,
+            mass: 1,
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn slot_count_increases_with_alloc(n in 1usize..=32) {
+            let mut arena = NodeArena::new(4);
+            let before = arena.slot_count();
+            for _ in 0..n {
+                arena.alloc(leaf_node());
+            }
+            prop_assert!(arena.slot_count() >= before + 1);
+        }
+
+        #[test]
+        fn alloc_then_free_restores_slot(n in 1usize..=16) {
+            let mut arena = NodeArena::new(n);
+            let ids: Vec<usize> = (0..n).map(|_| arena.alloc(leaf_node())).collect();
+            let count_after_alloc = arena.slot_count();
+            for id in ids {
+                arena.free(id);
+            }
+            // Re-alloc should reuse freed slots, not grow beyond count_after_alloc
+            for _ in 0..n {
+                arena.alloc(leaf_node());
+            }
+            prop_assert!(arena.slot_count() <= count_after_alloc + 1);
+        }
+    }
+}

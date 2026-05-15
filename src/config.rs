@@ -144,3 +144,40 @@ impl RcfConfig {
         self.input_dim * self.shingle_size
     }
 }
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn dim_equals_input_times_shingle(
+            input_dim in 1usize..=32,
+            shingle_size in 1usize..=16,
+        ) {
+            let cfg = RcfConfig::new(input_dim).with_shingle_size(shingle_size);
+            prop_assert_eq!(cfg.dim(), input_dim * shingle_size);
+        }
+
+        #[test]
+        fn effective_time_decay_positive(capacity in 1usize..=1000) {
+            // time_decay == 0.0 triggers the default formula: 0.1 / capacity
+            let cfg = RcfConfig::new(1).with_capacity(capacity);
+            prop_assert!(cfg.effective_time_decay() > 0.0);
+        }
+
+        #[test]
+        fn effective_output_after_positive(capacity in 1usize..=1000) {
+            // output_after == 0 triggers the default formula: 1 + capacity/4
+            let cfg = RcfConfig::new(1).with_capacity(capacity).with_output_after(0);
+            prop_assert!(cfg.effective_output_after() >= 1);
+        }
+
+        #[test]
+        fn setters_reflect_values(n in 1usize..=100) {
+            let cfg = RcfConfig::new(1).with_num_trees(n);
+            prop_assert_eq!(cfg.num_trees, n);
+        }
+    }
+}

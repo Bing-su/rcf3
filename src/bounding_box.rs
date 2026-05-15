@@ -294,4 +294,50 @@ mod tests {
             epsilon = 1e-12
         );
     }
+
+    #[cfg(feature = "std")]
+    mod proptest_tests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn probability_of_cut_in_unit_interval(
+                lo in -100f32..0f32,
+                hi in 0f32..100f32,
+                px in -200f32..200f32,
+                py in -200f32..200f32,
+            ) {
+                let bbox = BoundingBox::from_two_points(&[lo, lo], &[hi, hi]);
+                let p = bbox.probability_of_cut(&[px, py]);
+                prop_assert!(p >= 0.0 && p <= 1.0, "poc={p} for ({px},{py})");
+            }
+
+            #[test]
+            fn expand_range_sum_non_decreasing(
+                lo in -50f32..0f32,
+                hi in 0f32..50f32,
+                px in -100f32..100f32,
+                py in -100f32..100f32,
+            ) {
+                let mut bbox = BoundingBox::from_two_points(&[lo, lo], &[hi, hi]);
+                let before = bbox.range_sum();
+                bbox.expand_with_point(&[px, py]);
+                let after = bbox.range_sum();
+                prop_assert!(after >= before - 1e-9, "after={after} < before={before}");
+            }
+
+            #[test]
+            fn probability_all_missing_is_zero(
+                lo in -100f32..0f32,
+                hi in 0f32..100f32,
+                px in -200f32..200f32,
+                py in -200f32..200f32,
+            ) {
+                let bbox = BoundingBox::from_two_points(&[lo, lo], &[hi, hi]);
+                let p = bbox.probability_of_cut_with_missing(&[px, py], &[true, true]);
+                prop_assert_eq!(p, 0.0);
+            }
+        }
+    }
 }

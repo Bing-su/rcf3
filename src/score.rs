@@ -217,4 +217,55 @@ mod tests {
         let s = normalizer(1.0, 256);
         assert!(s > 1.0); // log2(257) ≈ 8
     }
+
+    #[cfg(feature = "std")]
+    mod proptest_tests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn damp_in_unit_interval(
+                tree_mass in 1usize..=1000,
+                mass in 0usize..=1000,
+            ) {
+                // damp is in [0,1] when mass <= tree_mass (the only sensible usage)
+                let capped = mass.min(tree_mass);
+                let d = damp(capped, tree_mass);
+                prop_assert!(d >= 0.0 && d <= 1.0, "damp({capped},{tree_mass})={d}");
+            }
+
+            #[test]
+            fn attribution_total_equals_sum(below in -1e6f64..1e6f64, above in -1e6f64..1e6f64) {
+                let a = Attribution { below, above };
+                prop_assert!((a.total() - (below + above)).abs() < 1e-9);
+            }
+
+            #[test]
+            fn attribution_scale_distributes(
+                below in -1e3f64..1e3f64,
+                above in -1e3f64..1e3f64,
+                factor in -1e3f64..1e3f64,
+            ) {
+                let a = Attribution { below, above };
+                let s = a.scale(factor);
+                prop_assert!((s.below - below * factor).abs() < 1e-9);
+                prop_assert!((s.above - above * factor).abs() < 1e-9);
+            }
+
+            #[test]
+            fn attribution_add_by_component(
+                b1 in -1e6f64..1e6f64,
+                a1 in -1e6f64..1e6f64,
+                b2 in -1e6f64..1e6f64,
+                a2 in -1e6f64..1e6f64,
+            ) {
+                let x = Attribution { below: b1, above: a1 };
+                let y = Attribution { below: b2, above: a2 };
+                let sum = x + y;
+                prop_assert!((sum.below - (b1 + b2)).abs() < 1e-9);
+                prop_assert!((sum.above - (a1 + a2)).abs() < 1e-9);
+            }
+        }
+    }
 }
