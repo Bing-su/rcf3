@@ -1,0 +1,66 @@
+use rand::prelude::*;
+use rand::rngs::Xoshiro256PlusPlus;
+
+use crate::error::{RcfError, Result};
+
+pub(crate) fn counts_to_anom(total: f64, current: f64, current_time: u64) -> f64 {
+    let cur_t = (current_time as f64).max(1.0);
+    let cur_mean = total / cur_t;
+    if cur_mean <= f64::EPSILON {
+        return 0.0;
+    }
+
+    let sqerr = (current - cur_mean).max(0.0);
+    let sqerr = sqerr * sqerr;
+
+    sqerr / cur_mean + sqerr / (cur_mean * (cur_t - 1.0).max(1.0))
+}
+
+pub(crate) fn ceil_log2(value: usize) -> Result<usize> {
+    if value < 2 {
+        return Err(RcfError::InvalidArgument("num_buckets must be >= 2".into()));
+    }
+
+    let mut p = 1usize;
+    let mut bits = 0usize;
+    while p < value {
+        p <<= 1;
+        bits += 1;
+    }
+    Ok(bits)
+}
+
+pub(crate) fn uniform_symmetric(rng: &mut Xoshiro256PlusPlus) -> f64 {
+    let u = (rng.next_u64() as f64) / (u64::MAX as f64);
+    u * 2.0 - 1.0
+}
+
+#[cfg(feature = "std")]
+pub(crate) fn floor_f64(x: f64) -> f64 {
+    x.floor()
+}
+
+#[cfg(not(feature = "std"))]
+pub(crate) fn floor_f64(x: f64) -> f64 {
+    libm::floor(x)
+}
+
+#[cfg(feature = "std")]
+pub(crate) fn log10_f64(x: f64) -> f64 {
+    x.log10()
+}
+
+#[cfg(not(feature = "std"))]
+pub(crate) fn log10_f64(x: f64) -> f64 {
+    libm::log10(x)
+}
+
+#[cfg(feature = "std")]
+pub(crate) fn ln_f64(x: f64) -> f64 {
+    x.ln()
+}
+
+#[cfg(not(feature = "std"))]
+pub(crate) fn ln_f64(x: f64) -> f64 {
+    libm::log(x)
+}

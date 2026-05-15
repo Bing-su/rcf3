@@ -11,6 +11,7 @@ pub mod config;
 pub mod cut;
 pub mod error;
 pub mod forest;
+pub mod mstream;
 pub mod node_arena;
 pub mod point_store;
 pub mod sampler;
@@ -21,6 +22,7 @@ pub mod tree;
 pub use config::RcfConfig;
 pub use error::{RcfError, Result};
 pub use forest::{Forest, ForestBuilder};
+pub use mstream::{MStream, MStreamBuilder, MStreamConfig};
 pub use score::{Attribution, ScoreMode};
 
 // ---------------------------------------------------------------------------

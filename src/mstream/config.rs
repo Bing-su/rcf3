@@ -1,0 +1,84 @@
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+use crate::error::{RcfError, Result};
+
+/// Configuration for the mStream detector.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct MStreamConfig {
+    /// Number of numerical aspects in each record.
+    pub numeric_dim: usize,
+    /// Number of categorical aspects in each record.
+    pub categorical_dim: usize,
+    /// Number of hash rows.
+    pub num_rows: usize,
+    /// Number of buckets per hash row.
+    pub num_buckets: usize,
+    /// Temporal decay factor in `(0, 1)`.
+    pub alpha: f64,
+}
+
+impl MStreamConfig {
+    /// Create config with default hash parameters.
+    pub fn new(numeric_dim: usize, categorical_dim: usize) -> Self {
+        Self {
+            numeric_dim,
+            categorical_dim,
+            num_rows: 2,
+            num_buckets: 1024,
+            alpha: 0.8,
+        }
+    }
+
+    /// Set number of hash rows.
+    pub fn with_num_rows(mut self, value: usize) -> Self {
+        self.num_rows = value;
+        self
+    }
+
+    /// Set number of buckets.
+    pub fn with_num_buckets(mut self, value: usize) -> Self {
+        self.num_buckets = value;
+        self
+    }
+
+    /// Set temporal decay factor.
+    pub fn with_alpha(mut self, value: f64) -> Self {
+        self.alpha = value;
+        self
+    }
+
+    pub(crate) fn validate(&self) -> Result<()> {
+        if self.numeric_dim == 0 && self.categorical_dim == 0 {
+            return Err(RcfError::InvalidArgument(
+                "at least one of numeric_dim or categorical_dim must be > 0".into(),
+            ));
+        }
+        if self.num_rows == 0 {
+            return Err(RcfError::InvalidArgument("num_rows must be > 0".into()));
+        }
+        if self.num_buckets < 2 {
+            return Err(RcfError::InvalidArgument("num_buckets must be >= 2".into()));
+        }
+        if !(0.0..1.0).contains(&self.alpha) {
+            return Err(RcfError::InvalidArgument(
+                "alpha must be in range (0, 1)".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::error::RcfError;
+
+    use super::MStreamConfig;
+
+    #[test]
+    fn rejects_empty_dimensions() {
+        let err = MStreamConfig::new(0, 0).validate().unwrap_err();
+        assert!(matches!(err, RcfError::InvalidArgument(_)));
+    }
+}
