@@ -52,7 +52,7 @@ fn categorical_hash_resid(
     row: usize,
     num_buckets: usize,
 ) -> usize {
-    let mut resid = 0u64;
+    let mut resid = 0u128;
     for (col, value) in categorical.iter().enumerate().take(coeffs_row.len()) {
         let state = ahash::RandomState::with_seeds(
             coeffs_row[col] as u64,
@@ -60,9 +60,13 @@ fn categorical_hash_resid(
             col as u64,
             num_buckets as u64,
         );
-        resid = (resid + state.hash_one(*value)) % num_buckets as u64;
+        resid = (resid + state.hash_one(*value) as u128) % num_buckets as u128;
     }
     resid as usize
+}
+
+fn modular_bucket_sum(lhs: usize, rhs: usize, num_buckets: usize) -> usize {
+    ((lhs as u128 + rhs as u128) % num_buckets as u128) as usize
 }
 
 #[derive(Clone, Debug)]
@@ -239,11 +243,17 @@ impl RecordSketch {
         )
     }
 
+    fn hash(&self, numeric: &[f64], categorical: &[i64], row: usize) -> usize {
+        modular_bucket_sum(
+            self.numeric_hash(numeric, row),
+            self.categorical_hash(categorical, row),
+            self.num_buckets,
+        )
+    }
+
     pub(crate) fn insert(&mut self, numeric: &[f64], categorical: &[i64], weight: f64) {
         for row in 0..self.num_rows {
-            let bucket1 = self.numeric_hash(numeric, row);
-            let bucket2 = self.categorical_hash(categorical, row);
-            let bucket = (bucket1 + bucket2) % self.num_buckets;
+            let bucket = self.hash(numeric, categorical, row);
             self.count[[row, bucket]] += weight;
         }
     }
@@ -251,9 +261,7 @@ impl RecordSketch {
     pub(crate) fn get_count(&self, numeric: &[f64], categorical: &[i64]) -> f64 {
         let mut min_count = f64::INFINITY;
         for row in 0..self.num_rows {
-            let bucket1 = self.numeric_hash(numeric, row);
-            let bucket2 = self.categorical_hash(categorical, row);
-            let bucket = (bucket1 + bucket2) % self.num_buckets;
+            let bucket = self.hash(numeric, categorical, row);
             min_count = min_count.min(self.count[[row, bucket]]);
         }
         min_count
@@ -399,6 +407,17 @@ mod tests {
 
         assert_eq!(first, second);
         assert!(first < num_buckets);
+    }
+
+    #[test]
+    fn modular_bucket_sum_handles_usize_overflow_boundary() {
+        let lhs = usize::MAX;
+        let rhs = usize::MAX - 1;
+        let num_buckets = 1024;
+
+        let expected = 1021; // (lhs + rhs) % num_buckets = (2 * usize::MAX - 1) % 1024
+
+        assert_eq!(modular_bucket_sum(lhs, rhs, num_buckets), expected);
     }
 
     #[test]
