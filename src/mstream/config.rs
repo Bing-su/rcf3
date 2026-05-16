@@ -3,24 +3,27 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{RcfError, Result};
 
-/// Configuration for the mStream detector.
+/// Configuration for an [`MStream`](super::MStream) detector.
+///
+/// Values are validated when a detector is built. Use the `with_*` methods to
+/// override defaults while keeping the fields themselves read-only.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MStreamConfig {
     /// Number of numerical aspects in each record.
-    pub numeric_dim: usize,
+    numeric_dim: usize,
     /// Number of categorical aspects in each record.
-    pub categorical_dim: usize,
+    categorical_dim: usize,
     /// Number of hash rows.
-    pub num_rows: usize,
+    num_rows: usize,
     /// Number of buckets per hash row.
-    pub num_buckets: usize,
+    num_buckets: usize,
     /// Temporal decay factor in `(0, 1)`.
-    pub alpha: f64,
+    alpha: f64,
 }
 
 impl MStreamConfig {
-    /// Create config with default hash parameters.
+    /// Create a config with default hash parameters.
     pub fn new(numeric_dim: usize, categorical_dim: usize) -> Self {
         Self {
             numeric_dim,
@@ -31,22 +34,47 @@ impl MStreamConfig {
         }
     }
 
-    /// Set number of hash rows.
+    /// Set the number of hash rows.
     pub fn with_num_rows(mut self, value: usize) -> Self {
         self.num_rows = value;
         self
     }
 
-    /// Set number of buckets.
+    /// Set the number of buckets per hash row.
     pub fn with_num_buckets(mut self, value: usize) -> Self {
         self.num_buckets = value;
         self
     }
 
-    /// Set temporal decay factor.
+    /// Set the temporal decay factor.
     pub fn with_alpha(mut self, value: f64) -> Self {
         self.alpha = value;
         self
+    }
+
+    /// Number of numerical aspects in each record.
+    pub fn numeric_dim(&self) -> usize {
+        self.numeric_dim
+    }
+
+    /// Number of categorical aspects in each record.
+    pub fn categorical_dim(&self) -> usize {
+        self.categorical_dim
+    }
+
+    /// Number of hash rows.
+    pub fn num_rows(&self) -> usize {
+        self.num_rows
+    }
+
+    /// Number of buckets per hash row.
+    pub fn num_buckets(&self) -> usize {
+        self.num_buckets
+    }
+
+    /// Temporal decay factor.
+    pub fn alpha(&self) -> f64 {
+        self.alpha
     }
 
     pub(crate) fn validate(&self) -> Result<()> {

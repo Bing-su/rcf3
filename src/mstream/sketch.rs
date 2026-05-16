@@ -99,6 +99,15 @@ impl NumericSketch {
     pub(crate) fn lower(&mut self, factor: f64) {
         decay_counts(&mut self.count, factor);
     }
+
+    pub(crate) fn validate_shape(&self, num_buckets: usize) -> Result<()> {
+        if self.num_buckets != num_buckets || self.count.len() != num_buckets {
+            return Err(RcfError::InvalidArgument(
+                "snapshot numeric sketch shape does not match config".into(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -166,6 +175,20 @@ impl CategoricalSketch {
             hash_b: self.hash_b.clone(),
             count: Array2::zeros((self.num_rows, self.num_buckets)),
         }
+    }
+
+    pub(crate) fn validate_shape(&self, num_rows: usize, num_buckets: usize) -> Result<()> {
+        if self.num_rows != num_rows
+            || self.num_buckets != num_buckets
+            || self.hash_a.len() != num_rows
+            || self.hash_b.len() != num_rows
+            || self.count.dim() != (num_rows, num_buckets)
+        {
+            return Err(RcfError::InvalidArgument(
+                "snapshot categorical sketch shape does not match config".into(),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -273,6 +296,29 @@ impl RecordSketch {
             categorical_coeffs: self.categorical_coeffs.clone(),
             count: Array2::zeros((self.num_rows, self.num_buckets)),
         }
+    }
+
+    pub(crate) fn validate_shape(
+        &self,
+        num_rows: usize,
+        num_buckets: usize,
+        numeric_dim: usize,
+        categorical_dim: usize,
+    ) -> Result<()> {
+        let log_buckets = ceil_log2(num_buckets)?;
+        if self.num_rows != num_rows
+            || self.num_buckets != num_buckets
+            || self.numeric_dim != numeric_dim
+            || self.categorical_dim != categorical_dim
+            || self.numeric_planes.dim() != (num_rows, log_buckets, numeric_dim)
+            || self.categorical_coeffs.dim() != (num_rows, categorical_dim)
+            || self.count.dim() != (num_rows, num_buckets)
+        {
+            return Err(RcfError::InvalidArgument(
+                "snapshot record sketch shape does not match config".into(),
+            ));
+        }
+        Ok(())
     }
 }
 

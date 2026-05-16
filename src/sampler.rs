@@ -115,7 +115,7 @@ impl Sampler {
     /// Returns an [`AcceptResult`] describing whether the point was accepted
     /// and whether an existing point was evicted.
     ///
-    /// If accepted, the caller must follow up with [`add_point`] once the
+    /// If accepted, the caller must follow up with [`Self::add_point`] once the
     /// actual point index is known (after possible de-duplication by the tree).
     pub fn accept(&mut self, is_initial: bool, weight: f64, point_idx: usize) -> AcceptResult {
         if is_initial || (self.size < self.capacity) {

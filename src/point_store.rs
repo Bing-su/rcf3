@@ -153,7 +153,7 @@ impl PointStore {
     /// Store `point` and return its index.
     ///
     /// The reference count is initialised to 0; callers must call
-    /// [`inc_ref`] for each tree that accepts this point.
+    /// [`Self::inc_ref`] for each tree that accepts this point.
     pub fn add(&mut self, point: &[f32]) -> Result<usize> {
         if point.len() != self.dim {
             return Err(RcfError::DimensionMismatch {

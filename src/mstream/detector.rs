@@ -1,30 +1,36 @@
 #[cfg(all(not(feature = "std"), feature = "serde"))]
 use alloc::string::{String, ToString};
 #[cfg(not(feature = "std"))]
-use alloc::{format, vec, vec::Vec};
+use alloc::{format, vec::Vec};
 
+use itertools::izip;
 use rand::prelude::*;
 use rand::rngs::Xoshiro256PlusPlus;
 
 use crate::error::{RcfError, Result};
 
+use super::clock::StreamClock;
 use super::config::MStreamConfig;
+use super::normalization::{NormalizedRecord, NumericRangeNormalizer};
+use super::scoring::{counts_to_anom, preview_insert_score};
 use super::sketch::{CategoricalSketch, NumericSketch, RecordSketch};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-fn counts_to_anom(total: f64, current: f64, current_time: u64) -> f64 {
-    let cur_t = (current_time as f64).max(1.0);
-    let cur_mean = total / cur_t;
-    if cur_mean <= f64::EPSILON {
-        return 0.0;
+const CURRENT_SNAPSHOT_VERSION: u32 = 1;
+
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+struct SketchCounts<S> {
+    current: S,
+    total: S,
+}
+
+impl<S> SketchCounts<S> {
+    fn new(current: S, total: S) -> Self {
+        Self { current, total }
     }
-
-    let sqerr = current - cur_mean;
-    let sqerr = sqerr * sqerr;
-
-    sqerr / cur_mean + sqerr / (cur_mean * (cur_t - 1.0).max(1.0))
 }
 
 /// Decomposed anomaly score for one streamed record.
@@ -57,31 +63,31 @@ impl MStreamBuilder {
         Self { config, seed: None }
     }
 
-    /// Set random seed for deterministic hashing.
+    /// Set a random seed for deterministic hashing.
     pub fn seed(mut self, value: u64) -> Self {
         self.seed = Some(value);
         self
     }
 
-    /// Set number of hash rows.
+    /// Set the number of hash rows.
     pub fn num_rows(mut self, value: usize) -> Self {
         self.config = self.config.with_num_rows(value);
         self
     }
 
-    /// Set number of buckets.
+    /// Set the number of buckets per hash row.
     pub fn num_buckets(mut self, value: usize) -> Self {
         self.config = self.config.with_num_buckets(value);
         self
     }
 
-    /// Set temporal decay factor.
+    /// Set the temporal decay factor.
     pub fn alpha(mut self, value: f64) -> Self {
         self.config = self.config.with_alpha(value);
         self
     }
 
-    /// Build detector.
+    /// Build the detector.
     pub fn build(self) -> Result<MStream> {
         match self.seed {
             Some(seed) => MStream::from_config_seeded(&self.config, seed),
@@ -95,28 +101,43 @@ impl MStreamBuilder {
 /// `timestamp` is interpreted as the paper's time tick, not as wall-clock time.
 /// Scores are invariant to adding a constant offset to all timestamps, while a
 /// gap of `k` ticks applies the temporal decay factor `alpha` exactly `k` times.
+///
+/// Use [`update`](Self::update) or [`update_and_score`](Self::update_and_score)
+/// to ingest records. Use [`score`](Self::score) or
+/// [`score_detailed`](Self::score_detailed) to preview the next score without
+/// mutating detector state.
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MStream {
     config: MStreamConfig,
-    current_time: Option<u64>,
-    current_tick: u64,
+    clock: StreamClock,
     entries_seen: u64,
 
-    cur_count: RecordSketch,
-    total_count: RecordSketch,
+    record_counts: SketchCounts<RecordSketch>,
+    numeric_counts: Vec<SketchCounts<NumericSketch>>,
+    categorical_counts: Vec<SketchCounts<CategoricalSketch>>,
 
-    numeric_score: Vec<NumericSketch>,
-    numeric_total: Vec<NumericSketch>,
-    categorical_score: Vec<CategoricalSketch>,
-    categorical_total: Vec<CategoricalSketch>,
+    numeric_normalizer: NumericRangeNormalizer,
+}
 
-    min_numeric: Vec<f64>,
-    max_numeric: Vec<f64>,
+/// Serializable, versioned representation of an [`MStream`] detector state.
+///
+/// This type is intentionally separate from the live detector so the persisted
+/// format can evolve without making the runtime layout part of the public API.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct MStreamSnapshot {
+    version: u32,
+    config: MStreamConfig,
+    clock: StreamClock,
+    entries_seen: u64,
+    record_counts: SketchCounts<RecordSketch>,
+    numeric_counts: Vec<SketchCounts<NumericSketch>>,
+    categorical_counts: Vec<SketchCounts<CategoricalSketch>>,
+    numeric_normalizer: NumericRangeNormalizer,
 }
 
 impl MStream {
-    /// Create a builder with the required dimensions.
+    /// Create a builder for records with the required dimensions.
     pub fn builder(numeric_dim: usize, categorical_dim: usize) -> MStreamBuilder {
         MStreamBuilder::new(MStreamConfig::new(numeric_dim, categorical_dim))
     }
@@ -137,75 +158,100 @@ impl MStream {
 
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
 
-        let cur_count = RecordSketch::new(
-            config.num_rows,
-            config.num_buckets,
-            config.numeric_dim,
-            config.categorical_dim,
+        let record_current = RecordSketch::new(
+            config.num_rows(),
+            config.num_buckets(),
+            config.numeric_dim(),
+            config.categorical_dim(),
             &mut rng,
         )?;
-        let total_count = cur_count.zeroed_like();
+        let record_total = record_current.zeroed_like();
+        let record_counts = SketchCounts::new(record_current, record_total);
 
-        let mut numeric_score = Vec::with_capacity(config.numeric_dim);
-        let mut numeric_total = Vec::with_capacity(config.numeric_dim);
-        for _ in 0..config.numeric_dim {
-            numeric_score.push(NumericSketch::new(config.num_buckets));
-            numeric_total.push(NumericSketch::new(config.num_buckets));
+        let mut numeric_counts = Vec::with_capacity(config.numeric_dim());
+        for _ in 0..config.numeric_dim() {
+            numeric_counts.push(SketchCounts::new(
+                NumericSketch::new(config.num_buckets()),
+                NumericSketch::new(config.num_buckets()),
+            ));
         }
 
-        let mut categorical_score = Vec::with_capacity(config.categorical_dim);
-        let mut categorical_total = Vec::with_capacity(config.categorical_dim);
-        for _ in 0..config.categorical_dim {
+        let mut categorical_counts = Vec::with_capacity(config.categorical_dim());
+        for _ in 0..config.categorical_dim() {
             let score_sketch =
-                CategoricalSketch::new(config.num_rows, config.num_buckets, &mut rng);
-            categorical_total.push(score_sketch.zeroed_like());
-            categorical_score.push(score_sketch);
+                CategoricalSketch::new(config.num_rows(), config.num_buckets(), &mut rng);
+            let total_sketch = score_sketch.zeroed_like();
+            categorical_counts.push(SketchCounts::new(score_sketch, total_sketch));
         }
 
-        let numeric_dim = config.numeric_dim;
+        let numeric_dim = config.numeric_dim();
 
-        debug_assert_eq!(numeric_score.len(), numeric_dim);
-        debug_assert_eq!(numeric_total.len(), numeric_dim);
-        debug_assert_eq!(categorical_score.len(), config.categorical_dim);
-        debug_assert_eq!(categorical_total.len(), config.categorical_dim);
+        debug_assert_eq!(numeric_counts.len(), numeric_dim);
+        debug_assert_eq!(categorical_counts.len(), config.categorical_dim());
 
         Ok(Self {
             config,
-            current_time: None,
-            current_tick: 0,
+            clock: StreamClock::default(),
             entries_seen: 0,
-            cur_count,
-            total_count,
-            numeric_score,
-            numeric_total,
-            categorical_score,
-            categorical_total,
-            min_numeric: vec![f64::INFINITY; numeric_dim],
-            max_numeric: vec![f64::NEG_INFINITY; numeric_dim],
+            record_counts,
+            numeric_counts,
+            categorical_counts,
+            numeric_normalizer: NumericRangeNormalizer::new(numeric_dim),
         })
     }
 
-    /// Returns configuration.
+    /// Capture a serializable snapshot of the detector state.
+    pub fn snapshot(&self) -> MStreamSnapshot {
+        MStreamSnapshot {
+            version: CURRENT_SNAPSHOT_VERSION,
+            config: self.config.clone(),
+            clock: self.clock.clone(),
+            entries_seen: self.entries_seen,
+            record_counts: self.record_counts.clone(),
+            numeric_counts: self.numeric_counts.clone(),
+            categorical_counts: self.categorical_counts.clone(),
+            numeric_normalizer: self.numeric_normalizer.clone(),
+        }
+    }
+
+    /// Restore a detector from a previously captured snapshot.
+    ///
+    /// The snapshot version and internal shape invariants are validated before
+    /// the detector is reconstructed.
+    pub fn from_snapshot(snapshot: MStreamSnapshot) -> Result<Self> {
+        snapshot.validate()?;
+        Ok(Self {
+            config: snapshot.config,
+            clock: snapshot.clock,
+            entries_seen: snapshot.entries_seen,
+            record_counts: snapshot.record_counts,
+            numeric_counts: snapshot.numeric_counts,
+            categorical_counts: snapshot.categorical_counts,
+            numeric_normalizer: snapshot.numeric_normalizer,
+        })
+    }
+
+    /// Return the detector configuration.
     pub fn config(&self) -> &MStreamConfig {
         &self.config
     }
 
-    /// Number of processed records.
+    /// Return the number of processed records.
     pub fn entries_seen(&self) -> u64 {
         self.entries_seen
     }
 
-    /// Last timestamp observed by the detector.
+    /// Return the last timestamp observed by the detector.
     pub fn current_time(&self) -> Option<u64> {
-        self.current_time
+        self.clock.current_time()
     }
 
-    /// Returns `true` once the detector has processed at least one record.
+    /// Return `true` once the detector has processed at least one record.
     pub fn is_ready(&self) -> bool {
         self.entries_seen > 0
     }
 
-    /// Update the detector and return anomaly score for this record.
+    /// Ingest a record and return its anomaly score.
     ///
     /// The `timestamp` argument must be a monotonically non-decreasing tick
     /// index. Only tick differences matter: shifting all timestamps by the same
@@ -221,8 +267,8 @@ impl MStream {
             .total)
     }
 
-    /// Update the detector and return the record-level and feature-level score
-    /// components used to form the final anomaly score.
+    /// Ingest a record and return the decomposed score used to form the final
+    /// anomaly score.
     pub fn update_and_score_detailed(
         &mut self,
         numeric: &[f32],
@@ -231,108 +277,44 @@ impl MStream {
     ) -> Result<MStreamScore> {
         self.validate_record(numeric, categorical)?;
 
-        debug_assert_eq!(self.numeric_score.len(), self.config.numeric_dim);
-        debug_assert_eq!(self.numeric_total.len(), self.config.numeric_dim);
-        debug_assert_eq!(self.min_numeric.len(), self.config.numeric_dim);
-        debug_assert_eq!(self.max_numeric.len(), self.config.numeric_dim);
-        debug_assert_eq!(self.categorical_score.len(), self.config.categorical_dim);
-        debug_assert_eq!(self.categorical_total.len(), self.config.categorical_dim);
+        debug_assert_eq!(self.numeric_counts.len(), self.config.numeric_dim());
+        debug_assert_eq!(
+            self.numeric_normalizer.min_numeric.len(),
+            self.config.numeric_dim()
+        );
+        debug_assert_eq!(
+            self.numeric_normalizer.max_numeric.len(),
+            self.config.numeric_dim()
+        );
+        debug_assert_eq!(self.categorical_counts.len(), self.config.categorical_dim());
 
-        if timestamp == 0 {
-            return Err(RcfError::InvalidArgument("timestamp must be > 0".into()));
+        let tick_gap = self.clock.advance(timestamp)?;
+        if tick_gap > 0 {
+            self.lower_current_counts(self.config.alpha().powf(tick_gap as f64));
         }
 
-        match self.current_time {
-            None => {
-                self.current_time = Some(timestamp);
-                self.current_tick = 1;
-            }
-            Some(t) if timestamp > t => {
-                let tick_gap = timestamp - t;
-                self.lower_current_counts(self.config.alpha.powf(tick_gap as f64));
-                self.current_time = Some(timestamp);
-                self.current_tick += tick_gap;
-            }
-            Some(t) if timestamp < t => {
-                return Err(RcfError::InvalidArgument(format!(
-                    "timestamps must be non-decreasing: previous={t}, got={timestamp}"
-                )));
-            }
-            _ => {}
-        }
+        let cur_t = self.clock.current_tick().max(1);
+        let normalized_numeric = self
+            .numeric_normalizer
+            .normalize(numeric, self.entries_seen)?;
+        let numeric_features = self.score_numeric_features(&normalized_numeric, cur_t);
 
-        let cur_t = self.current_tick.max(1);
-        let mut normalized = vec![0.0_f64; self.config.numeric_dim];
-        let mut record_numeric = vec![0.0_f64; self.config.numeric_dim];
-        let mut numeric_features = Vec::with_capacity(self.config.numeric_dim);
-        let mut categorical_features = Vec::with_capacity(self.config.categorical_dim);
+        self.record_counts
+            .current
+            .insert(&normalized_numeric.raw, categorical, 1.0);
+        self.record_counts
+            .total
+            .insert(&normalized_numeric.raw, categorical, 1.0);
 
-        for i in 0..self.config.numeric_dim {
-            let raw = f64::from(numeric[i]);
-            if !raw.is_finite() {
-                return Err(RcfError::InvalidArgument(
-                    "numeric values must be finite".into(),
-                ));
-            }
-            if raw <= -1.0 {
-                return Err(RcfError::InvalidArgument(
-                    "numeric value must be > -1.0 for ln(1+x) transform".into(),
-                ));
-            }
-
-            record_numeric[i] = raw;
-
-            let transformed = (1.0 + raw).ln();
-            if self.entries_seen == 0 {
-                self.min_numeric[i] = transformed;
-                self.max_numeric[i] = transformed;
-                normalized[i] = 0.0;
-            } else {
-                if transformed < self.min_numeric[i] {
-                    self.min_numeric[i] = transformed;
-                }
-                if transformed > self.max_numeric[i] {
-                    self.max_numeric[i] = transformed;
-                }
-
-                let span = self.max_numeric[i] - self.min_numeric[i];
-                normalized[i] = if span <= f64::EPSILON {
-                    0.0
-                } else {
-                    (transformed - self.min_numeric[i]) / span
-                };
-            }
-
-            self.numeric_score[i].insert(normalized[i], 1.0);
-            self.numeric_total[i].insert(normalized[i], 1.0);
-
-            let t = counts_to_anom(
-                self.numeric_total[i].get_count(normalized[i]),
-                self.numeric_score[i].get_count(normalized[i]),
-                cur_t,
-            );
-            numeric_features.push(t);
-        }
-
-        self.cur_count.insert(&record_numeric, categorical, 1.0);
-        self.total_count.insert(&record_numeric, categorical, 1.0);
-
-        for i in 0..self.config.categorical_dim {
-            let v = categorical[i];
-            self.categorical_score[i].insert(v, 1.0);
-            self.categorical_total[i].insert(v, 1.0);
-
-            let t = counts_to_anom(
-                self.categorical_total[i].get_count(v),
-                self.categorical_score[i].get_count(v),
-                cur_t,
-            );
-            categorical_features.push(t);
-        }
+        let categorical_features = self.score_categorical_features(categorical, cur_t);
 
         let record_score = counts_to_anom(
-            self.total_count.get_count(&record_numeric, categorical),
-            self.cur_count.get_count(&record_numeric, categorical),
+            self.record_counts
+                .total
+                .get_count(&normalized_numeric.raw, categorical),
+            self.record_counts
+                .current
+                .get_count(&normalized_numeric.raw, categorical),
             cur_t,
         );
         self.entries_seen += 1;
@@ -348,44 +330,96 @@ impl MStream {
         })
     }
 
-    /// mStream computes score online; this method is an alias to
-    /// [`MStream::update_and_score`].
-    pub fn score(&mut self, numeric: &[f32], categorical: &[i64], timestamp: u64) -> Result<f64> {
-        self.update_and_score(numeric, categorical, timestamp)
+    /// Preview the anomaly score for a record without mutating detector state.
+    ///
+    /// The preview answers “what would this record score if it were ingested
+    /// next?” using the same timestamp semantics as
+    /// [`update_and_score`](Self::update_and_score).
+    pub fn score(&self, numeric: &[f32], categorical: &[i64], timestamp: u64) -> Result<f64> {
+        Ok(self.score_detailed(numeric, categorical, timestamp)?.total)
     }
 
-    /// Update detector state without using the score.
+    /// Ingest a record without returning its score.
     pub fn update(&mut self, numeric: &[f32], categorical: &[i64], timestamp: u64) -> Result<()> {
         let _ = self.update_and_score(numeric, categorical, timestamp)?;
         Ok(())
+    }
+
+    /// Preview the decomposed anomaly score without mutating detector state.
+    pub fn score_detailed(
+        &self,
+        numeric: &[f32],
+        categorical: &[i64],
+        timestamp: u64,
+    ) -> Result<MStreamScore> {
+        self.validate_record(numeric, categorical)?;
+
+        let clock_step = self.clock.preview(timestamp)?;
+        let decay_factor = self.config.alpha().powf(clock_step.tick_gap as f64);
+        let normalized_numeric = self
+            .numeric_normalizer
+            .preview(numeric, self.entries_seen)?;
+
+        let numeric_features = self.preview_numeric_feature_scores(
+            &normalized_numeric,
+            decay_factor,
+            clock_step.current_tick,
+        );
+        let categorical_features = self.preview_categorical_feature_scores(
+            categorical,
+            decay_factor,
+            clock_step.current_tick,
+        );
+        let record_score = preview_insert_score(
+            self.record_counts
+                .total
+                .get_count(&normalized_numeric.raw, categorical),
+            self.record_counts
+                .current
+                .get_count(&normalized_numeric.raw, categorical),
+            decay_factor,
+            clock_step.current_tick,
+        );
+        let total = record_score
+            + numeric_features.iter().sum::<f64>()
+            + categorical_features.iter().sum::<f64>();
+
+        Ok(MStreamScore {
+            total,
+            record: record_score,
+            numeric_features,
+            categorical_features,
+        })
     }
 
     // -----------------------------------------------------------------------
     // Save / Load
     // -----------------------------------------------------------------------
 
-    /// Serialise the entire mStream state to a JSON string.
+    /// Serialize a versioned snapshot of the detector state to JSON.
     #[cfg(feature = "serde")]
     pub fn to_json(&self) -> Result<String> {
-        serde_json::to_string(self).map_err(|e| RcfError::Io(e.to_string()))
+        serde_json::to_string(&self.snapshot()).map_err(|e| RcfError::Io(e.to_string()))
     }
 
-    /// Deserialise mStream state from a JSON string previously written by
-    /// [`to_json`].
+    /// Deserialize detector state from JSON previously written by
+    /// [`Self::to_json`].
     #[cfg(feature = "serde")]
     pub fn from_json(json: impl AsRef<[u8]>) -> Result<Self> {
-        serde_json::from_slice(json.as_ref()).map_err(|e| RcfError::Io(e.to_string()))
+        let snapshot =
+            serde_json::from_slice(json.as_ref()).map_err(|e| RcfError::Io(e.to_string()))?;
+        Self::from_snapshot(snapshot)
     }
 
-    /// Serialise the entire mStream state to a JSON file.
+    /// Serialize a versioned snapshot of the detector state to a JSON file.
     #[cfg(all(feature = "serde", feature = "std"))]
     pub fn save_json(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         let json = self.to_json()?;
         std::fs::write(path.as_ref(), json).map_err(|e| RcfError::Io(e.to_string()))
     }
 
-    /// Deserialise mStream state from a JSON file previously written by
-    /// [`save_json`].
+    /// Deserialize detector state from a JSON file previously written by
+    /// [`Self::save_json`].
     #[cfg(all(feature = "serde", feature = "std"))]
     pub fn load_json(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let data = std::fs::read(path.as_ref()).map_err(|e| RcfError::Io(e.to_string()))?;
@@ -393,15 +427,15 @@ impl MStream {
     }
 
     fn validate_record(&self, numeric: &[f32], categorical: &[i64]) -> Result<()> {
-        if numeric.len() != self.config.numeric_dim {
+        if numeric.len() != self.config.numeric_dim() {
             return Err(RcfError::DimensionMismatch {
-                expected: self.config.numeric_dim,
+                expected: self.config.numeric_dim(),
                 got: numeric.len(),
             });
         }
-        if categorical.len() != self.config.categorical_dim {
+        if categorical.len() != self.config.categorical_dim() {
             return Err(RcfError::DimensionMismatch {
-                expected: self.config.categorical_dim,
+                expected: self.config.categorical_dim(),
                 got: categorical.len(),
             });
         }
@@ -412,13 +446,155 @@ impl MStream {
         debug_assert!(factor.is_finite());
         debug_assert!((0.0..=1.0).contains(&factor));
 
-        self.cur_count.lower(factor);
-        for sketch in &mut self.numeric_score {
-            sketch.lower(factor);
+        self.record_counts.current.lower(factor);
+        for counts in &mut self.numeric_counts {
+            counts.current.lower(factor);
         }
-        for sketch in &mut self.categorical_score {
-            sketch.lower(factor);
+        for counts in &mut self.categorical_counts {
+            counts.current.lower(factor);
         }
+    }
+
+    fn score_numeric_features(
+        &mut self,
+        numeric: &NormalizedRecord,
+        current_tick: u64,
+    ) -> Vec<f64> {
+        let mut scores = Vec::with_capacity(self.config.numeric_dim());
+
+        for (counts, value) in izip!(&mut self.numeric_counts, &numeric.normalized) {
+            counts.current.insert(*value, 1.0);
+            counts.total.insert(*value, 1.0);
+            scores.push(counts_to_anom(
+                counts.total.get_count(*value),
+                counts.current.get_count(*value),
+                current_tick,
+            ));
+        }
+
+        scores
+    }
+
+    fn score_categorical_features(&mut self, categorical: &[i64], current_tick: u64) -> Vec<f64> {
+        let mut scores = Vec::with_capacity(self.config.categorical_dim());
+
+        for (counts, value) in izip!(&mut self.categorical_counts, categorical) {
+            counts.current.insert(*value, 1.0);
+            counts.total.insert(*value, 1.0);
+            scores.push(counts_to_anom(
+                counts.total.get_count(*value),
+                counts.current.get_count(*value),
+                current_tick,
+            ));
+        }
+
+        scores
+    }
+
+    fn preview_numeric_feature_scores(
+        &self,
+        numeric: &NormalizedRecord,
+        decay_factor: f64,
+        current_tick: u64,
+    ) -> Vec<f64> {
+        izip!(&self.numeric_counts, &numeric.normalized)
+            .map(|(counts, value)| {
+                preview_insert_score(
+                    counts.total.get_count(*value),
+                    counts.current.get_count(*value),
+                    decay_factor,
+                    current_tick,
+                )
+            })
+            .collect()
+    }
+
+    fn preview_categorical_feature_scores(
+        &self,
+        categorical: &[i64],
+        decay_factor: f64,
+        current_tick: u64,
+    ) -> Vec<f64> {
+        izip!(&self.categorical_counts, categorical)
+            .map(|(counts, value)| {
+                preview_insert_score(
+                    counts.total.get_count(*value),
+                    counts.current.get_count(*value),
+                    decay_factor,
+                    current_tick,
+                )
+            })
+            .collect()
+    }
+}
+
+impl MStreamSnapshot {
+    /// Return the snapshot format version used by this value.
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.version != CURRENT_SNAPSHOT_VERSION {
+            return Err(RcfError::InvalidArgument(format!(
+                "unsupported mStream snapshot version: {}",
+                self.version
+            )));
+        }
+
+        self.config.validate()?;
+
+        if self.numeric_counts.len() != self.config.numeric_dim() {
+            return Err(RcfError::InvalidArgument(
+                "snapshot numeric sketch count does not match config".into(),
+            ));
+        }
+        if self.categorical_counts.len() != self.config.categorical_dim() {
+            return Err(RcfError::InvalidArgument(
+                "snapshot categorical sketch count does not match config".into(),
+            ));
+        }
+        if self.numeric_normalizer.min_numeric.len() != self.config.numeric_dim()
+            || self.numeric_normalizer.max_numeric.len() != self.config.numeric_dim()
+        {
+            return Err(RcfError::InvalidArgument(
+                "snapshot numeric normalization state does not match config".into(),
+            ));
+        }
+        if (self.clock.current_time().is_none() && self.clock.current_tick() != 0)
+            || (self.clock.current_time().is_some() && self.clock.current_tick() == 0)
+        {
+            return Err(RcfError::InvalidArgument(
+                "snapshot clock state is inconsistent".into(),
+            ));
+        }
+
+        self.record_counts.current.validate_shape(
+            self.config.num_rows(),
+            self.config.num_buckets(),
+            self.config.numeric_dim(),
+            self.config.categorical_dim(),
+        )?;
+        self.record_counts.total.validate_shape(
+            self.config.num_rows(),
+            self.config.num_buckets(),
+            self.config.numeric_dim(),
+            self.config.categorical_dim(),
+        )?;
+        for counts in &self.numeric_counts {
+            counts.current.validate_shape(self.config.num_buckets())?;
+            counts.total.validate_shape(self.config.num_buckets())?;
+        }
+        for counts in &self.categorical_counts {
+            counts
+                .current
+                .validate_shape(self.config.num_rows(), self.config.num_buckets())?;
+            counts
+                .total
+                .validate_shape(self.config.num_rows(), self.config.num_buckets())?;
+        }
+
+        Ok(())
     }
 }
 
@@ -426,6 +602,8 @@ impl MStream {
 mod tests {
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
+
+    use proptest::prelude::*;
 
     use crate::error::RcfError;
 
@@ -536,7 +714,7 @@ mod tests {
         d.update(&[9.0], &[], 1).unwrap();
         d.update(&[9.0], &[], 4).unwrap();
 
-        let count = d.numeric_score[0].get_count(0.0);
+        let count = d.numeric_counts[0].current.get_count(0.0);
         let expected = 1.0 + alpha.powi(3);
         assert!((count - expected).abs() < 1e-12);
     }
@@ -555,12 +733,12 @@ mod tests {
         let score = d.update_and_score(&[], &[2], 2).unwrap();
 
         let expected = counts_to_anom(
-            d.categorical_total[0].get_count(2),
-            d.categorical_score[0].get_count(2),
+            d.categorical_counts[0].total.get_count(2),
+            d.categorical_counts[0].current.get_count(2),
             2,
         ) + counts_to_anom(
-            d.total_count.get_count(&[], &[2]),
-            d.cur_count.get_count(&[], &[2]),
+            d.record_counts.total.get_count(&[], &[2]),
+            d.record_counts.current.get_count(&[], &[2]),
             2,
         );
         assert!((score - expected).abs() < 1e-12);
@@ -585,6 +763,49 @@ mod tests {
             + score.numeric_features.iter().sum::<f64>()
             + score.categorical_features.iter().sum::<f64>();
         assert!((score.total - recomposed).abs() < 1e-12);
+    }
+
+    #[test]
+    fn score_previews_without_mutating_state() {
+        let mut d = MStream::builder(1, 1).seed(7).build().unwrap();
+        d.update(&[0.1], &[1], 1).unwrap();
+
+        let before_entries = d.entries_seen();
+        let before_time = d.current_time();
+        let preview = d.score(&[1.0], &[2], 2).unwrap();
+
+        assert_eq!(d.entries_seen(), before_entries);
+        assert_eq!(d.current_time(), before_time);
+
+        let actual = d.update_and_score(&[1.0], &[2], 2).unwrap();
+
+        assert_eq!(d.entries_seen(), before_entries + 1);
+        assert_eq!(before_time, Some(1));
+        assert!((preview - actual).abs() < 1e-12);
+    }
+
+    #[test]
+    fn detailed_score_previews_without_mutating_state() {
+        let mut d = MStream::builder(2, 1).seed(7).build().unwrap();
+        d.update(&[0.1, 0.2], &[1], 1).unwrap();
+
+        let before_entries = d.entries_seen();
+        let before_time = d.current_time();
+        let preview = d.score_detailed(&[1.0, 2.0], &[2], 2).unwrap();
+
+        assert_eq!(d.entries_seen(), before_entries);
+        assert_eq!(d.current_time(), before_time);
+
+        let actual = d.update_and_score_detailed(&[1.0, 2.0], &[2], 2).unwrap();
+        assert_eq!(
+            preview.numeric_features.len(),
+            actual.numeric_features.len()
+        );
+        assert_eq!(
+            preview.categorical_features.len(),
+            actual.categorical_features.len()
+        );
+        assert!((preview.total - actual.total).abs() < 1e-12);
     }
 
     #[test]
@@ -619,6 +840,60 @@ mod tests {
         assert!(anomaly_max > baseline_max);
     }
 
+    proptest! {
+        #[test]
+        fn detailed_score_total_matches_component_sum(
+            records in prop::collection::vec(
+                ((-0.9f32..10.0), (-0.9f32..10.0), -8i64..=8, 0u64..=3),
+                1..=32,
+            ),
+        ) {
+            let mut detector = MStream::builder(2, 1)
+                .seed(17)
+                .num_rows(2)
+                .num_buckets(256)
+                .build()
+                .unwrap();
+            let mut timestamp = 1;
+
+            for (left, right, category, gap) in records {
+                timestamp += gap;
+                let score = detector
+                    .update_and_score_detailed(&[left, right], &[category], timestamp)
+                    .unwrap();
+                let recomposed = score.record
+                    + score.numeric_features.iter().sum::<f64>()
+                    + score.categorical_features.iter().sum::<f64>();
+
+                prop_assert!((score.total - recomposed).abs() < 1e-12);
+            }
+        }
+
+        #[test]
+        fn seeded_detectors_match_for_same_sequence(
+            records in prop::collection::vec(
+                ((-0.9f32..10.0), -8i64..=8, 0u64..=3),
+                1..=32,
+            ),
+        ) {
+            let mut left = MStream::builder(1, 1).seed(91).build().unwrap();
+            let mut right = MStream::builder(1, 1).seed(91).build().unwrap();
+            let mut timestamp = 1;
+
+            for (numeric, category, gap) in records {
+                timestamp += gap;
+                let left_score = left
+                    .update_and_score(&[numeric], &[category], timestamp)
+                    .unwrap();
+                let right_score = right
+                    .update_and_score(&[numeric], &[category], timestamp)
+                    .unwrap();
+
+                prop_assert!((left_score - right_score).abs() < 1e-12);
+            }
+        }
+    }
+
     #[cfg(feature = "serde")]
     #[test]
     fn json_roundtrip_preserves_state() {
@@ -631,12 +906,74 @@ mod tests {
 
         assert_eq!(restored.entries_seen(), d.entries_seen());
         assert_eq!(restored.current_time(), d.current_time());
-        assert_eq!(restored.config().num_rows, d.config().num_rows);
-        assert_eq!(restored.config().num_buckets, d.config().num_buckets);
-        assert_eq!(restored.config().numeric_dim, d.config().numeric_dim);
+        assert_eq!(restored.config().num_rows(), d.config().num_rows());
+        assert_eq!(restored.config().num_buckets(), d.config().num_buckets());
+        assert_eq!(restored.config().numeric_dim(), d.config().numeric_dim());
         assert_eq!(
-            restored.config().categorical_dim,
-            d.config().categorical_dim
+            restored.config().categorical_dim(),
+            d.config().categorical_dim()
         );
+    }
+
+    #[test]
+    fn snapshot_roundtrip_preserves_state() {
+        let mut d = MStream::builder(1, 1).seed(7).build().unwrap();
+        d.update(&[0.1], &[1], 1).unwrap();
+        d.update(&[0.2], &[2], 2).unwrap();
+
+        let restored = MStream::from_snapshot(d.snapshot()).unwrap();
+
+        assert_eq!(restored.entries_seen(), d.entries_seen());
+        assert_eq!(restored.current_time(), d.current_time());
+        assert_eq!(restored.config().num_rows(), d.config().num_rows());
+    }
+
+    #[test]
+    fn snapshot_uses_current_version() {
+        let d = MStream::builder(1, 1).seed(7).build().unwrap();
+
+        assert_eq!(d.snapshot().version(), CURRENT_SNAPSHOT_VERSION);
+    }
+
+    #[test]
+    fn rejects_snapshot_with_mismatched_feature_state() {
+        let d = MStream::builder(1, 1).seed(7).build().unwrap();
+        let mut snapshot = d.snapshot();
+        snapshot.numeric_counts.clear();
+
+        let err = MStream::from_snapshot(snapshot).unwrap_err();
+
+        assert!(matches!(err, RcfError::InvalidArgument(_)));
+    }
+
+    #[test]
+    fn rejects_snapshot_with_inconsistent_clock() {
+        let d = MStream::builder(1, 1).seed(7).build().unwrap();
+        let mut snapshot = d.snapshot();
+        snapshot.clock.current_tick = 1;
+
+        let err = MStream::from_snapshot(snapshot).unwrap_err();
+
+        assert!(matches!(err, RcfError::InvalidArgument(_)));
+    }
+
+    #[test]
+    fn rejects_snapshot_with_unsupported_version() {
+        let d = MStream::builder(1, 1).seed(7).build().unwrap();
+        let mut snapshot = d.snapshot();
+        snapshot.version = CURRENT_SNAPSHOT_VERSION + 1;
+
+        let err = MStream::from_snapshot(snapshot).unwrap_err();
+
+        assert!(matches!(err, RcfError::InvalidArgument(_)));
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn json_snapshot_contains_version() {
+        let d = MStream::builder(1, 1).seed(7).build().unwrap();
+        let json = d.to_json().unwrap();
+
+        assert!(json.contains("\"version\":1"));
     }
 }
