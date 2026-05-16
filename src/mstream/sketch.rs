@@ -1,10 +1,11 @@
 use ndarray::{Array1, Array2, Array3, ArrayBase, DataMut, Dimension};
 use rand::prelude::*;
 use rand::rngs::Xoshiro256PlusPlus;
+use rand_distr::StandardNormal;
 
 use crate::error::Result;
 
-use super::math::{ceil_log2, floor_f64, uniform_symmetric};
+use super::math::{ceil_log2, floor_f64};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -33,7 +34,7 @@ impl NumericSketch {
     }
 
     fn hash(&self, value: f64) -> usize {
-        let scaled = value * (self.num_buckets.saturating_sub(1) as f64);
+        let scaled = value * self.num_buckets as f64;
         let bucket = floor_f64(scaled) as isize;
         bucket.rem_euclid(self.num_buckets as isize) as usize
     }
@@ -136,7 +137,7 @@ impl RecordSketch {
 
         let numeric_planes =
             Array3::from_shape_simple_fn((num_rows, log_buckets, numeric_dim), || {
-                uniform_symmetric(rng.next_u64())
+                rng.sample(StandardNormal)
             });
 
         let categorical_coeffs =
@@ -184,21 +185,17 @@ impl RecordSketch {
             return 0;
         }
 
-        let mut state = ahash::RandomState::with_seeds(
-            self.categorical_coeffs[[row, 0]] as u64,
-            row as u64,
-            self.num_buckets as u64,
-            self.categorical_dim as u64,
-        );
-        for value in categorical.iter().take(self.categorical_dim) {
-            state = ahash::RandomState::with_seeds(
-                state.hash_one(*value),
+        let mut resid = 0u64;
+        for (col, value) in categorical.iter().enumerate().take(self.categorical_dim) {
+            let state = ahash::RandomState::with_seeds(
+                self.categorical_coeffs[[row, col]] as u64,
                 row as u64,
+                col as u64,
                 self.num_buckets as u64,
-                self.categorical_dim as u64,
             );
+            resid = (resid + state.hash_one(*value)) % self.num_buckets as u64;
         }
-        (state.hash_one(row as u64) % self.num_buckets as u64) as usize
+        resid as usize
     }
 
     pub(crate) fn insert(&mut self, numeric: &[f64], categorical: &[i64], weight: f64) {

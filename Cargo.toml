@@ -48,6 +48,7 @@ pyo3 = { version = "0.28", features = [
   "generate-import-lib"
 ], optional = true }
 rand = { version = "0.10", default-features = false, features = ["sys_rng"] }
+rand_distr = { version = "0.6", default-features = false }
 serde = { version = "1", default-features = false, features = [
   "alloc",
   "derive"

@@ -8,7 +8,7 @@ pub(crate) fn counts_to_anom(total: f64, current: f64, current_time: u64) -> f64
         return 0.0;
     }
 
-    let sqerr = (current - cur_mean).max(0.0);
+    let sqerr = current - cur_mean;
     let sqerr = sqerr * sqerr;
 
     sqerr / cur_mean + sqerr / (cur_mean * (cur_t - 1.0).max(1.0))
@@ -28,7 +28,14 @@ pub(crate) fn ceil_log2(value: usize) -> Result<usize> {
     Ok(bits)
 }
 
-pub(crate) fn uniform_symmetric(x: u64) -> f64 {
-    let u = (x as f64) / (u64::MAX as f64);
-    u * 2.0 - 1.0
+#[cfg(test)]
+mod tests {
+    use super::counts_to_anom;
+
+    #[test]
+    fn counts_to_anom_penalizes_negative_deviation() {
+        let score = counts_to_anom(10.0, 0.0, 2);
+        assert!(score > 0.0);
+        assert!((score - 10.0).abs() < 1e-12);
+    }
 }
