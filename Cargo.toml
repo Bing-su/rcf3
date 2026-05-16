@@ -41,6 +41,10 @@ name = "forest_bench"
 harness = false
 name = "mstream_bench"
 
+[[bench]]
+harness = false
+name = "comparison_bench"
+
 [dependencies]
 ahash = { version = "0.8", default-features = false, features = ["runtime-rng"] }
 itertools = { version = "0.14", default-features = false, features = [
