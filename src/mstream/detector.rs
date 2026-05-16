@@ -1,7 +1,7 @@
 #[cfg(all(not(feature = "std"), feature = "serde"))]
 use alloc::string::{String, ToString};
 #[cfg(not(feature = "std"))]
-use alloc::{format, vec::Vec};
+use alloc::vec::Vec;
 
 use itertools::izip;
 use rand::prelude::*;
@@ -17,8 +17,6 @@ use super::sketch::{CategoricalSketch, NumericSketch, RecordSketch};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-
-const CURRENT_SNAPSHOT_VERSION: u32 = 1;
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -107,6 +105,7 @@ impl MStreamBuilder {
 /// [`score_detailed`](Self::score_detailed) to preview the next score without
 /// mutating detector state.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MStream {
     config: MStreamConfig,
     clock: StreamClock,
@@ -116,23 +115,6 @@ pub struct MStream {
     numeric_counts: Vec<SketchCounts<NumericSketch>>,
     categorical_counts: Vec<SketchCounts<CategoricalSketch>>,
 
-    numeric_normalizer: NumericRangeNormalizer,
-}
-
-/// Serializable, versioned representation of an [`MStream`] detector state.
-///
-/// This type is intentionally separate from the live detector so the persisted
-/// format can evolve without making the runtime layout part of the public API.
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct MStreamSnapshot {
-    version: u32,
-    config: MStreamConfig,
-    clock: StreamClock,
-    entries_seen: u64,
-    record_counts: SketchCounts<RecordSketch>,
-    numeric_counts: Vec<SketchCounts<NumericSketch>>,
-    categorical_counts: Vec<SketchCounts<CategoricalSketch>>,
     numeric_normalizer: NumericRangeNormalizer,
 }
 
@@ -197,37 +179,6 @@ impl MStream {
             numeric_counts,
             categorical_counts,
             numeric_normalizer: NumericRangeNormalizer::new(numeric_dim),
-        })
-    }
-
-    /// Capture a serializable snapshot of the detector state.
-    pub fn snapshot(&self) -> MStreamSnapshot {
-        MStreamSnapshot {
-            version: CURRENT_SNAPSHOT_VERSION,
-            config: self.config.clone(),
-            clock: self.clock.clone(),
-            entries_seen: self.entries_seen,
-            record_counts: self.record_counts.clone(),
-            numeric_counts: self.numeric_counts.clone(),
-            categorical_counts: self.categorical_counts.clone(),
-            numeric_normalizer: self.numeric_normalizer.clone(),
-        }
-    }
-
-    /// Restore a detector from a previously captured snapshot.
-    ///
-    /// The snapshot version and internal shape invariants are validated before
-    /// the detector is reconstructed.
-    pub fn from_snapshot(snapshot: MStreamSnapshot) -> Result<Self> {
-        snapshot.validate()?;
-        Ok(Self {
-            config: snapshot.config,
-            clock: snapshot.clock,
-            entries_seen: snapshot.entries_seen,
-            record_counts: snapshot.record_counts,
-            numeric_counts: snapshot.numeric_counts,
-            categorical_counts: snapshot.categorical_counts,
-            numeric_normalizer: snapshot.numeric_normalizer,
         })
     }
 
@@ -396,22 +347,20 @@ impl MStream {
     // Save / Load
     // -----------------------------------------------------------------------
 
-    /// Serialize a versioned snapshot of the detector state to JSON.
+    /// Serialize the detector state to JSON.
     #[cfg(feature = "serde")]
     pub fn to_json(&self) -> Result<String> {
-        serde_json::to_string(&self.snapshot()).map_err(|e| RcfError::Io(e.to_string()))
+        serde_json::to_string(self).map_err(|e| RcfError::Io(e.to_string()))
     }
 
     /// Deserialize detector state from JSON previously written by
     /// [`Self::to_json`].
     #[cfg(feature = "serde")]
     pub fn from_json(json: impl AsRef<[u8]>) -> Result<Self> {
-        let snapshot =
-            serde_json::from_slice(json.as_ref()).map_err(|e| RcfError::Io(e.to_string()))?;
-        Self::from_snapshot(snapshot)
+        serde_json::from_slice(json.as_ref()).map_err(|e| RcfError::Io(e.to_string()))
     }
 
-    /// Serialize a versioned snapshot of the detector state to a JSON file.
+    /// Serialize the detector state to a JSON file.
     #[cfg(all(feature = "serde", feature = "std"))]
     pub fn save_json(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         let json = self.to_json()?;
@@ -525,76 +474,6 @@ impl MStream {
                 )
             })
             .collect()
-    }
-}
-
-impl MStreamSnapshot {
-    /// Return the snapshot format version used by this value.
-    pub fn version(&self) -> u32 {
-        self.version
-    }
-
-    fn validate(&self) -> Result<()> {
-        if self.version != CURRENT_SNAPSHOT_VERSION {
-            return Err(RcfError::InvalidArgument(format!(
-                "unsupported mStream snapshot version: {}",
-                self.version
-            )));
-        }
-
-        self.config.validate()?;
-
-        if self.numeric_counts.len() != self.config.numeric_dim() {
-            return Err(RcfError::InvalidArgument(
-                "snapshot numeric sketch count does not match config".into(),
-            ));
-        }
-        if self.categorical_counts.len() != self.config.categorical_dim() {
-            return Err(RcfError::InvalidArgument(
-                "snapshot categorical sketch count does not match config".into(),
-            ));
-        }
-        if self.numeric_normalizer.min_numeric.len() != self.config.numeric_dim()
-            || self.numeric_normalizer.max_numeric.len() != self.config.numeric_dim()
-        {
-            return Err(RcfError::InvalidArgument(
-                "snapshot numeric normalization state does not match config".into(),
-            ));
-        }
-        if (self.clock.current_time().is_none() && self.clock.current_tick() != 0)
-            || (self.clock.current_time().is_some() && self.clock.current_tick() == 0)
-        {
-            return Err(RcfError::InvalidArgument(
-                "snapshot clock state is inconsistent".into(),
-            ));
-        }
-
-        self.record_counts.current.validate_shape(
-            self.config.num_rows(),
-            self.config.num_buckets(),
-            self.config.numeric_dim(),
-            self.config.categorical_dim(),
-        )?;
-        self.record_counts.total.validate_shape(
-            self.config.num_rows(),
-            self.config.num_buckets(),
-            self.config.numeric_dim(),
-            self.config.categorical_dim(),
-        )?;
-        for counts in &self.numeric_counts {
-            counts.current.validate_shape(self.config.num_buckets())?;
-            counts.total.validate_shape(self.config.num_buckets())?;
-        }
-        for counts in &self.categorical_counts {
-            counts
-                .current
-                .validate_shape(self.config.num_rows(), self.config.num_buckets())?;
-            counts
-                .total
-                .validate_shape(self.config.num_rows(), self.config.num_buckets())?;
-        }
-
-        Ok(())
     }
 }
 
@@ -914,67 +793,5 @@ mod tests {
             restored.config().categorical_dim(),
             d.config().categorical_dim()
         );
-    }
-
-    #[test]
-    fn snapshot_roundtrip_preserves_state() {
-        let mut d = MStream::builder(1, 1).seed(7).build().unwrap();
-        d.update(&[0.1], &[1], 1).unwrap();
-        d.update(&[0.2], &[2], 2).unwrap();
-
-        let restored = MStream::from_snapshot(d.snapshot()).unwrap();
-
-        assert_eq!(restored.entries_seen(), d.entries_seen());
-        assert_eq!(restored.current_time(), d.current_time());
-        assert_eq!(restored.config().num_rows(), d.config().num_rows());
-    }
-
-    #[test]
-    fn snapshot_uses_current_version() {
-        let d = MStream::builder(1, 1).seed(7).build().unwrap();
-
-        assert_eq!(d.snapshot().version(), CURRENT_SNAPSHOT_VERSION);
-    }
-
-    #[test]
-    fn rejects_snapshot_with_mismatched_feature_state() {
-        let d = MStream::builder(1, 1).seed(7).build().unwrap();
-        let mut snapshot = d.snapshot();
-        snapshot.numeric_counts.clear();
-
-        let err = MStream::from_snapshot(snapshot).unwrap_err();
-
-        assert!(matches!(err, RcfError::InvalidArgument(_)));
-    }
-
-    #[test]
-    fn rejects_snapshot_with_inconsistent_clock() {
-        let d = MStream::builder(1, 1).seed(7).build().unwrap();
-        let mut snapshot = d.snapshot();
-        snapshot.clock.current_tick = 1;
-
-        let err = MStream::from_snapshot(snapshot).unwrap_err();
-
-        assert!(matches!(err, RcfError::InvalidArgument(_)));
-    }
-
-    #[test]
-    fn rejects_snapshot_with_unsupported_version() {
-        let d = MStream::builder(1, 1).seed(7).build().unwrap();
-        let mut snapshot = d.snapshot();
-        snapshot.version = CURRENT_SNAPSHOT_VERSION + 1;
-
-        let err = MStream::from_snapshot(snapshot).unwrap_err();
-
-        assert!(matches!(err, RcfError::InvalidArgument(_)));
-    }
-
-    #[cfg(feature = "serde")]
-    #[test]
-    fn json_snapshot_contains_version() {
-        let d = MStream::builder(1, 1).seed(7).build().unwrap();
-        let json = d.to_json().unwrap();
-
-        assert!(json.contains("\"version\":1"));
     }
 }

@@ -1,8 +1,8 @@
 //! Mixed numerical/categorical streaming anomaly detection with mStream.
 //!
 //! Use [`MStream`] to ingest records online, [`MStreamScore`] when you need
-//! per-feature score decomposition, and [`MStreamSnapshot`] when persisting or
-//! restoring detector state.
+//! per-feature score decomposition, and the detector's JSON helpers when
+//! persisting or restoring state.
 
 mod clock;
 mod config;
@@ -12,4 +12,4 @@ mod scoring;
 mod sketch;
 
 pub use config::MStreamConfig;
-pub use detector::{MStream, MStreamBuilder, MStreamScore, MStreamSnapshot};
+pub use detector::{MStream, MStreamBuilder, MStreamScore};
