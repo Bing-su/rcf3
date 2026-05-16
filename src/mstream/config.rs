@@ -61,7 +61,7 @@ impl MStreamConfig {
         if self.num_buckets < 2 {
             return Err(RcfError::InvalidArgument("num_buckets must be >= 2".into()));
         }
-        if self.alpha <= 0.0 || self.alpha >= 1.0 {
+        if !self.alpha.is_finite() || self.alpha <= 0.0 || self.alpha >= 1.0 {
             return Err(RcfError::InvalidArgument(
                 "alpha must be in range (0, 1)".into(),
             ));
@@ -87,6 +87,7 @@ mod tests {
     #[rstest]
     #[case(0.0)]
     #[case(1.0)]
+    #[case(f64::NAN)]
     fn rejects_invalid_alpha(#[case] alpha: f64) {
         let err = MStreamConfig::new(1, 0)
             .with_alpha(alpha)

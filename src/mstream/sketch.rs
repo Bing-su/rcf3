@@ -39,7 +39,7 @@ fn numeric_hash_bits(planes: ArrayView2<'_, f64>, numeric: ArrayView1<'_, f64>) 
         .into_iter()
         .enumerate()
         .fold(0usize, |mut bits, (bit, plane_row)| {
-            if plane_row.dot(&numeric) >= 0.0 {
+            if plane_row.dot(&numeric) > 0.0 {
                 bits |= 1usize << bit;
             }
             bits
@@ -157,6 +157,16 @@ impl CategoricalSketch {
     pub(crate) fn lower(&mut self, factor: f64) {
         decay_counts(&mut self.count, factor);
     }
+
+    pub(crate) fn zeroed_like(&self) -> Self {
+        Self {
+            num_rows: self.num_rows,
+            num_buckets: self.num_buckets,
+            hash_a: self.hash_a.clone(),
+            hash_b: self.hash_b.clone(),
+            count: Array2::zeros((self.num_rows, self.num_buckets)),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -252,6 +262,18 @@ impl RecordSketch {
     pub(crate) fn lower(&mut self, factor: f64) {
         decay_counts(&mut self.count, factor);
     }
+
+    pub(crate) fn zeroed_like(&self) -> Self {
+        Self {
+            num_rows: self.num_rows,
+            num_buckets: self.num_buckets,
+            numeric_dim: self.numeric_dim,
+            categorical_dim: self.categorical_dim,
+            numeric_planes: self.numeric_planes.clone(),
+            categorical_coeffs: self.categorical_coeffs.clone(),
+            count: Array2::zeros((self.num_rows, self.num_buckets)),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -275,7 +297,7 @@ mod tests {
             for col in 0..numeric.len() {
                 sum += planes[[iter, col]] * numeric[col];
             }
-            if sum >= 0.0 && iter < usize::BITS as usize {
+            if sum > 0.0 && iter < usize::BITS as usize {
                 bits |= 1usize << iter;
             }
         }
@@ -300,6 +322,14 @@ mod tests {
 
         assert_eq!(first, second);
         assert_eq!(first, 0b01);
+    }
+
+    #[test]
+    fn numeric_hash_bits_treats_zero_projection_as_non_positive() {
+        let planes = array![[1.0, -1.0], [-1.0, 1.0]];
+        let numeric = array![0.0, 0.0];
+
+        assert_eq!(numeric_hash_bits(planes.view(), numeric.view()), 0b00);
     }
 
     #[rstest]
@@ -369,5 +399,34 @@ mod tests {
 
         assert_eq!(first, second);
         assert!(first < num_buckets);
+    }
+
+    #[test]
+    fn zeroed_record_sketch_preserves_hash_layout() {
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(7);
+        let sketch = RecordSketch::new(2, 16, 2, 2, &mut rng).unwrap();
+        let clone = sketch.zeroed_like();
+
+        assert_eq!(
+            sketch.numeric_hash(&[1.0, 2.0], 0),
+            clone.numeric_hash(&[1.0, 2.0], 0)
+        );
+        assert_eq!(
+            sketch.categorical_hash(&[3, 4], 1),
+            clone.categorical_hash(&[3, 4], 1)
+        );
+        assert_eq!(clone.get_count(&[1.0, 2.0], &[3, 4]), 0.0);
+    }
+
+    #[test]
+    fn zeroed_categorical_sketch_preserves_hash_layout() {
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(7);
+        let sketch = CategoricalSketch::new(2, 16, &mut rng);
+        let clone = sketch.zeroed_like();
+
+        for row in 0..2 {
+            assert_eq!(sketch.hash(42, row), clone.hash(42, row));
+        }
+        assert_eq!(clone.get_count(42), 0.0);
     }
 }

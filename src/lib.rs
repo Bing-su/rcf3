@@ -22,7 +22,7 @@ pub mod tree;
 pub use config::RcfConfig;
 pub use error::{RcfError, Result};
 pub use forest::{Forest, ForestBuilder};
-pub use mstream::{MStream, MStreamBuilder, MStreamConfig};
+pub use mstream::{MStream, MStreamBuilder, MStreamConfig, MStreamScore};
 pub use score::{Attribution, ScoreMode};
 
 // ---------------------------------------------------------------------------

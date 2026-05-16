@@ -3,4 +3,4 @@ mod detector;
 mod sketch;
 
 pub use config::MStreamConfig;
-pub use detector::{MStream, MStreamBuilder};
+pub use detector::{MStream, MStreamBuilder, MStreamScore};

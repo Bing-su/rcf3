@@ -27,6 +27,24 @@ fn counts_to_anom(total: f64, current: f64, current_time: u64) -> f64 {
     sqerr / cur_mean + sqerr / (cur_mean * (cur_t - 1.0).max(1.0))
 }
 
+/// Decomposed anomaly score for one streamed record.
+///
+/// The paper defines the final mStream score as the sum of one record-level
+/// score and one score per feature. Exposing the components keeps that
+/// explainability available to callers.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct MStreamScore {
+    /// Sum of the record-level score and all feature-level scores.
+    pub total: f64,
+    /// Score contributed by the entire record hash.
+    pub record: f64,
+    /// Scores contributed by numerical features in input order.
+    pub numeric_features: Vec<f64>,
+    /// Scores contributed by categorical features in input order.
+    pub categorical_features: Vec<f64>,
+}
+
 /// Builder for [`MStream`].
 #[derive(Clone, Debug)]
 pub struct MStreamBuilder {
@@ -126,13 +144,7 @@ impl MStream {
             config.categorical_dim,
             &mut rng,
         )?;
-        let total_count = RecordSketch::new(
-            config.num_rows,
-            config.num_buckets,
-            config.numeric_dim,
-            config.categorical_dim,
-            &mut rng,
-        )?;
+        let total_count = cur_count.zeroed_like();
 
         let mut numeric_score = Vec::with_capacity(config.numeric_dim);
         let mut numeric_total = Vec::with_capacity(config.numeric_dim);
@@ -144,16 +156,10 @@ impl MStream {
         let mut categorical_score = Vec::with_capacity(config.categorical_dim);
         let mut categorical_total = Vec::with_capacity(config.categorical_dim);
         for _ in 0..config.categorical_dim {
-            categorical_score.push(CategoricalSketch::new(
-                config.num_rows,
-                config.num_buckets,
-                &mut rng,
-            ));
-            categorical_total.push(CategoricalSketch::new(
-                config.num_rows,
-                config.num_buckets,
-                &mut rng,
-            ));
+            let score_sketch =
+                CategoricalSketch::new(config.num_rows, config.num_buckets, &mut rng);
+            categorical_total.push(score_sketch.zeroed_like());
+            categorical_score.push(score_sketch);
         }
 
         let numeric_dim = config.numeric_dim;
@@ -210,6 +216,19 @@ impl MStream {
         categorical: &[i64],
         timestamp: u64,
     ) -> Result<f64> {
+        Ok(self
+            .update_and_score_detailed(numeric, categorical, timestamp)?
+            .total)
+    }
+
+    /// Update the detector and return the record-level and feature-level score
+    /// components used to form the final anomaly score.
+    pub fn update_and_score_detailed(
+        &mut self,
+        numeric: &[f32],
+        categorical: &[i64],
+        timestamp: u64,
+    ) -> Result<MStreamScore> {
         self.validate_record(numeric, categorical)?;
 
         debug_assert_eq!(self.numeric_score.len(), self.config.numeric_dim);
@@ -245,19 +264,25 @@ impl MStream {
         let cur_t = self.current_tick.max(1);
         let mut normalized = vec![0.0_f64; self.config.numeric_dim];
         let mut record_numeric = vec![0.0_f64; self.config.numeric_dim];
-        let mut sum = 0.0_f64;
+        let mut numeric_features = Vec::with_capacity(self.config.numeric_dim);
+        let mut categorical_features = Vec::with_capacity(self.config.categorical_dim);
 
         for i in 0..self.config.numeric_dim {
             let raw = f64::from(numeric[i]);
+            if !raw.is_finite() {
+                return Err(RcfError::InvalidArgument(
+                    "numeric values must be finite".into(),
+                ));
+            }
             if raw <= -1.0 {
                 return Err(RcfError::InvalidArgument(
-                    "numeric value must be > -1.0 for log10(1+x) transform".into(),
+                    "numeric value must be > -1.0 for ln(1+x) transform".into(),
                 ));
             }
 
             record_numeric[i] = raw;
 
-            let transformed = (1.0 + raw).log10();
+            let transformed = (1.0 + raw).ln();
             if self.entries_seen == 0 {
                 self.min_numeric[i] = transformed;
                 self.max_numeric[i] = transformed;
@@ -286,7 +311,7 @@ impl MStream {
                 self.numeric_score[i].get_count(normalized[i]),
                 cur_t,
             );
-            sum += t;
+            numeric_features.push(t);
         }
 
         self.cur_count.insert(&record_numeric, categorical, 1.0);
@@ -302,7 +327,7 @@ impl MStream {
                 self.categorical_score[i].get_count(v),
                 cur_t,
             );
-            sum += t;
+            categorical_features.push(t);
         }
 
         let record_score = counts_to_anom(
@@ -310,10 +335,17 @@ impl MStream {
             self.cur_count.get_count(&record_numeric, categorical),
             cur_t,
         );
-        sum += record_score;
-
         self.entries_seen += 1;
-        Ok(sum)
+        let total = record_score
+            + numeric_features.iter().sum::<f64>()
+            + categorical_features.iter().sum::<f64>();
+
+        Ok(MStreamScore {
+            total,
+            record: record_score,
+            numeric_features,
+            categorical_features,
+        })
     }
 
     /// mStream computes score online; this method is an alias to
@@ -532,6 +564,34 @@ mod tests {
             2,
         );
         assert!((score - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn detailed_score_exposes_the_paper_score_decomposition() {
+        let mut d = MStream::builder(2, 1)
+            .seed(7)
+            .alpha(0.8)
+            .num_rows(2)
+            .num_buckets(256)
+            .build()
+            .unwrap();
+
+        d.update(&[0.1, 0.2], &[1], 1).unwrap();
+        let score = d.update_and_score_detailed(&[1.0, 2.0], &[2], 2).unwrap();
+
+        assert_eq!(score.numeric_features.len(), 2);
+        assert_eq!(score.categorical_features.len(), 1);
+        let recomposed = score.record
+            + score.numeric_features.iter().sum::<f64>()
+            + score.categorical_features.iter().sum::<f64>();
+        assert!((score.total - recomposed).abs() < 1e-12);
+    }
+
+    #[test]
+    fn rejects_non_finite_numeric_values() {
+        let mut d = MStream::builder(1, 0).seed(7).build().unwrap();
+        let err = d.update_and_score(&[f32::NAN], &[], 1).unwrap_err();
+        assert!(matches!(err, RcfError::InvalidArgument(_)));
     }
 
     #[test]
