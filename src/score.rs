@@ -195,6 +195,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn score_seen_decreases_with_depth_and_mass() {
+        let s00 = score_seen(0, 0);
+        let s01 = score_seen(0, 1);
+        let s10 = score_seen(1, 0);
+        let s11 = score_seen(1, 1);
+        assert!(s00 > s01 && s00 > s10 && s01 > s11 && s10 > s11);
+    }
+
+    #[test]
     fn standard_score_unseen_decreases_with_depth() {
         let s0 = score_unseen(0, 1);
         let s1 = score_unseen(1, 1);
