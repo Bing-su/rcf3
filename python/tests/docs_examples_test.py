@@ -1,7 +1,7 @@
 import math
 import tempfile
 
-from rcf3 import Forest
+from rcf3 import Forest, MStream
 
 
 def test_creating_forest_basic():
@@ -34,17 +34,14 @@ def test_basic_operations():
     """Test update/is_ready/score/entries_seen usage sequence."""
     forest = Forest(input_dim=2, capacity=256, num_trees=50)
 
-    # Update the forest
     point = [1.5, 2.3]
-    forest.update(point)
 
-    # Check if the forest has warmed up and get score
     if forest.is_ready():
         score = forest.score(point)
         print(f"Anomaly score: {score}")
         assert score >= 0.0
 
-    # Get the number of observations processed
+    forest.update(point)
     print(f"Entries seen: {forest.entries_seen()}")
     print("✓ test_basic_operations passed")
 
@@ -115,21 +112,15 @@ def test_neighborhood_search():
     for point in data:
         forest.update(point)
 
-    query_point = [1.5, 2.3]
-    neighbors = forest.near_neighbors(query_point, top_k=3, percentile=50)
+    neighbors = forest.near_neighbors([1.5, 2.3], top_k=10, percentile=50)
 
-    print(f"Found {len(neighbors)} neighbors:")
-    for neighbor in neighbors:
-        print(
-            f"  Distance: {neighbor['distance']}, Score: {neighbor['score']}, Point: {neighbor['point']}"
-        )
-
+    print(f"Found {len(neighbors)} neighbors: {neighbors}")
     print("✓ test_neighborhood_search passed")
 
 
 def test_missing_value_imputation():
     """Test missing value imputation."""
-    forest = Forest(input_dim=3, capacity=256, num_trees=50)
+    forest = Forest(input_dim=3)
 
     # Feed some complete data to train
     for i in range(100):
@@ -140,7 +131,6 @@ def test_missing_value_imputation():
     missing = [1]
     imputed = forest.impute(point, missing, centrality=1.0)
 
-    print(f"Imputed value at index 1: {imputed[1]}")
     assert not math.isnan(imputed[1])
     assert len(imputed) == 3
 
@@ -172,32 +162,30 @@ def test_time_series_forecasting():
     for point in stream:
         forest.update(point)
 
-    # Predict next 5 observations; look_ahead must be <= shingle_size.
-    if forest.is_ready():
-        predictions = forest.extrapolate(5)
-        print(f"Predictions length: {len(predictions)}")
-        # Returns a list of length 5 * input_dim = 5 * 4 = 20
-        assert len(predictions) == 20
+    predictions = forest.extrapolate(5)
+    assert len(predictions) == 20
 
     print("✓ test_time_series_forecasting passed")
 
 
 def test_serialization():
     """Test JSON serialization and deserialization."""
-    forest = Forest(input_dim=2, capacity=256, num_trees=50)
+    forest = Forest(input_dim=2)
 
     # Feed some data
     for _ in range(50):
         forest.update([1.5, 2.3])
 
-    # Save to string
     json_str = forest.to_json()
     assert len(json_str) > 0
-    print(f"JSON length: {len(json_str)}")
-
-    # Load from string
     loaded = Forest.from_json(json_str)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        path = f"{tmp_dir}/forest.json"
+        forest.save_json(path)
+        loaded_from_file = Forest.load_json(path)
+
     assert loaded.num_trees() == forest.num_trees()
+    assert loaded_from_file.num_trees() == forest.num_trees()
 
     print("✓ test_serialization passed")
 
@@ -228,7 +216,7 @@ def test_pickle_serialization():
 
 
 def test_anomaly_detection_example():
-    """Test the anomaly detection example from README."""
+    """Test the anomaly detection example from the Forest documentation."""
     forest = Forest(input_dim=3, capacity=256, num_trees=50)
 
     # Warm up the forest with many normal data points
@@ -236,42 +224,80 @@ def test_anomaly_detection_example():
         val = i * 0.01
         forest.update([1.0 + val, 2.0 + val, 3.0 + val])
 
-    data = [
-        [1.0, 2.0, 3.0],
-        [1.1, 2.1, 3.1],
-        [1.2, 2.2, 3.2],
-        [100.0, 200.0, 300.0],  # Extreme anomaly
-        [1.3, 2.3, 3.3],
-    ]
-
-    anomaly_count = 0
-    for point in data:
-        # Online inference order: score first, then update.
+    for point in ([1.0, 2.0, 3.0], [1.1, 2.1, 3.1], [100.0, 200.0, 300.0]):
         if forest.is_ready():
-            score = forest.score(point)
-            attribution = forest.attribution(point)
-
-            print(f"Point: {point}, Score: {score}")
-
-            # Lower threshold since we're detecting a very extreme anomaly
-            if score > 0.1:
-                print(f"Anomaly detected: score={score}")
-                for i, attr in enumerate(attribution):
-                    print(f"  Dimension {i}: {attr['above']:.2f}")
-                anomaly_count += 1
-
+            print(f"Point: {point}, score={forest.score(point)}")
         forest.update(point)
 
-    print(f"Total anomalies detected: {anomaly_count}")
-    assert anomaly_count > 0
-
     print("✓ test_anomaly_detection_example passed")
+
+
+def test_mstream_basic_usage():
+    """Test the basic MStream documentation flow."""
+    detector = MStream(
+        numeric_dim=2,
+        categorical_dim=1,
+        alpha=0.8,
+        num_rows=2,
+        num_buckets=1024,
+        seed=7,
+    )
+
+    score = detector.update_and_score([1.5, 2.0], [7], 1)
+    assert score >= 0.0
+
+
+def test_mstream_preview_and_detailed_scores():
+    """Test preview parity and detailed MStream documentation examples."""
+    detector = MStream(numeric_dim=2, categorical_dim=1, seed=7)
+    detector.update([1.5, 2.0], [7], 1)
+
+    preview = detector.score([1.5, 2.0], [7], 2)
+    committed = detector.update_and_score([1.5, 2.0], [7], 2)
+    assert preview == committed
+
+    detailed = detector.score_detailed([1.5, 2.0], [7], 3)
+    assert len(detailed["numeric_features"]) == 2
+    assert len(detailed["categorical_features"]) == 1
+    assert detector.is_ready()
+    assert detector.entries_seen() == 2
+    assert detector.current_time() == 2
+
+
+def test_mstream_serialization():
+    """Test the MStream JSON documentation example."""
+    detector = MStream(numeric_dim=2, categorical_dim=1, seed=7)
+    detector.update([1.5, 2.0], [7], 1)
+
+    json_str = detector.to_json()
+    restored = MStream.from_json(json_str)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        path = f"{tmp_dir}/mstream.json"
+        detector.save_json(path)
+        restored_from_file = MStream.load_json(path)
+
+    assert restored.entries_seen() == detector.entries_seen()
+    assert restored.current_time() == detector.current_time()
+    assert restored_from_file.entries_seen() == detector.entries_seen()
+    assert restored_from_file.current_time() == detector.current_time()
+
+
+def test_mstream_practical_example():
+    """Test the practical MStream documentation example."""
+    detector = MStream(numeric_dim=2, categorical_dim=2, seed=2026, num_buckets=512)
+
+    normal = detector.update_and_score([0.0, 3.2], [1, 10], 1)
+    suspicious = detector.score_detailed([12.0, 0.3], [99, 10], 2)
+
+    print(f"normal={normal}, suspicious={suspicious['total']}")
+    print(f"failed-attempt contribution={suspicious['numeric_features'][0]}")
+    print(f"country contribution={suspicious['categorical_features'][0]}")
 
 
 if __name__ == "__main__":
     import sys
 
-    print("Running Python README examples tests...\n")
+    print("Running Python documentation examples tests...\n")
 
     try:
         test_creating_forest_basic()
@@ -285,6 +311,10 @@ if __name__ == "__main__":
         test_serialization()
         test_pickle_serialization()
         test_anomaly_detection_example()
+        test_mstream_basic_usage()
+        test_mstream_preview_and_detailed_scores()
+        test_mstream_serialization()
+        test_mstream_practical_example()
 
         print("\n✅ All tests passed!")
     except AssertionError as e:

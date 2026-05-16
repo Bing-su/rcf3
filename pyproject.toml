@@ -67,7 +67,7 @@ unfixable = ["F401"]
 
 [tool.ruff.lint.per-file-ignores]
 "*test*.py" = ["S101", "PLR2004"]
-"python/tests/readme_examples_test.py" = [
+"python/tests/docs_examples_test.py" = [
   "T201",
   "PLR2004",
   "PLC0415",
