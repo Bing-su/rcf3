@@ -241,7 +241,7 @@ impl MStream {
 
         let tick_gap = self.clock.advance(timestamp)?;
         if tick_gap > 0 {
-            self.lower_current_counts(self.config.alpha().powf(tick_gap as f64));
+            self.lower_current_counts(libm::pow(self.config.alpha(), tick_gap as f64));
         }
 
         let cur_t = self.clock.current_tick().max(1);
@@ -306,7 +306,7 @@ impl MStream {
         self.validate_record(numeric, categorical)?;
 
         let clock_step = self.clock.preview(timestamp)?;
-        let decay_factor = self.config.alpha().powf(clock_step.tick_gap as f64);
+        let decay_factor = libm::pow(self.config.alpha(), clock_step.tick_gap as f64);
         let normalized_numeric = self
             .numeric_normalizer
             .preview(numeric, self.entries_seen)?;

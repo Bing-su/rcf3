@@ -82,7 +82,7 @@ impl NumericSketch {
 
     fn hash(&self, value: f64) -> usize {
         let upper = (self.num_buckets - 1) as f64;
-        let scaled = (value * self.num_buckets as f64).floor();
+        let scaled = libm::floor(value * self.num_buckets as f64);
         scaled.clamp(0.0, upper) as usize
     }
 

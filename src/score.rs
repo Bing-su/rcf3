@@ -19,7 +19,7 @@ pub struct ScoreMode {
 ///
 /// `x` = depth, `y` = leaf mass.
 pub fn score_seen(x: usize, y: usize) -> f64 {
-    1.0 / (x as f64 + (1.0 + y as f64).log2())
+    1.0 / (x as f64 + libm::log2(1.0 + y as f64))
 }
 
 /// Standard isolation score for a point *not* already in the tree.
@@ -29,7 +29,7 @@ pub fn score_unseen(x: usize, _y: usize) -> f64 {
 
 /// Standard normalizer: multiplies by log₂(1 + tree_mass).
 pub fn normalizer(x: f64, y: usize) -> f64 {
-    x * (1.0 + y as f64).log2()
+    x * libm::log2(1.0 + y as f64)
 }
 
 /// Damping applied when the query is a duplicate of a leaf point.

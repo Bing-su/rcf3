@@ -201,7 +201,7 @@ impl Sampler {
 /// avoid NaN/infinity.
 pub fn reservoir_weight(u: f64, time_decay: f64, entries_seen: u64) -> f64 {
     let u = u.clamp(f64::EPSILON, 1.0 - f64::EPSILON);
-    (-u.ln()).ln() - time_decay * entries_seen as f64
+    libm::log(-libm::log(u)) - time_decay * entries_seen as f64
 }
 
 // ---------------------------------------------------------------------------

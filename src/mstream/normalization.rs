@@ -45,7 +45,7 @@ impl NumericRangeNormalizer {
             validate_raw(raw)?;
             raw_values.push(raw);
 
-            let transformed = (1.0 + raw).ln();
+            let transformed = libm::log(1.0 + raw);
             normalized.push(self.normalize_transformed(index, transformed, entries_seen));
         }
 
@@ -67,7 +67,7 @@ impl NumericRangeNormalizer {
             validate_raw(raw)?;
             raw_values.push(raw);
 
-            let transformed = (1.0 + raw).ln();
+            let transformed = libm::log(1.0 + raw);
             normalized.push(self.preview_transformed(index, transformed, entries_seen));
         }
 
