@@ -28,6 +28,11 @@ name = "proptest_suite"
 path = "tests/proptest_suite.rs"
 required-features = ["std"]
 
+[[test]]
+name = "mstream_simulation"
+path = "tests/mstream_simulation.rs"
+required-features = ["std"]
+
 [[bench]]
 harness = false
 name = "forest_bench"
@@ -58,6 +63,7 @@ thiserror = { version = "2", default-features = false }
 [dev-dependencies]
 approx = "0.5"
 criterion = { version = "0.8", features = ["html_reports"] }
+fake = { version = "5.1", features = ["derive"] }
 proptest = "1.11"
 rstest = "0.26"
 tempfile = "3"
