@@ -16,6 +16,13 @@ class _Attribution(TypedDict):
     above: float
 
 @final
+class _MStreamScore(TypedDict):
+    total: float
+    record: float
+    numeric_features: list[float]
+    categorical_features: list[float]
+
+@final
 class Forest:
     """
     A Random Cut Forest anomaly detector.
@@ -80,7 +87,7 @@ class Forest:
         Returns a flat list of length `look_ahead * input_dim`.
         """
     @staticmethod
-    def from_json(json: str) -> Forest:
+    def from_json(json: str | bytes | bytearray | memoryview) -> Forest:
         "Load a forest from a JSON string."
     def impute(
         self,
@@ -128,3 +135,96 @@ class Forest:
         "Serialise the forest state to a JSON string."
     def update(self, /, point: Sequence[SupportsFloat]) -> None:
         "Update the forest with a new observation."
+
+@final
+class MStream:
+    """
+    A mixed numerical/categorical streaming anomaly detector.
+
+    Parameters
+    ----------
+    numeric_dim : int
+        Number of numerical features in each record.
+    categorical_dim : int
+        Number of categorical features in each record.
+    num_rows : int, optional
+        Number of hash rows (default 2).
+    num_buckets : int, optional
+        Number of buckets per hash row (default 1024).
+    alpha : float, optional
+        Temporal decay factor in `(0, 1)` (default 0.8).
+    seed : int, optional
+        Random seed for deterministic hashing.
+    """
+    def __copy__(self, /) -> Self: ...
+    def __deepcopy__(self, /, memo: Any) -> Self: ...
+    def __getstate__(self, /) -> str: ...
+    def __new__(
+        cls,
+        /,
+        numeric_dim: SupportsInt,
+        categorical_dim: SupportsInt,
+        num_rows: SupportsInt = 2,
+        num_buckets: SupportsInt = 1024,
+        alpha: SupportsFloat = 0.8,
+        seed: SupportsInt | None = None,
+    ) -> Self: ...
+    def __repr__(self, /) -> str: ...
+    def __setstate__(self, /, state: str) -> None: ...
+    def __str__(self, /) -> str: ...
+    def current_time(self, /) -> int | None:
+        "Last timestamp observed by the detector."
+    def entries_seen(self, /) -> int:
+        "Number of records processed so far."
+    @staticmethod
+    def from_json(json: str | bytes | bytearray | memoryview) -> MStream:
+        "Load a detector from a JSON string."
+    def is_ready(self, /) -> bool:
+        "Whether the detector has processed at least one record."
+    @staticmethod
+    def load_json(path: str | PathLike[str]) -> MStream:
+        "Load a detector from a JSON file path."
+    def save_json(self, /, path: str | PathLike[str]) -> None:
+        "Serialise detector state to a JSON file path."
+    def score(
+        self,
+        /,
+        numeric: Sequence[SupportsFloat],
+        categorical: Sequence[SupportsInt],
+        timestamp: SupportsInt,
+    ) -> float:
+        "Preview the anomaly score for a record without mutating detector state."
+    def score_detailed(
+        self,
+        /,
+        numeric: Sequence[SupportsFloat],
+        categorical: Sequence[SupportsInt],
+        timestamp: SupportsInt,
+    ) -> _MStreamScore:
+        "Preview a decomposed anomaly score without mutating detector state."
+    def to_json(self, /) -> str:
+        "Serialise detector state to a JSON string."
+    def update(
+        self,
+        /,
+        numeric: Sequence[SupportsFloat],
+        categorical: Sequence[SupportsInt],
+        timestamp: SupportsInt,
+    ) -> None:
+        "Ingest a record without returning its anomaly score."
+    def update_and_score(
+        self,
+        /,
+        numeric: Sequence[SupportsFloat],
+        categorical: Sequence[SupportsInt],
+        timestamp: SupportsInt,
+    ) -> float:
+        "Ingest a record and return its anomaly score."
+    def update_and_score_detailed(
+        self,
+        /,
+        numeric: Sequence[SupportsFloat],
+        categorical: Sequence[SupportsInt],
+        timestamp: SupportsInt,
+    ) -> _MStreamScore:
+        "Ingest a record and return a decomposed anomaly score."

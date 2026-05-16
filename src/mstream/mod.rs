@@ -8,6 +8,8 @@ mod clock;
 mod config;
 mod detector;
 mod normalization;
+#[cfg(feature = "python")]
+pub(crate) mod python;
 mod scoring;
 mod sketch;
 

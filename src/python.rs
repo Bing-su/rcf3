@@ -10,13 +10,28 @@ use crate::forest::{Forest, NeighborResult};
 use crate::score::Attribution;
 
 /// Convert an [`RcfError`] to a Python exception.
-fn to_py_err(e: error::RcfError) -> PyErr {
+pub(crate) fn to_py_err(e: error::RcfError) -> PyErr {
     match e {
         error::RcfError::InvalidArgument(msg) => PyValueError::new_err(msg),
         error::RcfError::DimensionMismatch { expected, got } => PyValueError::new_err(format!(
             "dimension mismatch: expected {expected}, got {got}"
         )),
         other => PyRuntimeError::new_err(format!("{other:?}")),
+    }
+}
+
+#[derive(FromPyObject)]
+pub(crate) enum StrOrBytes {
+    Str(String),
+    Bytes(Vec<u8>),
+}
+
+impl AsRef<[u8]> for StrOrBytes {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            StrOrBytes::Str(s) => s.as_bytes(),
+            StrOrBytes::Bytes(b) => b,
+        }
     }
 }
 
@@ -215,7 +230,7 @@ impl PyForest {
 
     /// Load a forest from a JSON string.
     #[staticmethod]
-    fn from_json(json: &str) -> PyResult<Self> {
+    fn from_json(json: StrOrBytes) -> PyResult<Self> {
         let inner = Forest::from_json(json).map_err(to_py_err)?;
         Ok(PyForest { inner })
     }
@@ -266,7 +281,7 @@ impl PyForest {
     }
 
     fn __setstate__(&mut self, state: String) -> PyResult<()> {
-        let new = Self::from_json(&state)?;
+        let new = Self::from_json(StrOrBytes::Str(state))?;
         *self = new;
         Ok(())
     }

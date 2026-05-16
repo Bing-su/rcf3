@@ -42,5 +42,7 @@ mod rcf3 {
     const __version__: &str = env!("CARGO_PKG_VERSION");
 
     #[pymodule_export]
+    use crate::mstream::python::PyMStream;
+    #[pymodule_export]
     use crate::python::PyForest;
 }
