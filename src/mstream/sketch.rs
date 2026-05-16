@@ -34,9 +34,9 @@ impl NumericSketch {
     }
 
     fn hash(&self, value: f64) -> usize {
-        let scaled = value * self.num_buckets as f64;
-        let bucket = scaled.floor() as isize;
-        bucket.rem_euclid(self.num_buckets as isize) as usize
+        let upper = (self.num_buckets - 1) as f64;
+        let scaled = (value * self.num_buckets as f64).floor();
+        scaled.clamp(0.0, upper) as usize
     }
 
     pub(crate) fn insert(&mut self, value: f64, weight: f64) {
@@ -220,5 +220,18 @@ impl RecordSketch {
 
     pub(crate) fn lower(&mut self, factor: f64) {
         decay_counts(&mut self.count, factor);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NumericSketch;
+
+    #[test]
+    fn numeric_hash_maps_upper_bound_to_last_bucket() {
+        let sketch = NumericSketch::new(8);
+
+        assert_eq!(sketch.hash(0.0), 0);
+        assert_eq!(sketch.hash(1.0), 7);
     }
 }

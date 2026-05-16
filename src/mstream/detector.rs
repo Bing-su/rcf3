@@ -58,11 +58,16 @@ impl MStreamBuilder {
 }
 
 /// mStream detector for mixed numerical/categorical records.
+///
+/// `timestamp` is interpreted as the paper's time tick, not as wall-clock time.
+/// Scores are invariant to adding a constant offset to all timestamps, while a
+/// gap of `k` ticks applies the temporal decay factor `alpha` exactly `k` times.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MStream {
     config: MStreamConfig,
     current_time: Option<u64>,
+    current_tick: u64,
     entries_seen: u64,
 
     cur_count: RecordSketch,
@@ -141,6 +146,7 @@ impl MStream {
         Ok(Self {
             config,
             current_time: None,
+            current_tick: 0,
             entries_seen: 0,
             cur_count,
             total_count,
@@ -174,6 +180,10 @@ impl MStream {
     }
 
     /// Update the detector and return anomaly score for this record.
+    ///
+    /// The `timestamp` argument must be a monotonically non-decreasing tick
+    /// index. Only tick differences matter: shifting all timestamps by the same
+    /// constant does not change the scores.
     pub fn update_and_score(
         &mut self,
         numeric: &[f32],
@@ -188,12 +198,14 @@ impl MStream {
 
         match self.current_time {
             None => {
-                self.lower_current_counts(self.config.alpha);
                 self.current_time = Some(timestamp);
+                self.current_tick = 1;
             }
             Some(t) if timestamp > t => {
-                self.lower_current_counts(self.config.alpha);
+                let tick_gap = timestamp - t;
+                self.lower_current_counts(self.config.alpha.powf(tick_gap as f64));
                 self.current_time = Some(timestamp);
+                self.current_tick += tick_gap;
             }
             Some(t) if timestamp < t => {
                 return Err(RcfError::InvalidArgument(format!(
@@ -203,8 +215,9 @@ impl MStream {
             _ => {}
         }
 
-        let cur_t = self.current_time.unwrap_or(1);
+        let cur_t = self.current_tick.max(1);
         let mut normalized = vec![0.0_f64; self.config.numeric_dim];
+        let mut record_numeric = vec![0.0_f64; self.config.numeric_dim];
         let mut sum = 0.0_f64;
 
         for i in 0..self.config.numeric_dim {
@@ -214,6 +227,8 @@ impl MStream {
                     "numeric value must be > -1.0 for log10(1+x) transform".into(),
                 ));
             }
+
+            record_numeric[i] = raw;
 
             let transformed = (1.0 + raw).log10();
             if self.entries_seen == 0 {
@@ -247,8 +262,8 @@ impl MStream {
             sum += t;
         }
 
-        self.cur_count.insert(&normalized, categorical, 1.0);
-        self.total_count.insert(&normalized, categorical, 1.0);
+        self.cur_count.insert(&record_numeric, categorical, 1.0);
+        self.total_count.insert(&record_numeric, categorical, 1.0);
 
         for i in 0..self.config.categorical_dim {
             let v = categorical[i];
@@ -264,14 +279,14 @@ impl MStream {
         }
 
         let record_score = counts_to_anom(
-            self.total_count.get_count(&normalized, categorical),
-            self.cur_count.get_count(&normalized, categorical),
+            self.total_count.get_count(&record_numeric, categorical),
+            self.cur_count.get_count(&record_numeric, categorical),
             cur_t,
         );
         sum += record_score;
 
         self.entries_seen += 1;
-        Ok((1.0 + sum).ln())
+        Ok(sum)
     }
 
     /// mStream computes score online; this method is an alias to
@@ -347,9 +362,34 @@ impl MStream {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(feature = "std"))]
+    use alloc::vec::Vec;
+
     use crate::error::RcfError;
+    use crate::mstream::math::counts_to_anom;
 
     use super::MStream;
+
+    fn run_scores(timestamps: &[u64]) -> Vec<f64> {
+        let mut detector = MStream::builder(0, 1)
+            .seed(7)
+            .alpha(0.8)
+            .num_rows(2)
+            .num_buckets(256)
+            .build()
+            .unwrap();
+
+        timestamps
+            .iter()
+            .enumerate()
+            .map(|(index, timestamp)| {
+                let value = if index < 2 { 1 } else { 2 };
+                detector
+                    .update_and_score(&[], &[value], *timestamp)
+                    .unwrap()
+            })
+            .collect()
+    }
 
     #[test]
     fn rejects_non_monotonic_timestamps() {
@@ -401,6 +441,86 @@ mod tests {
         assert!(!d.is_ready());
         d.update(&[0.1], &[1], 1).unwrap();
         assert!(d.is_ready());
+    }
+
+    #[test]
+    fn scores_are_invariant_to_timestamp_offset() {
+        let base = run_scores(&[1, 1, 2, 2]);
+        let shifted = run_scores(&[100, 100, 101, 101]);
+
+        assert_eq!(base.len(), shifted.len());
+        for (lhs, rhs) in base.iter().zip(shifted.iter()) {
+            assert!((lhs - rhs).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn gap_between_timestamps_applies_decay_per_tick() {
+        let alpha = 0.8;
+        let mut d = MStream::builder(1, 0)
+            .seed(7)
+            .alpha(alpha)
+            .num_rows(2)
+            .num_buckets(256)
+            .build()
+            .unwrap();
+
+        d.update(&[9.0], &[], 1).unwrap();
+        d.update(&[9.0], &[], 4).unwrap();
+
+        let count = d.numeric_score[0].get_count(0.0);
+        let expected = 1.0 + alpha.powi(3);
+        assert!((count - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn score_returns_raw_sum_without_log_compression() {
+        let mut d = MStream::builder(0, 1)
+            .seed(7)
+            .alpha(0.8)
+            .num_rows(2)
+            .num_buckets(256)
+            .build()
+            .unwrap();
+
+        d.update(&[], &[1], 1).unwrap();
+        let score = d.update_and_score(&[], &[2], 2).unwrap();
+
+        let expected = counts_to_anom(
+            d.categorical_total[0].get_count(2),
+            d.categorical_score[0].get_count(2),
+            2,
+        ) + counts_to_anom(
+            d.total_count.get_count(&[], &[2]),
+            d.cur_count.get_count(&[], &[2]),
+            2,
+        );
+        assert!((score - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn repeated_anomalous_group_scores_above_baseline_tick() {
+        let mut d = MStream::builder(0, 1)
+            .seed(11)
+            .alpha(0.8)
+            .num_rows(2)
+            .num_buckets(256)
+            .build()
+            .unwrap();
+
+        let mut baseline_max = 0.0_f64;
+        for tick in 1..=8 {
+            let score = d.update_and_score(&[], &[1], tick).unwrap();
+            baseline_max = baseline_max.max(score);
+        }
+
+        let mut anomaly_max = 0.0_f64;
+        for _ in 0..6 {
+            let score = d.update_and_score(&[], &[2], 9).unwrap();
+            anomaly_max = anomaly_max.max(score);
+        }
+
+        assert!(anomaly_max > baseline_max);
     }
 
     #[cfg(feature = "serde")]
