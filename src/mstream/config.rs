@@ -61,7 +61,7 @@ impl MStreamConfig {
         if self.num_buckets < 2 {
             return Err(RcfError::InvalidArgument("num_buckets must be >= 2".into()));
         }
-        if !(0.0..1.0).contains(&self.alpha) {
+        if self.alpha <= 0.0 || self.alpha >= 1.0 {
             return Err(RcfError::InvalidArgument(
                 "alpha must be in range (0, 1)".into(),
             ));
@@ -72,13 +72,26 @@ impl MStreamConfig {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use crate::error::RcfError;
 
-    use super::MStreamConfig;
+    use super::*;
 
     #[test]
     fn rejects_empty_dimensions() {
         let err = MStreamConfig::new(0, 0).validate().unwrap_err();
+        assert!(matches!(err, RcfError::InvalidArgument(_)));
+    }
+
+    #[rstest]
+    #[case(0.0)]
+    #[case(1.0)]
+    fn rejects_invalid_alpha(#[case] alpha: f64) {
+        let err = MStreamConfig::new(1, 0)
+            .with_alpha(alpha)
+            .validate()
+            .unwrap_err();
         assert!(matches!(err, RcfError::InvalidArgument(_)));
     }
 }
