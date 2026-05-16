@@ -282,7 +282,7 @@ mod tests {
                     s.add_point(i as usize);
                 }
                 let frac = s.fill_fraction();
-                prop_assert!(frac >= 0.0 && frac <= 1.0, "fill_fraction={frac}");
+                prop_assert!((0.0..=1.0).contains(&frac), "fill_fraction={frac}");
             }
 
             #[test]

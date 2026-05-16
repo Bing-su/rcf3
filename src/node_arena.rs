@@ -129,7 +129,7 @@ mod tests {
             for _ in 0..n {
                 arena.alloc(leaf_node());
             }
-            prop_assert!(arena.slot_count() >= before + 1);
+            prop_assert!(arena.slot_count() > before);
         }
 
         #[test]

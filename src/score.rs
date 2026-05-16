@@ -223,7 +223,7 @@ mod tests {
                 // damp is in [0,1] when mass <= tree_mass (the only sensible usage)
                 let capped = mass.min(tree_mass);
                 let d = damp(capped, tree_mass);
-                prop_assert!(d >= 0.0 && d <= 1.0, "damp({capped},{tree_mass})={d}");
+                prop_assert!((0.0..=1.0).contains(&d), "damp({capped},{tree_mass})={d}");
             }
 
             #[test]
