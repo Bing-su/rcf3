@@ -211,6 +211,7 @@ mod tests {
     #[cfg(feature = "std")]
     mod proptest_tests {
         use super::*;
+        use approx::abs_diff_eq;
         use proptest::prelude::*;
 
         proptest! {
@@ -228,7 +229,7 @@ mod tests {
             #[test]
             fn attribution_total_equals_sum(below in -1e6f64..1e6f64, above in -1e6f64..1e6f64) {
                 let a = Attribution { below, above };
-                prop_assert!((a.total() - (below + above)).abs() < 1e-9);
+                prop_assert!(abs_diff_eq!(a.total(), below + above, epsilon = 1e-9));
             }
 
             #[test]
@@ -239,8 +240,8 @@ mod tests {
             ) {
                 let a = Attribution { below, above };
                 let s = a.scale(factor);
-                prop_assert!((s.below - below * factor).abs() < 1e-9);
-                prop_assert!((s.above - above * factor).abs() < 1e-9);
+                prop_assert!(abs_diff_eq!(s.below, below * factor, epsilon = 1e-9));
+                prop_assert!(abs_diff_eq!(s.above, above * factor, epsilon = 1e-9));
             }
 
             #[test]
@@ -253,8 +254,8 @@ mod tests {
                 let x = Attribution { below: b1, above: a1 };
                 let y = Attribution { below: b2, above: a2 };
                 let sum = x + y;
-                prop_assert!((sum.below - (b1 + b2)).abs() < 1e-9);
-                prop_assert!((sum.above - (a1 + a2)).abs() < 1e-9);
+                prop_assert!(abs_diff_eq!(sum.below, b1 + b2, epsilon = 1e-9));
+                prop_assert!(abs_diff_eq!(sum.above, a1 + a2, epsilon = 1e-9));
             }
         }
     }

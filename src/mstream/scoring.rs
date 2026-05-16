@@ -28,6 +28,7 @@ pub(crate) fn preview_insert_score(
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_abs_diff_eq;
     use rstest::rstest;
 
     use super::*;
@@ -44,7 +45,7 @@ mod tests {
         #[case] expected: f64,
     ) {
         let actual = counts_to_anom(total, current, current_tick);
-        assert!((actual - expected).abs() < 1e-12);
+        assert_abs_diff_eq!(actual, expected, epsilon = 1e-12);
     }
 
     #[test]
@@ -57,6 +58,6 @@ mod tests {
         let score = preview_insert_score(3.0, 2.0, 0.5, 4);
         let expected = counts_to_anom(4.0, 2.0, 4);
 
-        assert!((score - expected).abs() < 1e-12);
+        assert_abs_diff_eq!(score, expected, epsilon = 1e-12);
     }
 }

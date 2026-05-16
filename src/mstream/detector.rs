@@ -603,6 +603,7 @@ mod tests {
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
 
+    use approx::{abs_diff_eq, assert_abs_diff_eq};
     use proptest::prelude::*;
 
     use crate::error::RcfError;
@@ -634,7 +635,7 @@ mod tests {
     fn counts_to_anom_penalizes_negative_deviation() {
         let score = counts_to_anom(10.0, 0.0, 2);
         assert!(score > 0.0);
-        assert!((score - 10.0).abs() < 1e-12);
+        assert_abs_diff_eq!(score, 10.0, epsilon = 1e-12);
     }
 
     #[test]
@@ -677,7 +678,7 @@ mod tests {
         for _ in 0..64 {
             let sa = a.update_and_score(&[1.0, 1.2], &[2], 1).unwrap();
             let sb = b.update_and_score(&[1.0, 1.2], &[2], 1).unwrap();
-            assert!((sa - sb).abs() < 1e-12);
+            assert_abs_diff_eq!(sa, sb, epsilon = 1e-12);
         }
     }
 
@@ -696,7 +697,7 @@ mod tests {
 
         assert_eq!(base.len(), shifted.len());
         for (lhs, rhs) in base.iter().zip(shifted.iter()) {
-            assert!((lhs - rhs).abs() < 1e-12);
+            assert_abs_diff_eq!(lhs, rhs, epsilon = 1e-12);
         }
     }
 
@@ -716,7 +717,7 @@ mod tests {
 
         let count = d.numeric_counts[0].current.get_count(0.0);
         let expected = 1.0 + alpha.powi(3);
-        assert!((count - expected).abs() < 1e-12);
+        assert_abs_diff_eq!(count, expected, epsilon = 1e-12);
     }
 
     #[test]
@@ -741,7 +742,7 @@ mod tests {
             d.record_counts.current.get_count(&[], &[2]),
             2,
         );
-        assert!((score - expected).abs() < 1e-12);
+        assert_abs_diff_eq!(score, expected, epsilon = 1e-12);
     }
 
     #[test]
@@ -762,7 +763,7 @@ mod tests {
         let recomposed = score.record
             + score.numeric_features.iter().sum::<f64>()
             + score.categorical_features.iter().sum::<f64>();
-        assert!((score.total - recomposed).abs() < 1e-12);
+        assert_abs_diff_eq!(score.total, recomposed, epsilon = 1e-12);
     }
 
     #[test]
@@ -781,7 +782,7 @@ mod tests {
 
         assert_eq!(d.entries_seen(), before_entries + 1);
         assert_eq!(before_time, Some(1));
-        assert!((preview - actual).abs() < 1e-12);
+        assert_abs_diff_eq!(preview, actual, epsilon = 1e-12);
     }
 
     #[test]
@@ -805,7 +806,7 @@ mod tests {
             preview.categorical_features.len(),
             actual.categorical_features.len()
         );
-        assert!((preview.total - actual.total).abs() < 1e-12);
+        assert_abs_diff_eq!(preview.total, actual.total, epsilon = 1e-12);
     }
 
     #[test]
@@ -865,7 +866,7 @@ mod tests {
                     + score.numeric_features.iter().sum::<f64>()
                     + score.categorical_features.iter().sum::<f64>();
 
-                prop_assert!((score.total - recomposed).abs() < 1e-12);
+                prop_assert!(abs_diff_eq!(score.total, recomposed, epsilon = 1e-12));
             }
         }
 
@@ -889,7 +890,7 @@ mod tests {
                     .update_and_score(&[numeric], &[category], timestamp)
                     .unwrap();
 
-                prop_assert!((left_score - right_score).abs() < 1e-12);
+                prop_assert!(abs_diff_eq!(left_score, right_score, epsilon = 1e-12));
             }
         }
     }

@@ -6,6 +6,7 @@
 ///   - Dimension-mismatch error handling
 ///   - `near_neighbors` returns distance-consistent nearest points
 ///   - `impute` reconstructs held-out values from seen points
+use approx::abs_diff_eq;
 use proptest::prelude::*;
 use rcf3::{Forest, RcfError};
 
@@ -195,7 +196,7 @@ mod neighbor_result_properties {
                 prop_assert!(r.score >= 0.0, "score={}", r.score);
                 let expected = l1_distance(&query, &r.point);
                 prop_assert!(
-                    (r.distance - expected).abs() < 1e-9,
+                    abs_diff_eq!(r.distance, expected, epsilon = 1e-9),
                     "reported distance {} does not match point distance {}",
                     r.distance,
                     expected
@@ -274,7 +275,7 @@ mod imputation_properties {
                 }
             }
             prop_assert!(
-                (out[missing_idx] - original[missing_idx]).abs() < 1e-5,
+                abs_diff_eq!(out[missing_idx], original[missing_idx], epsilon = 1e-5),
                 "expected imputed value {} at dim {}, got {}",
                 original[missing_idx],
                 missing_idx,

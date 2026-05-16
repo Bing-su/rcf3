@@ -379,6 +379,7 @@ mod tests {
     #[cfg(feature = "std")]
     mod proptest_tests {
         use super::*;
+        use approx::abs_diff_eq;
         use proptest::prelude::*;
 
         proptest! {
@@ -393,7 +394,10 @@ mod tests {
                 let b = [b0, b1];
                 let d_ab = l1_distance_slices(&a, &b);
                 let d_ba = l1_distance_slices(&b, &a);
-                prop_assert!((d_ab - d_ba).abs() < 1e-9, "d_ab={d_ab} d_ba={d_ba}");
+                prop_assert!(
+                    abs_diff_eq!(d_ab, d_ba, epsilon = 1e-9),
+                    "d_ab={d_ab} d_ba={d_ba}"
+                );
             }
 
             #[test]
