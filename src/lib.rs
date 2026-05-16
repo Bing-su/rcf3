@@ -3,8 +3,6 @@
 
 #[cfg(not(feature = "std"))]
 extern crate alloc;
-#[cfg(test)]
-extern crate std;
 // Public modules.
 pub mod bounding_box;
 pub mod config;
