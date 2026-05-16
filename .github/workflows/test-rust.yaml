@@ -44,5 +44,7 @@ jobs:
         run: cargo test --verbose
       - name: Run tests (no-default-features)
         run: cargo test --verbose --no-default-features
+      - name: Check no-default-features
+        run: cargo check --verbose --no-default-features --lib
       - name: Check serde (no-default-features)
-        run: cargo check --verbose --no-default-features --features serde
+        run: cargo check --verbose --no-default-features --features serde --lib
