@@ -9,11 +9,23 @@ use rand::rngs::Xoshiro256PlusPlus;
 use crate::error::{RcfError, Result};
 
 use super::config::MStreamConfig;
-use super::math::counts_to_anom;
 use super::sketch::{CategoricalSketch, NumericSketch, RecordSketch};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+fn counts_to_anom(total: f64, current: f64, current_time: u64) -> f64 {
+    let cur_t = (current_time as f64).max(1.0);
+    let cur_mean = total / cur_t;
+    if cur_mean <= f64::EPSILON {
+        return 0.0;
+    }
+
+    let sqerr = current - cur_mean;
+    let sqerr = sqerr * sqerr;
+
+    sqerr / cur_mean + sqerr / (cur_mean * (cur_t - 1.0).max(1.0))
+}
 
 /// Builder for [`MStream`].
 #[derive(Clone, Debug)]
@@ -53,7 +65,10 @@ impl MStreamBuilder {
 
     /// Build detector.
     pub fn build(self) -> Result<MStream> {
-        MStream::from_config_with_seed(self.config, self.seed.unwrap_or(0))
+        match self.seed {
+            Some(seed) => MStream::from_config_seeded(&self.config, seed),
+            None => MStream::from_config(&self.config),
+        }
     }
 }
 
@@ -91,15 +106,15 @@ impl MStream {
     /// Build directly from config with a random seed.
     pub fn from_config(config: &MStreamConfig) -> Result<Self> {
         let mut seed_rng: Xoshiro256PlusPlus = rand::make_rng();
-        Self::from_config_seeded(config, seed_rng.next_u64())
+        Self::new_internal(config.clone(), seed_rng.next_u64())
     }
 
     /// Build directly from config with an explicit deterministic seed.
     pub fn from_config_seeded(config: &MStreamConfig, seed: u64) -> Result<Self> {
-        Self::from_config_with_seed(config.clone(), seed)
+        Self::new_internal(config.clone(), seed)
     }
 
-    pub(crate) fn from_config_with_seed(config: MStreamConfig, seed: u64) -> Result<Self> {
+    pub(crate) fn new_internal(config: MStreamConfig, seed: u64) -> Result<Self> {
         config.validate()?;
 
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
@@ -142,6 +157,11 @@ impl MStream {
         }
 
         let numeric_dim = config.numeric_dim;
+
+        debug_assert_eq!(numeric_score.len(), numeric_dim);
+        debug_assert_eq!(numeric_total.len(), numeric_dim);
+        debug_assert_eq!(categorical_score.len(), config.categorical_dim);
+        debug_assert_eq!(categorical_total.len(), config.categorical_dim);
 
         Ok(Self {
             config,
@@ -191,6 +211,13 @@ impl MStream {
         timestamp: u64,
     ) -> Result<f64> {
         self.validate_record(numeric, categorical)?;
+
+        debug_assert_eq!(self.numeric_score.len(), self.config.numeric_dim);
+        debug_assert_eq!(self.numeric_total.len(), self.config.numeric_dim);
+        debug_assert_eq!(self.min_numeric.len(), self.config.numeric_dim);
+        debug_assert_eq!(self.max_numeric.len(), self.config.numeric_dim);
+        debug_assert_eq!(self.categorical_score.len(), self.config.categorical_dim);
+        debug_assert_eq!(self.categorical_total.len(), self.config.categorical_dim);
 
         if timestamp == 0 {
             return Err(RcfError::InvalidArgument("timestamp must be > 0".into()));
@@ -350,6 +377,9 @@ impl MStream {
     }
 
     fn lower_current_counts(&mut self, factor: f64) {
+        debug_assert!(factor.is_finite());
+        debug_assert!((0.0..=1.0).contains(&factor));
+
         self.cur_count.lower(factor);
         for sketch in &mut self.numeric_score {
             sketch.lower(factor);
@@ -366,9 +396,8 @@ mod tests {
     use alloc::vec::Vec;
 
     use crate::error::RcfError;
-    use crate::mstream::math::counts_to_anom;
 
-    use super::MStream;
+    use super::*;
 
     fn run_scores(timestamps: &[u64]) -> Vec<f64> {
         let mut detector = MStream::builder(0, 1)
@@ -389,6 +418,13 @@ mod tests {
                     .unwrap()
             })
             .collect()
+    }
+
+    #[test]
+    fn counts_to_anom_penalizes_negative_deviation() {
+        let score = counts_to_anom(10.0, 0.0, 2);
+        assert!(score > 0.0);
+        assert!((score - 10.0).abs() < 1e-12);
     }
 
     #[test]
