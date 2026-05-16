@@ -4,6 +4,8 @@ use alloc::{vec, vec::Vec};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::math_utils::ln_f64;
+
 // ---------------------------------------------------------------------------
 // Sampler
 // ---------------------------------------------------------------------------
@@ -194,16 +196,6 @@ impl Sampler {
 // ---------------------------------------------------------------------------
 // Weight formula
 // ---------------------------------------------------------------------------
-
-#[cfg(feature = "std")]
-fn ln_f64(x: f64) -> f64 {
-    x.ln()
-}
-
-#[cfg(not(feature = "std"))]
-fn ln_f64(x: f64) -> f64 {
-    libm::log(x)
-}
 
 /// Compute the exponential-reservoir weight for a new point.
 ///

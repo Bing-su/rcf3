@@ -1,4 +1,4 @@
-use ndarray::{Array1, Array2, Array3};
+use ndarray::{Array1, Array2, Array3, ArrayBase, DataMut, Dimension};
 use rand::prelude::*;
 use rand::rngs::Xoshiro256PlusPlus;
 
@@ -8,6 +8,14 @@ use super::math::{ceil_log2, floor_f64, uniform_symmetric};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+fn decay_counts<S, D>(count: &mut ArrayBase<S, D>, factor: f64)
+where
+    S: DataMut<Elem = f64>,
+    D: Dimension,
+{
+    count.mapv_inplace(|v| v * factor);
+}
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -41,7 +49,7 @@ impl NumericSketch {
     }
 
     pub(crate) fn lower(&mut self, factor: f64) {
-        self.count.mapv_inplace(|v| v * factor);
+        decay_counts(&mut self.count, factor);
     }
 }
 
@@ -73,11 +81,13 @@ impl CategoricalSketch {
     }
 
     fn hash(&self, value: i64, row: usize) -> usize {
-        let m = self.num_buckets as i128;
-        let v = value as i128;
-        let a = self.hash_a[row] as i128;
-        let b = self.hash_b[row] as i128;
-        ((v * a + b).rem_euclid(m)) as usize
+        let state = ahash::RandomState::with_seeds(
+            self.hash_a[row] as u64,
+            self.hash_b[row] as u64,
+            row as u64,
+            self.num_buckets as u64,
+        );
+        (state.hash_one(value) % self.num_buckets as u64) as usize
     }
 
     pub(crate) fn insert(&mut self, value: i64, weight: f64) {
@@ -97,7 +107,7 @@ impl CategoricalSketch {
     }
 
     pub(crate) fn lower(&mut self, factor: f64) {
-        self.count.mapv_inplace(|v| v * factor);
+        decay_counts(&mut self.count, factor);
     }
 }
 
@@ -129,14 +139,15 @@ impl RecordSketch {
                 uniform_symmetric(rng.next_u64())
             });
 
-        let categorical_coeffs = Array2::from_shape_fn((num_rows, categorical_dim), |(row, k)| {
-            if k + 1 == categorical_dim {
-                (rng.next_u64() % num_buckets as u64) as i64
-            } else {
-                let _ = row;
-                (rng.next_u64() % (num_buckets as u64 - 1) + 1) as i64
-            }
-        });
+        let categorical_coeffs =
+            Array2::from_shape_fn((num_rows, categorical_dim), |(row, col)| {
+                if col + 1 == categorical_dim {
+                    (rng.next_u64() % num_buckets as u64) as i64
+                } else {
+                    let _ = row;
+                    (rng.next_u64() % (num_buckets as u64 - 1) + 1) as i64
+                }
+            });
 
         Ok(Self {
             num_rows,
@@ -173,13 +184,21 @@ impl RecordSketch {
             return 0;
         }
 
-        let mut resid = 0_i128;
-        let m = self.num_buckets as i128;
-        for (k, value) in categorical.iter().enumerate().take(self.categorical_dim) {
-            resid = (resid + self.categorical_coeffs[[row, k]] as i128 * (*value as i128))
-                .rem_euclid(m);
+        let mut state = ahash::RandomState::with_seeds(
+            self.categorical_coeffs[[row, 0]] as u64,
+            row as u64,
+            self.num_buckets as u64,
+            self.categorical_dim as u64,
+        );
+        for value in categorical.iter().take(self.categorical_dim) {
+            state = ahash::RandomState::with_seeds(
+                state.hash_one(*value),
+                row as u64,
+                self.num_buckets as u64,
+                self.categorical_dim as u64,
+            );
         }
-        resid as usize
+        (state.hash_one(row as u64) % self.num_buckets as u64) as usize
     }
 
     pub(crate) fn insert(&mut self, numeric: &[f64], categorical: &[i64], weight: f64) {
@@ -203,6 +222,6 @@ impl RecordSketch {
     }
 
     pub(crate) fn lower(&mut self, factor: f64) {
-        self.count.mapv_inplace(|v| v * factor);
+        decay_counts(&mut self.count, factor);
     }
 }

@@ -11,6 +11,7 @@ pub mod config;
 pub mod cut;
 pub mod error;
 pub mod forest;
+mod math_utils;
 pub mod mstream;
 pub mod node_arena;
 pub mod point_store;
