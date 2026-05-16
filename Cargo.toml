@@ -24,8 +24,8 @@ path = "tests/readme_examples.rs"
 required-features = ["std"]
 
 [[test]]
-name = "proptest_suite"
-path = "tests/proptest_suite.rs"
+name = "forest_test"
+path = "tests/forest_test.rs"
 required-features = ["std"]
 
 [[test]]
