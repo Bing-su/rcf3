@@ -1,5 +1,4 @@
 use crate::error::{RcfError, Result};
-pub(crate) use crate::math_utils::{floor_f64, ln_f64, log10_f64};
 
 pub(crate) fn counts_to_anom(total: f64, current: f64, current_time: u64) -> f64 {
     let cur_t = (current_time as f64).max(1.0);
@@ -19,12 +18,7 @@ pub(crate) fn ceil_log2(value: usize) -> Result<usize> {
         return Err(RcfError::InvalidArgument("num_buckets must be >= 2".into()));
     }
 
-    let mut p = 1usize;
-    let mut bits = 0usize;
-    while p < value {
-        p <<= 1;
-        bits += 1;
-    }
+    let bits = ((value - 1).ilog2() + 1) as usize;
     Ok(bits)
 }
 

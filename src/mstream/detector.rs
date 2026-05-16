@@ -9,7 +9,7 @@ use rand::rngs::Xoshiro256PlusPlus;
 use crate::error::{RcfError, Result};
 
 use super::config::MStreamConfig;
-use super::math::{counts_to_anom, ln_f64, log10_f64};
+use super::math::counts_to_anom;
 use super::sketch::{CategoricalSketch, NumericSketch, RecordSketch};
 
 #[cfg(feature = "serde")]
@@ -215,7 +215,7 @@ impl MStream {
                 ));
             }
 
-            let transformed = log10_f64(1.0 + raw);
+            let transformed = (1.0 + raw).log10();
             if self.entries_seen == 0 {
                 self.min_numeric[i] = transformed;
                 self.max_numeric[i] = transformed;
@@ -271,7 +271,7 @@ impl MStream {
         sum += record_score;
 
         self.entries_seen += 1;
-        Ok(ln_f64(1.0 + sum))
+        Ok((1.0 + sum).ln())
     }
 
     /// mStream computes score online; this method is an alias to

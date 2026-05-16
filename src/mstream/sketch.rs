@@ -5,7 +5,7 @@ use rand_distr::StandardNormal;
 
 use crate::error::Result;
 
-use super::math::{ceil_log2, floor_f64};
+use super::math::ceil_log2;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -35,7 +35,7 @@ impl NumericSketch {
 
     fn hash(&self, value: f64) -> usize {
         let scaled = value * self.num_buckets as f64;
-        let bucket = floor_f64(scaled) as isize;
+        let bucket = scaled.floor() as isize;
         bucket.rem_euclid(self.num_buckets as isize) as usize
     }
 

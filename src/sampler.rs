@@ -4,8 +4,6 @@ use alloc::{vec, vec::Vec};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::math_utils::ln_f64;
-
 // ---------------------------------------------------------------------------
 // Sampler
 // ---------------------------------------------------------------------------
@@ -203,7 +201,7 @@ impl Sampler {
 /// avoid NaN/infinity.
 pub fn reservoir_weight(u: f64, time_decay: f64, entries_seen: u64) -> f64 {
     let u = u.clamp(f64::EPSILON, 1.0 - f64::EPSILON);
-    ln_f64(-ln_f64(u)) - time_decay * entries_seen as f64
+    (-u.ln()).ln() - time_decay * entries_seen as f64
 }
 
 // ---------------------------------------------------------------------------
