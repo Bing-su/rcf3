@@ -1,5 +1,5 @@
-"""Python bindings for RCF3 Random Cut Forest anomaly detection."""
+"""Python bindings for RCF3 anomaly detection."""
 
-from .rcf3 import Forest, __version__
+from .rcf3 import Forest, MStream, __version__
 
-__all__ = ["Forest", "__version__"]
+__all__ = ["Forest", "MStream", "__version__"]

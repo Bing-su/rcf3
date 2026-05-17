@@ -501,7 +501,8 @@ impl Forest {
         serde_json::to_string(self).map_err(|e| RcfError::Io(e.to_string()))
     }
 
-    /// Deserialise a forest from a JSON string previously written by [`to_json`].
+    /// Deserialise a forest from a JSON string previously written by
+    /// [`Self::to_json`].
     #[cfg(feature = "serde")]
     pub fn from_json(json: impl AsRef<[u8]>) -> Result<Self> {
         serde_json::from_slice(json.as_ref()).map_err(|e| RcfError::Io(e.to_string()))
@@ -515,7 +516,7 @@ impl Forest {
     }
 
     /// Deserialise a forest from a JSON file previously written by
-    /// [`save_json`].
+    /// [`Self::save_json`].
     #[cfg(all(feature = "serde", feature = "std"))]
     pub fn load_json(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let data = std::fs::read(path.as_ref()).map_err(|e| RcfError::Io(e.to_string()))?;

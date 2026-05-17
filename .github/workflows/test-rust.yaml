@@ -44,5 +44,7 @@ jobs:
         run: cargo test --verbose
       - name: Run tests (no-default-features)
         run: cargo test --verbose --no-default-features
-      - name: Check serde (no-default-features)
-        run: cargo check --verbose --no-default-features --features serde
+      - name: Check no-default-features (rlib)
+        run: cargo rustc --verbose --no-default-features --lib --crate-type rlib
+      - name: Check serde (no-default-features, rlib)
+        run: cargo rustc --verbose --no-default-features --features serde --lib --crate-type rlib

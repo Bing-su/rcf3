@@ -3,14 +3,13 @@
 
 #[cfg(not(feature = "std"))]
 extern crate alloc;
-#[cfg(test)]
-extern crate std;
 // Public modules.
 pub mod bounding_box;
 pub mod config;
 pub mod cut;
 pub mod error;
 pub mod forest;
+pub mod mstream;
 pub mod node_arena;
 pub mod point_store;
 pub mod sampler;
@@ -21,6 +20,7 @@ pub mod tree;
 pub use config::RcfConfig;
 pub use error::{RcfError, Result};
 pub use forest::{Forest, ForestBuilder};
+pub use mstream::{MStream, MStreamBuilder, MStreamConfig, MStreamScore};
 pub use score::{Attribution, ScoreMode};
 
 // ---------------------------------------------------------------------------
@@ -39,6 +39,8 @@ mod rcf3 {
     #[allow(non_upper_case_globals)]
     const __version__: &str = env!("CARGO_PKG_VERSION");
 
+    #[pymodule_export]
+    use crate::mstream::python::PyMStream;
     #[pymodule_export]
     use crate::python::PyForest;
 }

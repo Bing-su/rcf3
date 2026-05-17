@@ -310,7 +310,7 @@ mod tests {
             ) {
                 let bbox = BoundingBox::from_two_points(&[lo, lo], &[hi, hi]);
                 let p = bbox.probability_of_cut(&[px, py]);
-                prop_assert!(p >= 0.0 && p <= 1.0, "poc={p} for ({px},{py})");
+                prop_assert!((0.0..=1.0).contains(&p), "poc={p} for ({px},{py})");
             }
 
             #[test]

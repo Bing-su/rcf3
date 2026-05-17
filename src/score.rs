@@ -15,21 +15,11 @@ pub struct ScoreMode {
 // Score functions (matching the AWS reference implementation)
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "std")]
-fn log2_f64(x: f64) -> f64 {
-    x.log2()
-}
-
-#[cfg(not(feature = "std"))]
-fn log2_f64(x: f64) -> f64 {
-    libm::log2(x)
-}
-
 /// Standard isolation score for a point already in the tree.
 ///
 /// `x` = depth, `y` = leaf mass.
 pub fn score_seen(x: usize, y: usize) -> f64 {
-    1.0 / (x as f64 + log2_f64(1.0 + y as f64))
+    1.0 / (x as f64 + libm::log2(1.0 + y as f64))
 }
 
 /// Standard isolation score for a point *not* already in the tree.
@@ -39,7 +29,7 @@ pub fn score_unseen(x: usize, _y: usize) -> f64 {
 
 /// Standard normalizer: multiplies by log₂(1 + tree_mass).
 pub fn normalizer(x: f64, y: usize) -> f64 {
-    x * log2_f64(1.0 + y as f64)
+    x * libm::log2(1.0 + y as f64)
 }
 
 /// Damping applied when the query is a duplicate of a leaf point.
@@ -205,6 +195,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn score_seen_decreases_with_depth_and_mass() {
+        let s00 = score_seen(0, 0);
+        let s01 = score_seen(0, 1);
+        let s10 = score_seen(1, 0);
+        let s11 = score_seen(1, 1);
+        assert!(s00 > s01 && s00 > s10 && s01 > s11 && s10 > s11);
+    }
+
+    #[test]
     fn standard_score_unseen_decreases_with_depth() {
         let s0 = score_unseen(0, 1);
         let s1 = score_unseen(1, 1);
@@ -221,6 +220,7 @@ mod tests {
     #[cfg(feature = "std")]
     mod proptest_tests {
         use super::*;
+        use approx::abs_diff_eq;
         use proptest::prelude::*;
 
         proptest! {
@@ -232,13 +232,13 @@ mod tests {
                 // damp is in [0,1] when mass <= tree_mass (the only sensible usage)
                 let capped = mass.min(tree_mass);
                 let d = damp(capped, tree_mass);
-                prop_assert!(d >= 0.0 && d <= 1.0, "damp({capped},{tree_mass})={d}");
+                prop_assert!((0.0..=1.0).contains(&d), "damp({capped},{tree_mass})={d}");
             }
 
             #[test]
             fn attribution_total_equals_sum(below in -1e6f64..1e6f64, above in -1e6f64..1e6f64) {
                 let a = Attribution { below, above };
-                prop_assert!((a.total() - (below + above)).abs() < 1e-9);
+                prop_assert!(abs_diff_eq!(a.total(), below + above, epsilon = 1e-9));
             }
 
             #[test]
@@ -249,8 +249,8 @@ mod tests {
             ) {
                 let a = Attribution { below, above };
                 let s = a.scale(factor);
-                prop_assert!((s.below - below * factor).abs() < 1e-9);
-                prop_assert!((s.above - above * factor).abs() < 1e-9);
+                prop_assert!(abs_diff_eq!(s.below, below * factor, epsilon = 1e-9));
+                prop_assert!(abs_diff_eq!(s.above, above * factor, epsilon = 1e-9));
             }
 
             #[test]
@@ -263,8 +263,8 @@ mod tests {
                 let x = Attribution { below: b1, above: a1 };
                 let y = Attribution { below: b2, above: a2 };
                 let sum = x + y;
-                prop_assert!((sum.below - (b1 + b2)).abs() < 1e-9);
-                prop_assert!((sum.above - (a1 + a2)).abs() < 1e-9);
+                prop_assert!(abs_diff_eq!(sum.below, b1 + b2, epsilon = 1e-9));
+                prop_assert!(abs_diff_eq!(sum.above, a1 + a2, epsilon = 1e-9));
             }
         }
     }

@@ -115,7 +115,7 @@ impl Sampler {
     /// Returns an [`AcceptResult`] describing whether the point was accepted
     /// and whether an existing point was evicted.
     ///
-    /// If accepted, the caller must follow up with [`add_point`] once the
+    /// If accepted, the caller must follow up with [`Self::add_point`] once the
     /// actual point index is known (after possible de-duplication by the tree).
     pub fn accept(&mut self, is_initial: bool, weight: f64, point_idx: usize) -> AcceptResult {
         if is_initial || (self.size < self.capacity) {
@@ -195,23 +195,13 @@ impl Sampler {
 // Weight formula
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "std")]
-fn ln_f64(x: f64) -> f64 {
-    x.ln()
-}
-
-#[cfg(not(feature = "std"))]
-fn ln_f64(x: f64) -> f64 {
-    libm::log(x)
-}
-
 /// Compute the exponential-reservoir weight for a new point.
 ///
 /// `u` must be in `(0, 1)`.  Values at or outside this range are clamped to
 /// avoid NaN/infinity.
 pub fn reservoir_weight(u: f64, time_decay: f64, entries_seen: u64) -> f64 {
     let u = u.clamp(f64::EPSILON, 1.0 - f64::EPSILON);
-    ln_f64(-ln_f64(u)) - time_decay * entries_seen as f64
+    libm::log(-libm::log(u)) - time_decay * entries_seen as f64
 }
 
 // ---------------------------------------------------------------------------
@@ -292,7 +282,7 @@ mod tests {
                     s.add_point(i as usize);
                 }
                 let frac = s.fill_fraction();
-                prop_assert!(frac >= 0.0 && frac <= 1.0, "fill_fraction={frac}");
+                prop_assert!((0.0..=1.0).contains(&frac), "fill_fraction={frac}");
             }
 
             #[test]

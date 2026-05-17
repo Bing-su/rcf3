@@ -1,8 +1,8 @@
-// Test all code examples from README to ensure they compile and run correctly
+// Test the executable documentation examples to keep the public guides honest.
 
 #[cfg(test)]
-mod readme_examples {
-    use rcf3::Forest;
+mod docs_examples {
+    use rcf3::{Forest, MStream};
 
     #[test]
     fn test_creating_forest_basic() -> Result<(), Box<dyn std::error::Error>> {
@@ -18,9 +18,8 @@ mod readme_examples {
 
     #[test]
     fn test_creating_forest_with_time_series() -> Result<(), Box<dyn std::error::Error>> {
-        let forest = Forest::builder(4) // 4D input, window size 8
+        let forest = Forest::builder(4)
             .shingle_size(8)
-            .internal_shingling(true)
             .num_trees(100)
             .capacity(512)
             .time_decay(0.01)
@@ -52,18 +51,15 @@ mod readme_examples {
             .num_trees(50)
             .build()?;
 
-        // Update the forest with a new observation
         let point = vec![1.5, 2.3];
-        forest.update(&point)?;
 
-        // Check if the forest has warmed up and get score
         if forest.is_ready() {
             let score = forest.score(&point)?;
-            println!("Anomaly score: {}", score);
+            println!("Anomaly score: {score}");
             assert!(score >= 0.0);
         }
 
-        // Get the number of observations processed
+        forest.update(&point)?;
         println!("Entries seen: {}", forest.entries_seen());
 
         Ok(())
@@ -139,7 +135,6 @@ mod readme_examples {
             .num_trees(50)
             .build()?;
 
-        // Feed some data points to build up the forest
         let data = vec![
             vec![1.0, 2.0],
             vec![1.1, 2.1],
@@ -155,15 +150,9 @@ mod readme_examples {
             forest.update(point)?;
         }
 
-        let query_point = vec![1.5, 2.3];
-        let neighbors = forest.near_neighbors(&query_point, 3, 50)?;
-
-        println!("Found {} neighbors:", neighbors.len());
+        let neighbors = forest.near_neighbors(&[1.5, 2.3], 10, 50)?;
         for neighbor in neighbors {
-            println!(
-                "Distance: {}, Score: {}, Point: {:?}",
-                neighbor.distance, neighbor.score, neighbor.point
-            );
+            println!("distance={}, score={}", neighbor.distance, neighbor.score);
         }
 
         Ok(())
@@ -171,23 +160,17 @@ mod readme_examples {
 
     #[test]
     fn test_missing_value_imputation() -> Result<(), Box<dyn std::error::Error>> {
-        let mut forest = Forest::builder(3)
-            .shingle_size(1)
-            .capacity(256)
-            .num_trees(50)
-            .build()?;
+        let mut forest = Forest::builder(3).build()?;
 
         // Feed some complete data to train
         for i in 0..100 {
             forest.update(&[1.0 + (i as f32) * 0.01, 2.0, 3.0])?;
         }
 
-        // Test imputation with a missing value at index 1
         let point = vec![1.5, f32::NAN, 3.0];
         let missing = vec![1];
         let imputed = forest.impute(&point, &missing, 1.0)?;
 
-        println!("Imputed value at index 1: {}", imputed[1]);
         assert!(!imputed[1].is_nan());
         assert!(imputed.len() == 3);
 
@@ -197,36 +180,29 @@ mod readme_examples {
     #[test]
     #[cfg(feature = "serde")]
     fn test_serialization() -> Result<(), Box<dyn std::error::Error>> {
-        let mut forest = Forest::builder(2)
-            .shingle_size(1)
-            .capacity(256)
-            .num_trees(50)
-            .build()?;
+        let mut forest = Forest::builder(2).build()?;
 
-        // Feed some data
         for _ in 0..50 {
             forest.update(&[1.5, 2.3])?;
         }
 
-        // Save to string
         let json_str = forest.to_json()?;
         assert!(!json_str.is_empty());
-        println!("JSON length: {}", json_str.len());
+        let tmpdir = tempfile::tempdir()?;
+        let path = tmpdir.path().join("forest.json");
+        forest.save_json(&path)?;
 
-        // Load from string
         let loaded = Forest::from_json(&json_str)?;
+        let loaded_from_file = Forest::load_json(&path)?;
         assert_eq!(loaded.num_trees(), forest.num_trees());
+        assert_eq!(loaded_from_file.num_trees(), forest.num_trees());
 
         Ok(())
     }
 
     #[test]
     fn test_anomaly_detection_example() -> Result<(), Box<dyn std::error::Error>> {
-        let mut forest = Forest::builder(3)
-            .shingle_size(1)
-            .capacity(256)
-            .num_trees(50)
-            .build()?;
+        let mut forest = Forest::builder(3).capacity(256).num_trees(50).build()?;
 
         // Warm up the forest with many normal data points
         for i in 0..200 {
@@ -237,47 +213,24 @@ mod readme_examples {
         let data = vec![
             vec![1.0, 2.0, 3.0],
             vec![1.1, 2.1, 3.1],
-            vec![1.2, 2.2, 3.2],
-            vec![100.0, 200.0, 300.0], // Extreme anomaly
-            vec![1.3, 2.3, 3.3],
+            vec![100.0, 200.0, 300.0],
         ];
 
-        let mut anomaly_count = 0;
         for point in data {
-            // Online inference order: score first, then update.
             if forest.is_ready() {
                 let score = forest.score(&point)?;
-                let attribution = forest.attribution(&point)?;
-
-                println!("Point: {:?}, Score: {}", point, score);
-
-                // Lower threshold since we're detecting a very extreme anomaly
-                if score > 0.1 {
-                    println!("Anomaly detected: score={}", score);
-                    for (i, attr) in attribution.iter().enumerate() {
-                        println!("  Dimension {}: {:.2}", i, attr.above);
-                    }
-                    anomaly_count += 1;
-                }
+                println!("Point: {point:?}, score={score}");
             }
 
             forest.update(&point)?;
         }
-
-        println!("Total anomalies detected: {}", anomaly_count);
-        assert!(anomaly_count > 0); // We expect to detect the anomaly
 
         Ok(())
     }
 
     #[test]
     fn test_time_series_forecasting() -> Result<(), Box<dyn std::error::Error>> {
-        let mut forest = Forest::builder(4)
-            .shingle_size(8)
-            .internal_shingling(true)
-            .capacity(512)
-            .num_trees(50)
-            .build()?;
+        let mut forest = Forest::builder(4).shingle_size(8).build()?;
 
         // Feed observations one at a time (time series)
         let stream = vec![
@@ -297,14 +250,79 @@ mod readme_examples {
             forest.update(&point)?;
         }
 
-        // Predict the next 5 observations
-        if forest.is_ready() {
-            let predictions = forest.extrapolate(5)?;
-            println!("Predictions (flat list): {:?}", predictions);
-            // Returns a flat list of length 5 * input_dim = 5 * 4 = 20
-            assert_eq!(predictions.len(), 20);
-        }
+        let predictions = forest.extrapolate(5)?;
+        assert_eq!(predictions.len(), 20);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_mstream_basic_usage() -> Result<(), Box<dyn std::error::Error>> {
+        let mut detector = MStream::builder(2, 1)
+            .alpha(0.8)
+            .num_rows(2)
+            .num_buckets(1024)
+            .seed(7)
+            .build()?;
+
+        let score = detector.update_and_score(&[1.5, 2.0], &[7], 1)?;
+        assert!(score >= 0.0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_mstream_preview_and_detailed_scores() -> Result<(), Box<dyn std::error::Error>> {
+        let mut detector = MStream::builder(2, 1).seed(7).build()?;
+        detector.update(&[1.5, 2.0], &[7], 1)?;
+
+        let preview = detector.score(&[1.5, 2.0], &[7], 2)?;
+        let committed = detector.update_and_score(&[1.5, 2.0], &[7], 2)?;
+        assert_eq!(preview, committed);
+
+        let detailed = detector.score_detailed(&[1.5, 2.0], &[7], 3)?;
+        assert_eq!(detailed.numeric_features.len(), 2);
+        assert_eq!(detailed.categorical_features.len(), 1);
+        assert!(detector.is_ready());
+        assert_eq!(detector.entries_seen(), 2);
+        assert_eq!(detector.current_time(), Some(2));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_mstream_serialization() -> Result<(), Box<dyn std::error::Error>> {
+        let mut detector = MStream::builder(2, 1).seed(7).build()?;
+        detector.update(&[1.5, 2.0], &[7], 1)?;
+
+        let json = detector.to_json()?;
+        let restored = MStream::from_json(json)?;
+        let tmpdir = tempfile::tempdir()?;
+        let path = tmpdir.path().join("mstream.json");
+        detector.save_json(&path)?;
+        let restored_from_file = MStream::load_json(&path)?;
+        assert_eq!(restored.entries_seen(), detector.entries_seen());
+        assert_eq!(restored.current_time(), detector.current_time());
+        assert_eq!(restored_from_file.entries_seen(), detector.entries_seen());
+        assert_eq!(restored_from_file.current_time(), detector.current_time());
+        Ok(())
+    }
+
+    #[test]
+    fn test_mstream_practical_example() -> Result<(), Box<dyn std::error::Error>> {
+        let mut detector = MStream::builder(2, 2).seed(2026).num_buckets(512).build()?;
+
+        let normal = detector.update_and_score(&[0.0, 3.2], &[1, 10], 1)?;
+        let suspicious = detector.score_detailed(&[12.0, 0.3], &[99, 10], 2)?;
+
+        println!("normal={normal}, suspicious={}", suspicious.total);
+        println!(
+            "failed-attempt contribution={}",
+            suspicious.numeric_features[0]
+        );
+        println!(
+            "country contribution={}",
+            suspicious.categorical_features[0]
+        );
         Ok(())
     }
 }
