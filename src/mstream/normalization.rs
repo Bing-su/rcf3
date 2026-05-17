@@ -45,7 +45,7 @@ impl NumericRangeNormalizer {
             validate_raw(raw)?;
             raw_values.push(raw);
 
-            let transformed = libm::log(1.0 + raw);
+            let transformed = libm::asinh(raw);
             normalized.push(self.normalize_transformed(index, transformed, entries_seen));
         }
 
@@ -67,7 +67,7 @@ impl NumericRangeNormalizer {
             validate_raw(raw)?;
             raw_values.push(raw);
 
-            let transformed = libm::log(1.0 + raw);
+            let transformed = libm::asinh(raw);
             normalized.push(self.preview_transformed(index, transformed, entries_seen));
         }
 
@@ -117,11 +117,6 @@ fn validate_raw(raw: f64) -> Result<()> {
             "numeric values must be finite".into(),
         ));
     }
-    if raw <= -1.0 {
-        return Err(RcfError::InvalidArgument(
-            "numeric value must be > -1.0 for ln(1+x) transform".into(),
-        ));
-    }
     Ok(())
 }
 
@@ -167,11 +162,22 @@ mod tests {
     }
 
     #[rstest]
-    #[case(f32::NAN)]
-    #[case(f32::INFINITY)]
     #[case(-1.0)]
     #[case(-2.0)]
-    fn rejects_invalid_values(#[case] value: f32) {
+    #[case(-10_000.0)]
+    fn accepts_finite_negative_values(#[case] value: f32) {
+        let mut normalizer = NumericRangeNormalizer::new(1);
+        let output = normalizer.normalize(&[value], 0).unwrap();
+
+        assert_eq!(output.raw, vec![f64::from(value)]);
+        assert_eq!(output.normalized, vec![0.0]);
+    }
+
+    #[rstest]
+    #[case(f32::NAN)]
+    #[case(f32::INFINITY)]
+    #[case(f32::NEG_INFINITY)]
+    fn rejects_non_finite_values(#[case] value: f32) {
         let mut normalizer = NumericRangeNormalizer::new(1);
         let err = normalizer.normalize(&[value], 0).unwrap_err();
 
@@ -182,7 +188,7 @@ mod tests {
         #[test]
         fn normalized_values_stay_finite_and_bounded(
             records in prop::collection::vec(
-                prop::collection::vec(-0.99f32..100.0, 3),
+                prop::collection::vec(-10_000.0f32..10_000.0, 3),
                 1..=32,
             ),
         ) {

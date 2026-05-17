@@ -15,6 +15,19 @@
 
 At least one of `numeric_dim` or `categorical_dim` must be greater than zero.
 
+## Implementation choices
+
+`MStream` follows the paper's overall detector structure, while making a small
+number of practical implementation choices for library use:
+
+- For real-valued features, the paper applies `log(1+x)`. This library uses
+  `asinh(x)` instead so that all finite signed numerical inputs are supported,
+  including values at or below `-1`.
+- For categorical hashing, the paper describes linear hash functions. This
+  library uses seeded `ahash` instances instead of implementing the paper's
+  arithmetic linear hashes directly, while still keeping the per-row hash
+  layout deterministic from the detector seed.
+
 ## Timestamp semantics
 
 `timestamp` is a logical tick index, not wall-clock time. Only differences between timestamps matter.

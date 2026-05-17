@@ -9,7 +9,7 @@ from hypothesis import strategies as st
 from rcf3 import MStream
 
 VALID_NUMERIC_F32 = st.floats(
-    min_value=-0.984375,
+    min_value=-1_000.0,
     max_value=1_000.0,
     allow_nan=False,
     allow_infinity=False,
@@ -249,15 +249,25 @@ def test_dimension_mismatches_raise_value_error(
         detector.update(numeric, categorical, timestamp)
 
 
-def test_invalid_timestamp_and_numeric_values_raise_value_error() -> None:
+def test_invalid_timestamp_and_non_finite_numeric_values_raise_value_error() -> None:
     detector = make_detector()
     detector.update([0.1, 0.2], [1], 2)
 
     with pytest.raises(ValueError, match="non-decreasing"):
         detector.update([0.2, 0.3], [1], 1)
 
-    with pytest.raises(ValueError, match=r"must be > -1\.0"):
-        detector.score([-1.0, 0.3], [1], 2)
+    with pytest.raises(ValueError, match="must be finite"):
+        detector.score([float("nan"), 0.3], [1], 2)
+
+
+def test_negative_numeric_values_below_minus_one_are_supported() -> None:
+    detector = make_detector()
+
+    detector.update([-2.0, -10.0], [1], 1)
+    preview = detector.score([-1_000.0, 0.3], [1], 2)
+    committed = detector.update_and_score([-1_000.0, 0.3], [1], 2)
+
+    assert preview == pytest.approx(committed, abs=1e-12)
 
 
 class TestRoundTrip:
