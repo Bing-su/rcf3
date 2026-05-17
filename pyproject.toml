@@ -15,6 +15,7 @@ test = ["hypothesis[pytest]", "pytest-pretty"]
 
 [dependency-groups]
 dev = ["nox"]
+docs = ["zensical"]
 
 [build-system]
 requires = ["maturin>=1.13,<2.0"]
@@ -71,3 +72,6 @@ unfixable = ["F401"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["rcf3"]
+
+[tool.uv]
+default-groups = "all"
