@@ -1,4 +1,4 @@
-# rcf3 documentation
+# RCF3 documentation
 
 `rcf3` exposes two public detector families:
 
