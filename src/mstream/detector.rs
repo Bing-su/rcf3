@@ -696,6 +696,20 @@ mod tests {
     }
 
     #[test]
+    fn accepts_negative_numeric_values_below_minus_one() {
+        let mut d = MStream::builder(1, 0).seed(7).build().unwrap();
+
+        d.update(&[-2.0], &[], 1).unwrap();
+        let preview = d.score(&[-10.0], &[], 2).unwrap();
+        let detailed = d.score_detailed(&[-10.0], &[], 2).unwrap();
+        let committed = d.update_and_score(&[-10.0], &[], 2).unwrap();
+
+        assert!(preview.is_finite());
+        assert!(detailed.total.is_finite());
+        assert_abs_diff_eq!(preview, committed, epsilon = 1e-12);
+    }
+
+    #[test]
     fn repeated_anomalous_group_scores_above_baseline_tick() {
         let mut d = MStream::builder(0, 1)
             .seed(11)
@@ -724,7 +738,7 @@ mod tests {
         #[test]
         fn detailed_score_total_matches_component_sum(
             records in prop::collection::vec(
-                ((-0.9f32..10.0), (-0.9f32..10.0), -8i64..=8, 0u64..=3),
+                ((-10_000.0f32..10_000.0), (-10_000.0f32..10_000.0), -8i64..=8, 0u64..=3),
                 1..=32,
             ),
         ) {
@@ -752,7 +766,7 @@ mod tests {
         #[test]
         fn seeded_detectors_match_for_same_sequence(
             records in prop::collection::vec(
-                ((-0.9f32..10.0), -8i64..=8, 0u64..=3),
+                ((-10_000.0f32..10_000.0), -8i64..=8, 0u64..=3),
                 1..=32,
             ),
         ) {
