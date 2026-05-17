@@ -10,9 +10,9 @@
 
 ## Documentation
 
-- [Documentation index](docs/README.md)
-- [Forest API guide](docs/forest.md)
-- [MStream API guide](docs/mstream.md)
+- [Documentation index](https://bing-su.github.io/rcf3/)
+- [Forest API guide](https://bing-su.github.io/rcf3/forest/)
+- [MStream API guide](https://bing-su.github.io/rcf3/mstream/)
 
 ## Quick orientation
 

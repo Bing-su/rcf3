@@ -8,7 +8,11 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = []
-dynamic = ["description", "keywords", "license", "readme", "urls", "version"]
+dynamic = ["description", "keywords", "license", "readme", "version"]
+
+[project.urls]
+Documentation = "https://bing-su.github.io/rcf3/"
+"Source Code" = "https://github.com/Bing-su/rcf3"
 
 [project.optional-dependencies]
 test = ["hypothesis[pytest]", "pytest-pretty"]
