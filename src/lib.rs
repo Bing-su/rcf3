@@ -13,6 +13,7 @@ pub mod rcf;
 pub use error::{RcfError, Result};
 pub use mstream::{MStream, MStreamBuilder, MStreamConfig, MStreamScore};
 pub use rcf::{Attribution, Forest, ForestBuilder, RcfConfig, ScoreMode};
+pub use rcf::{bounding_box, config, cut, forest, node_arena, point_store, sampler, score, tree};
 
 // ---------------------------------------------------------------------------
 // Python module registration
