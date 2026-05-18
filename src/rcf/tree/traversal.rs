@@ -22,7 +22,7 @@ impl RcfTree {
 
     /// Compute the anomaly score for `query` using the given `mode`.
     ///
-    /// Returns `(raw_score, tree_mass)` so the caller can apply the normalizer.
+    /// Returns the normalized anomaly score as an `f64`.
     pub fn raw_score(&self, query: &[f32], point_store: &PointStore, mode: &ScoreMode) -> f64 {
         if self.is_effectively_empty() {
             return 0.0;
