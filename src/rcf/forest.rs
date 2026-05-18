@@ -12,14 +12,14 @@ use rand::rngs::Xoshiro256PlusPlus;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::{
+use super::{
     config::RcfConfig,
-    error::{RcfError, Result},
     point_store::PointStore,
     sampler::{Sampler, reservoir_weight},
     score::{Attribution, ScoreMode},
     tree::RcfTree,
 };
+use crate::error::{RcfError, Result};
 
 /// Intermediate candidate collected from a single tree during near-neighbour search.
 ///
@@ -786,7 +786,7 @@ mod tests {
     use rstest::*;
 
     use super::*;
-    use crate::score::attribution_total;
+    use crate::rcf::score::attribution_total;
 
     fn make_forest() -> Forest {
         Forest::builder(2)

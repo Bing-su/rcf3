@@ -6,15 +6,15 @@ use rand::rngs::Xoshiro256PlusPlus;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::{
+use super::{
     bounding_box::BoundingBox,
     cut::random_cut,
-    error::{RcfError, Result},
     forest::NeighborCandidate,
     node_arena::{NULL, Node, NodeArena},
     point_store::PointStore,
     score::{Attribution, ScoreMode},
 };
+use crate::error::{RcfError, Result};
 
 // ---------------------------------------------------------------------------
 // RcfTree
@@ -802,7 +802,7 @@ mod tests {
     use rstest::*;
 
     use super::*;
-    use crate::{point_store::PointStore, score::ScoreMode};
+    use crate::rcf::{point_store::PointStore, score::ScoreMode};
 
     fn make_store_and_tree(points: &[Vec<f32>]) -> (PointStore, RcfTree) {
         let dim = points[0].len();

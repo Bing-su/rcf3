@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::bounding_box::BoundingBox;
+use super::bounding_box::BoundingBox;
 
 pub const NULL: usize = usize::MAX;
 

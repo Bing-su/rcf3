@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use pyo3::prelude::*;
 
 use super::{MStream, MStreamScore};
-use crate::python::{StrOrBytes, to_py_err};
+use crate::pyutil::{StrOrBytes, to_py_err};
 
 #[derive(IntoPyObject)]
 struct PyMStreamScore {

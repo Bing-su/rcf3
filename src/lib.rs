@@ -3,32 +3,21 @@
 
 #[cfg(not(feature = "std"))]
 extern crate alloc;
-// Public modules.
-pub mod bounding_box;
-pub mod config;
-pub mod cut;
+
 pub mod error;
-pub mod forest;
 pub mod mstream;
-pub mod node_arena;
-pub mod point_store;
-pub mod sampler;
-pub mod score;
-pub mod tree;
-
-// Re-exports for ergonomic use as a library crate.
-pub use config::RcfConfig;
-pub use error::{RcfError, Result};
-pub use forest::{Forest, ForestBuilder};
-pub use mstream::{MStream, MStreamBuilder, MStreamConfig, MStreamScore};
-pub use score::{Attribution, ScoreMode};
-
-// ---------------------------------------------------------------------------
-// Module registration
-// ---------------------------------------------------------------------------
-
 #[cfg(feature = "python")]
-mod python;
+mod pyutil;
+pub mod rcf;
+
+pub use error::{RcfError, Result};
+pub use mstream::{MStream, MStreamBuilder, MStreamConfig, MStreamScore};
+pub use rcf::{Attribution, Forest, ForestBuilder, RcfConfig, ScoreMode};
+
+// ---------------------------------------------------------------------------
+// Python module registration
+// ---------------------------------------------------------------------------
+
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
@@ -42,5 +31,5 @@ mod rcf3 {
     #[pymodule_export]
     use crate::mstream::python::PyMStream;
     #[pymodule_export]
-    use crate::python::PyForest;
+    use crate::rcf::python::PyForest;
 }
