@@ -306,6 +306,7 @@ mod tests {
         assert_eq!(chosen.point_idx, 10);
     }
 
+    #[cfg(feature = "std")]
     mod proptest_tests {
         use super::*;
         use proptest::prelude::*;

@@ -755,6 +755,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "std")]
     mod proptest_tests {
         use super::*;
         use proptest::prelude::*;
