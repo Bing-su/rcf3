@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use itertools::izip;
 
-use crate::bounding_box::BoundingBox;
+use super::bounding_box::BoundingBox;
 
 /// Return the dimension index that `pos` falls into when walking the cumulative range array.
 ///

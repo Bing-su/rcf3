@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::bounding_box::BoundingBox;
+use super::bounding_box::BoundingBox;
 
 pub const NULL: usize = usize::MAX;
 
@@ -21,7 +21,7 @@ pub const NULL: usize = usize::MAX;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Node {
     Leaf {
-        /// Index into the forest-wide [`crate::point_store::PointStore`].
+        /// Index into the forest-wide [`crate::rcf::point_store::PointStore`].
         point_idx: usize,
         /// Number of identical (duplicate) points at this leaf.
         mass: usize,

@@ -1,25 +1,19 @@
-#[cfg(not(feature = "std"))]
-use alloc::collections::BTreeMap;
 #[cfg(all(not(feature = "std"), feature = "serde"))]
 use alloc::string::{String, ToString};
 #[cfg(not(feature = "std"))]
-use alloc::{format, vec, vec::Vec};
-#[cfg(feature = "std")]
-use std::collections::BTreeMap;
+use alloc::vec::Vec;
 
 use rand::prelude::*;
 use rand::rngs::Xoshiro256PlusPlus;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    config::RcfConfig,
-    error::{RcfError, Result},
-    point_store::PointStore,
-    sampler::{Sampler, reservoir_weight},
-    score::{Attribution, ScoreMode},
-    tree::RcfTree,
-};
+use super::{config::RcfConfig, point_store::PointStore, sampler::Sampler, tree::RcfTree};
+use crate::error::{RcfError, Result};
+
+mod impute;
+mod query;
+mod update;
 
 /// Intermediate candidate collected from a single tree during near-neighbour search.
 ///
@@ -111,34 +105,6 @@ impl From<NeighborResult> for (f64, Vec<f32>, f64) {
         (value.score, value.point, value.distance)
     }
 }
-
-fn make_missing_flags(missing: &[usize], dim: usize) -> Result<Vec<bool>> {
-    let mut missing_flags = vec![false; dim];
-    for &i in missing {
-        if i >= dim {
-            return Err(RcfError::IndexOutOfBounds(i));
-        }
-        missing_flags[i] = true;
-    }
-    Ok(missing_flags)
-}
-
-fn median_in_place(vals: &mut [f32]) -> f32 {
-    debug_assert!(!vals.is_empty(), "median_in_place requires non-empty input");
-    let n = vals.len();
-    let mid = n / 2;
-    vals.select_nth_unstable_by(mid, |a, b| a.total_cmp(b));
-    if n % 2 == 1 {
-        vals[mid]
-    } else {
-        let lo = vals[..mid]
-            .iter()
-            .copied()
-            .fold(f32::NEG_INFINITY, f32::max);
-        (lo + vals[mid]) / 2.0
-    }
-}
-
 impl Forest {
     // -----------------------------------------------------------------------
     // Construction
@@ -207,85 +173,6 @@ impl Forest {
     pub fn builder(input_dim: usize) -> ForestBuilder {
         ForestBuilder::new(input_dim)
     }
-
-    // -----------------------------------------------------------------------
-    // Update
-    // -----------------------------------------------------------------------
-
-    /// Incorporate a new observation into the forest.
-    ///
-    /// When `internal_shingling` is true, pass one base observation of length
-    /// `input_dim`.  Otherwise pass the full shingled vector of length
-    /// `input_dim * shingle_size`.
-    pub fn update(&mut self, base: &[f32]) -> Result<()> {
-        let shingled = self.point_store.shingled_point(base)?;
-        self.entries_seen += 1;
-
-        // Only update the trees once the shingle buffer is primed.
-        // With internal shingling the first shingle_size - 1 observations
-        // only fill the buffer.
-        let shingle_lag = if self.config.internal_shingling {
-            self.config.shingle_size.saturating_sub(1)
-        } else {
-            0
-        };
-        if self.entries_seen as usize <= shingle_lag {
-            return Ok(());
-        }
-
-        // Add point to the shared store.
-        let point_idx = self.point_store.add(&shingled)?;
-
-        let time_decay = self.config.effective_time_decay();
-        let initial_frac = self.config.initial_accept_fraction;
-
-        let mut any_accepted = false;
-
-        for t in 0..self.trees.len() {
-            let u: f64 = self.rng.random::<f64>();
-            let weight = reservoir_weight(u, time_decay, self.entries_seen);
-
-            // Determine initial-phase acceptance probability.
-            let fill = self.samplers[t].fill_fraction();
-            let is_initial = if self.samplers[t].is_full() {
-                false
-            } else {
-                let prob = if fill < initial_frac {
-                    1.0
-                } else if initial_frac >= 1.0 {
-                    0.0
-                } else {
-                    1.0 - (fill - initial_frac) / (1.0 - initial_frac)
-                };
-                self.rng.random::<f64>() < prob
-            };
-
-            let result = self.samplers[t].accept(is_initial, weight, point_idx);
-
-            if result.accepted {
-                any_accepted = true;
-
-                // Evict old point if necessary.
-                if let Some(evicted_idx) = result.evicted {
-                    self.trees[t].delete(evicted_idx, &self.point_store)?;
-                    self.point_store.dec_ref(evicted_idx);
-                }
-
-                // Insert new point.
-                self.trees[t].insert(point_idx, &self.point_store)?;
-                self.point_store.inc_ref(point_idx);
-                self.samplers[t].add_point(point_idx);
-            }
-        }
-
-        // If no tree accepted, dec ref immediately (point is unused).
-        if !any_accepted {
-            self.point_store.dec_ref(point_idx);
-        }
-
-        Ok(())
-    }
-
     // -----------------------------------------------------------------------
     // Readiness
     // -----------------------------------------------------------------------
@@ -301,196 +188,6 @@ impl Forest {
             };
         self.entries_seen as usize > needed
     }
-
-    // -----------------------------------------------------------------------
-    // Scoring
-    // -----------------------------------------------------------------------
-
-    /// Anomaly score for `query`.  Higher → more anomalous.
-    pub fn score(&self, query: &[f32]) -> Result<f64> {
-        let q = self.prepare_query(query)?;
-        Ok(self.forest_score(&q, &ScoreMode::standard()))
-    }
-
-    /// Displacement-based anomaly score.
-    pub fn displacement_score(&self, query: &[f32]) -> Result<f64> {
-        let q = self.prepare_query(query)?;
-        Ok(self.forest_score(&q, &ScoreMode::displacement()))
-    }
-
-    /// Per-dimension attribution of the anomaly score.
-    ///
-    /// Returns a `Vec<Attribution>` of length `input_dim * shingle_size`.
-    pub fn attribution(&self, query: &[f32]) -> Result<Vec<Attribution>> {
-        self.attribution_sequential(query)
-    }
-
-    fn attribution_sequential(&self, query: &[f32]) -> Result<Vec<Attribution>> {
-        let q = self.prepare_query(query)?;
-        let dim = self.config.dim();
-        let mode = ScoreMode::standard();
-        let n = self.trees.len() as f64;
-        let total_attr = self
-            .trees
-            .iter()
-            .map(|tree| tree.attribution(&q, &mode))
-            .fold(vec![Attribution::default(); dim], |mut acc, tree_attr| {
-                for i in 0..dim {
-                    acc[i] += tree_attr[i];
-                }
-                acc
-            });
-        Ok(total_attr.into_iter().map(|a| a.scale(1.0 / n)).collect())
-    }
-
-    // -----------------------------------------------------------------------
-    // Density
-    // -----------------------------------------------------------------------
-
-    /// Density estimate at `query`.  Higher → denser neighbourhood.
-    pub fn density(&self, query: &[f32]) -> Result<f64> {
-        self.density_sequential(query)
-    }
-
-    fn density_sequential(&self, query: &[f32]) -> Result<f64> {
-        let q = self.prepare_query(query)?;
-        let raw: f64 = self
-            .trees
-            .iter()
-            .map(|t| t.density(&q, &self.point_store))
-            .sum::<f64>()
-            / self.trees.len() as f64;
-        Ok(raw)
-    }
-
-    // -----------------------------------------------------------------------
-    // Near-neighbour retrieval
-    // -----------------------------------------------------------------------
-
-    /// Find approximate near-neighbours of `query`.
-    ///
-    /// `percentile` controls per-tree traversal aggressiveness in `[0, 100]`;
-    /// lower values visit more branches and usually return more candidates.
-    ///
-    /// Returns a `Vec<NeighborResult>` sorted by distance (ascending), with
-    /// duplicate points across trees merged by point index. At most `top_k`
-    /// results are returned.
-    pub fn near_neighbors(
-        &self,
-        query: &[f32],
-        top_k: usize,
-        percentile: usize,
-    ) -> Result<Vec<NeighborResult>> {
-        let q = self.prepare_query(query)?;
-        let mode = ScoreMode::standard();
-        let candidates = self.collect_neighbor_candidates(&q, &mode, percentile);
-        Ok(self.aggregate_neighbor_candidates(candidates, top_k))
-    }
-
-    // -----------------------------------------------------------------------
-    // Imputation
-    // -----------------------------------------------------------------------
-
-    /// Impute the `missing` positions of `query`.
-    ///
-    /// `query` must have the full dimensionality (`input_dim * shingle_size`).
-    /// Values at `missing` indices are ignored; the returned vector fills them
-    /// with the median of the nearest-neighbour estimates across all trees.
-    ///
-    /// When `centrality` = 1.0 the nearest neighbour in each tree is selected
-    /// deterministically; lower values introduce randomness.
-    pub fn impute(&self, query: &[f32], missing: &[usize], centrality: f64) -> Result<Vec<f32>> {
-        if missing.is_empty() {
-            return Err(RcfError::InvalidArgument("missing list is empty".into()));
-        }
-        let dim = self.config.dim();
-        if query.len() != dim {
-            return Err(RcfError::DimensionMismatch {
-                expected: dim,
-                got: query.len(),
-            });
-        }
-
-        let missing_flags = make_missing_flags(missing, dim)?;
-        let mut seed_rng = self.rng.clone();
-        let candidate_idxs = self.collect_conditional_candidate_indices(
-            query,
-            &missing_flags,
-            centrality,
-            seed_rng.next_u64(),
-        );
-
-        if candidate_idxs.is_empty() {
-            return Err(RcfError::NotReady);
-        }
-
-        let mut result = query.to_vec();
-        self.impute_dimensions_from_candidates(&mut result, missing, &candidate_idxs);
-
-        Ok(result)
-    }
-
-    // -----------------------------------------------------------------------
-    // Extrapolation
-    // -----------------------------------------------------------------------
-
-    /// Predict the next `look_ahead` base observations beyond the current
-    /// shingle buffer.
-    ///
-    /// Requires `internal_shingling = true`, `shingle_size > 1`,
-    /// and `look_ahead <= shingle_size`.
-    /// Returns a vector of length `look_ahead * input_dim`.
-    pub fn extrapolate(&self, look_ahead: usize) -> Result<Vec<f32>> {
-        if !self.config.internal_shingling {
-            return Err(RcfError::InvalidArgument(
-                "extrapolation requires internal_shingling = true".into(),
-            ));
-        }
-        if self.config.shingle_size <= 1 {
-            return Err(RcfError::InvalidArgument(
-                "extrapolation requires shingle_size > 1".into(),
-            ));
-        }
-        if look_ahead == 0 {
-            return Ok(Vec::new());
-        }
-        let shingle_size = self.config.shingle_size;
-        if look_ahead > shingle_size {
-            return Err(RcfError::InvalidArgument(format!(
-                "extrapolation requires look_ahead <= shingle_size (got {look_ahead}, shingle_size={})",
-                shingle_size
-            )));
-        }
-
-        let input_dim = self.config.input_dim;
-        let dim = self.config.dim();
-        let mut fictitious = self.point_store.current_shingled().to_vec();
-        let mut result = Vec::with_capacity(look_ahead * input_dim);
-
-        let mut rng = self.rng.clone();
-        let _ = rng.next_u64();
-
-        for step in 0..look_ahead {
-            let missing_indices = self.point_store.next_indices(step);
-            let missing_flags = make_missing_flags(&missing_indices, dim)?;
-            let seed = rng.next_u64();
-            let candidate_idxs =
-                self.collect_conditional_candidate_indices(&fictitious, &missing_flags, 1.0, seed);
-
-            if candidate_idxs.is_empty() {
-                return Err(RcfError::NotReady);
-            }
-
-            for &mi in &missing_indices {
-                let median = self.median_for_dimension(&candidate_idxs, mi);
-                fictitious[mi] = median;
-                result.push(median);
-            }
-        }
-
-        Ok(result)
-    }
-
     // -----------------------------------------------------------------------
     // Save / Load
     // -----------------------------------------------------------------------
@@ -537,168 +234,6 @@ impl Forest {
 
     pub fn config(&self) -> &RcfConfig {
         &self.config
-    }
-
-    // -----------------------------------------------------------------------
-    // Internal helpers
-    // -----------------------------------------------------------------------
-
-    /// Validate and shingle `query`.  Returns the full-dimensional vector.
-    fn prepare_query(&self, query: &[f32]) -> Result<Vec<f32>> {
-        let base_dim = self.config.input_dim;
-        let full_dim = self.config.dim();
-        if query.len() == base_dim && self.config.internal_shingling {
-            // Caller passed a base observation; apply the current shingle state.
-            let mut buf = self.point_store.current_shingled().to_vec();
-            let start = full_dim - base_dim;
-            buf[start..].copy_from_slice(query);
-            Ok(buf)
-        } else if query.len() == full_dim {
-            Ok(query.to_vec())
-        } else {
-            Err(RcfError::DimensionMismatch {
-                expected: full_dim,
-                got: query.len(),
-            })
-        }
-    }
-
-    fn forest_score(&self, query: &[f32], mode: &ScoreMode) -> f64 {
-        self.forest_score_sequential(query, mode)
-    }
-
-    /// Average score across trees using sequential traversal.
-    fn forest_score_sequential(&self, query: &[f32], mode: &ScoreMode) -> f64 {
-        if self.trees.is_empty() {
-            return 0.0;
-        }
-        let sum: f64 = self
-            .trees
-            .iter()
-            .map(|t| t.raw_score(query, &self.point_store, mode))
-            .sum();
-        sum / self.trees.len() as f64
-    }
-
-    fn collect_neighbor_candidates(
-        &self,
-        query: &[f32],
-        mode: &ScoreMode,
-        percentile: usize,
-    ) -> Vec<NeighborCandidate> {
-        self.collect_neighbor_candidates_sequential(query, mode, percentile)
-    }
-
-    /// Collect neighbor candidates by traversing trees sequentially.
-    fn collect_neighbor_candidates_sequential(
-        &self,
-        query: &[f32],
-        mode: &ScoreMode,
-        percentile: usize,
-    ) -> Vec<NeighborCandidate> {
-        // Reuse one output buffer across trees to avoid per-tree temporary Vec allocations.
-        let mut candidates = Vec::with_capacity(self.trees.len() * 2);
-        for tree in &self.trees {
-            tree.near_neighbors_into(query, &self.point_store, mode, percentile, &mut candidates);
-        }
-        candidates
-    }
-
-    fn aggregate_neighbor_candidates(
-        &self,
-        candidates: Vec<NeighborCandidate>,
-        top_k: usize,
-    ) -> Vec<NeighborResult> {
-        if candidates.is_empty() || top_k == 0 {
-            return Vec::new();
-        }
-
-        let n = self.trees.len() as f64;
-        let mut merged: BTreeMap<usize, (f64, f64)> = BTreeMap::new();
-        for item in candidates {
-            let entry = merged.entry(item.point_idx).or_insert((0.0, f64::MAX));
-            entry.0 += item.score;
-            entry.1 = entry.1.min(item.distance);
-        }
-
-        let mut aggregated: Vec<NeighborCandidate> = merged
-            .into_iter()
-            .map(|(point_idx, (score_sum, dist_min))| NeighborCandidate {
-                score: score_sum / n,
-                point_idx,
-                distance: dist_min,
-            })
-            .collect();
-
-        let limit = top_k.min(aggregated.len());
-        if limit < aggregated.len() {
-            // Partition once around kth element, then sort only the kept prefix.
-            aggregated
-                .select_nth_unstable_by(limit - 1, |a, b| cmp_distance(a.distance, b.distance));
-            aggregated.truncate(limit);
-        }
-        aggregated.sort_unstable_by(|a, b| cmp_distance(a.distance, b.distance));
-
-        aggregated
-            .into_iter()
-            .map(|item| NeighborResult {
-                score: item.score,
-                point: self.point_store.copy_point(item.point_idx),
-                distance: item.distance,
-            })
-            .collect()
-    }
-
-    fn collect_conditional_candidate_indices(
-        &self,
-        query: &[f32],
-        missing_flags: &[bool],
-        centrality: f64,
-        seed: u64,
-    ) -> Vec<usize> {
-        let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
-        self.trees
-            .iter()
-            .filter_map(|tree| {
-                let tree_seed = rng.next_u64();
-                tree.conditional_field(
-                    query,
-                    missing_flags,
-                    &self.point_store,
-                    centrality,
-                    tree_seed,
-                )
-                .map(|c| c.point_idx)
-            })
-            .collect()
-    }
-
-    fn impute_dimensions_from_candidates(
-        &self,
-        result: &mut [f32],
-        missing: &[usize],
-        candidate_idxs: &[usize],
-    ) {
-        for &mi in missing {
-            result[mi] = self.median_for_dimension(candidate_idxs, mi);
-        }
-    }
-
-    fn median_for_dimension(&self, candidate_idxs: &[usize], dim_idx: usize) -> f32 {
-        let mut vals: Vec<f32> = candidate_idxs
-            .iter()
-            .map(|&i| self.point_store.get(i)[dim_idx])
-            .collect();
-        median_in_place(&mut vals)
-    }
-}
-
-fn cmp_distance(a: f64, b: f64) -> core::cmp::Ordering {
-    match (a.is_nan(), b.is_nan()) {
-        (true, true) => core::cmp::Ordering::Equal,
-        (true, false) => core::cmp::Ordering::Greater,
-        (false, true) => core::cmp::Ordering::Less,
-        (false, false) => a.total_cmp(&b),
     }
 }
 
@@ -775,18 +310,21 @@ impl ForestBuilder {
         }
     }
 }
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(feature = "std"))]
+    use alloc::vec;
+
     use approx::assert_abs_diff_eq;
     use rstest::*;
 
+    use super::impute::{make_missing_flags, median_in_place};
     use super::*;
-    use crate::score::attribution_total;
+    use crate::rcf::score::attribution_total;
 
     fn make_forest() -> Forest {
         Forest::builder(2)
@@ -809,6 +347,21 @@ mod tests {
     fn builder_applies_explicit_shingle_size() {
         let f = Forest::builder(2).shingle_size(4).build().unwrap();
         assert_eq!(f.config().shingle_size, 4);
+    }
+
+    #[test]
+    fn prepare_query_uses_current_shingle_for_base_observation() {
+        let mut f = Forest::builder(1)
+            .shingle_size(3)
+            .internal_shingling(true)
+            .seed(11)
+            .build()
+            .unwrap();
+        f.update(&[1.0]).unwrap();
+        f.update(&[2.0]).unwrap();
+
+        let prepared = f.prepare_query(&[9.0]).unwrap();
+        assert_eq!(prepared, vec![0.0, 1.0, 9.0]);
     }
 
     #[test]
@@ -1011,6 +564,48 @@ mod tests {
     ) {
         let m = median_in_place(&mut data);
         assert_abs_diff_eq!(m, expected, epsilon = f32::EPSILON);
+    }
+
+    #[test]
+    fn missing_flags_reject_out_of_bounds_indices() {
+        let err = make_missing_flags(&[0, 2], 2).unwrap_err();
+        assert!(matches!(err, RcfError::IndexOutOfBounds(2)));
+    }
+
+    #[test]
+    fn aggregate_neighbor_candidates_merges_duplicates_and_sorts_by_distance() {
+        let mut f = make_forest();
+        let idx_a = f.point_store.add(&[1.0, 1.0]).unwrap();
+        let idx_b = f.point_store.add(&[2.0, 2.0]).unwrap();
+
+        let aggregated = f.aggregate_neighbor_candidates(
+            vec![
+                NeighborCandidate {
+                    score: 4.0,
+                    point_idx: idx_a,
+                    distance: 3.0,
+                },
+                NeighborCandidate {
+                    score: 6.0,
+                    point_idx: idx_a,
+                    distance: 1.0,
+                },
+                NeighborCandidate {
+                    score: 8.0,
+                    point_idx: idx_b,
+                    distance: 0.5,
+                },
+            ],
+            2,
+        );
+
+        assert_eq!(aggregated.len(), 2);
+        assert_eq!(aggregated[0].point, vec![2.0, 2.0]);
+        assert_abs_diff_eq!(aggregated[0].score, 0.8, epsilon = 1e-12);
+        assert_abs_diff_eq!(aggregated[0].distance, 0.5, epsilon = 1e-12);
+        assert_eq!(aggregated[1].point, vec![1.0, 1.0]);
+        assert_abs_diff_eq!(aggregated[1].score, 1.0, epsilon = 1e-12);
+        assert_abs_diff_eq!(aggregated[1].distance, 1.0, epsilon = 1e-12);
     }
 
     // -----------------------------------------------------------------------
