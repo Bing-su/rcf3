@@ -192,27 +192,27 @@ impl Forest {
     // Save / Load
     // -----------------------------------------------------------------------
 
-    /// Serialise the entire forest state to a JSON string.
+    /// Serialize the entire forest state to a JSON string.
     #[cfg(feature = "serde")]
     pub fn to_json(&self) -> Result<String> {
         serde_json::to_string(self).map_err(|e| RcfError::Io(e.to_string()))
     }
 
-    /// Deserialise a forest from a JSON string previously written by
+    /// Deserialize a forest from a JSON string previously written by
     /// [`Self::to_json`].
     #[cfg(feature = "serde")]
     pub fn from_json(json: impl AsRef<[u8]>) -> Result<Self> {
         serde_json::from_slice(json.as_ref()).map_err(|e| RcfError::Io(e.to_string()))
     }
 
-    /// Serialise the entire forest state to a JSON file.
+    /// Serialize the entire forest state to a JSON file.
     #[cfg(all(feature = "serde", feature = "std"))]
     pub fn save_json(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         let json = self.to_json()?;
         std::fs::write(path.as_ref(), json).map_err(|e| RcfError::Io(e.to_string()))
     }
 
-    /// Deserialise a forest from a JSON file previously written by
+    /// Deserialize a forest from a JSON file previously written by
     /// [`Self::save_json`].
     #[cfg(all(feature = "serde", feature = "std"))]
     pub fn load_json(path: impl AsRef<std::path::Path>) -> Result<Self> {
@@ -224,10 +224,12 @@ impl Forest {
     // Diagnostics
     // -----------------------------------------------------------------------
 
+    /// Number of observations processed so far.
     pub fn entries_seen(&self) -> u64 {
         self.entries_seen
     }
 
+    /// Number of trees in the ensemble.
     pub fn num_trees(&self) -> usize {
         self.trees.len()
     }

@@ -26,22 +26,6 @@ impl From<MStreamScore> for PyMStreamScore {
     }
 }
 
-/// A mixed numerical/categorical streaming anomaly detector.
-///
-/// Parameters
-/// ----------
-/// numeric_dim : int
-///     Number of numerical features in each record.
-/// categorical_dim : int
-///     Number of categorical features in each record.
-/// num_rows : int, optional
-///     Number of hash rows (default 2).
-/// num_buckets : int, optional
-///     Number of buckets per hash row (default 1024).
-/// alpha : float, optional
-///     Temporal decay factor in `(0, 1)` (default 0.8).
-/// seed : int, optional
-///     Random seed for deterministic hashing.
 #[pyclass(name = "MStream", module = "rcf3.rcf3", skip_from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyMStream {
@@ -78,21 +62,18 @@ impl PyMStream {
         Ok(Self { inner })
     }
 
-    /// Ingest a record without returning its anomaly score.
     fn update(&mut self, numeric: Vec<f32>, categorical: Vec<i64>, timestamp: u64) -> PyResult<()> {
         self.inner
             .update(&numeric, &categorical, timestamp)
             .map_err(to_py_err)
     }
 
-    /// Preview the anomaly score for a record without mutating detector state.
     fn score(&self, numeric: Vec<f32>, categorical: Vec<i64>, timestamp: u64) -> PyResult<f64> {
         self.inner
             .score(&numeric, &categorical, timestamp)
             .map_err(to_py_err)
     }
 
-    /// Ingest a record and return its anomaly score.
     fn update_and_score(
         &mut self,
         numeric: Vec<f32>,
@@ -104,7 +85,6 @@ impl PyMStream {
             .map_err(to_py_err)
     }
 
-    /// Preview a decomposed anomaly score without mutating detector state.
     fn score_detailed(
         &self,
         numeric: Vec<f32>,
@@ -117,7 +97,6 @@ impl PyMStream {
             .map_err(to_py_err)
     }
 
-    /// Ingest a record and return a decomposed anomaly score.
     fn update_and_score_detailed(
         &mut self,
         numeric: Vec<f32>,
@@ -130,39 +109,32 @@ impl PyMStream {
             .map_err(to_py_err)
     }
 
-    /// Whether the detector has processed at least one record.
     fn is_ready(&self) -> bool {
         self.inner.is_ready()
     }
 
-    /// Number of records processed so far.
     fn entries_seen(&self) -> u64 {
         self.inner.entries_seen()
     }
 
-    /// Last timestamp observed by the detector.
     fn current_time(&self) -> Option<u64> {
         self.inner.current_time()
     }
 
-    /// Serialise detector state to a JSON string.
     fn to_json(&self) -> PyResult<String> {
         self.inner.to_json().map_err(to_py_err)
     }
 
-    /// Load a detector from a JSON string.
     #[staticmethod]
     fn from_json(json: StrOrBytes) -> PyResult<Self> {
         let inner = MStream::from_json(json).map_err(to_py_err)?;
         Ok(Self { inner })
     }
 
-    /// Serialise detector state to a JSON file.
     fn save_json(&self, path: PathBuf) -> PyResult<()> {
         self.inner.save_json(path).map_err(to_py_err)
     }
 
-    /// Load a detector from a JSON file.
     #[staticmethod]
     fn load_json(path: PathBuf) -> PyResult<Self> {
         let inner = MStream::load_json(path).map_err(to_py_err)?;

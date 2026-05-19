@@ -14,7 +14,7 @@ impl Forest {
     // Scoring
     // -----------------------------------------------------------------------
 
-    /// Anomaly score for `query`.  Higher → more anomalous.
+    /// Anomaly score for `query`. Higher means more anomalous.
     pub fn score(&self, query: &[f32]) -> Result<f64> {
         let q = self.prepare_query(query)?;
         Ok(self.forest_score(&q, &ScoreMode::standard()))
@@ -55,7 +55,7 @@ impl Forest {
     // Density
     // -----------------------------------------------------------------------
 
-    /// Density estimate at `query`.  Higher → denser neighbourhood.
+    /// Density estimate at `query`. Higher means a denser neighbourhood.
     pub fn density(&self, query: &[f32]) -> Result<f64> {
         self.density_sequential(query)
     }

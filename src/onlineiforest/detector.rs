@@ -164,7 +164,7 @@ impl OnlineIForest {
     /// This can differ from [`update_and_score`](Self::update_and_score)
     /// because the preview is computed before `point` is learned by the
     /// forest. This is specific to the Online Isolation Forest algorithm: the
-    /// paper's streamed score is defined after the new point has been learned,
+    /// streamed update score is computed after the new point has been learned,
     /// unlike the preview-style scoring semantics used by `Forest` and
     /// `MStream`. By contrast, `update_and_score(point)` returns the same value
     /// as calling [`update`](Self::update) with `point` and then

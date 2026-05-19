@@ -33,9 +33,9 @@ impl<S> SketchCounts<S> {
 
 /// Decomposed anomaly score for one streamed record.
 ///
-/// The paper defines the final mStream score as the sum of one record-level
-/// score and one score per feature. Exposing the components keeps that
-/// explainability available to callers.
+/// The final mStream score is the sum of one record-level score and one score
+/// per feature. Exposing the components keeps that explainability available to
+/// callers.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MStreamScore {
@@ -96,7 +96,7 @@ impl MStreamBuilder {
 
 /// mStream detector for mixed numerical/categorical records.
 ///
-/// `timestamp` is interpreted as the paper's time tick, not as wall-clock time.
+/// `timestamp` is interpreted as a logical time tick, not as wall-clock time.
 /// Scores are invariant to adding a constant offset to all timestamps, while a
 /// gap of `k` ticks applies the temporal decay factor `alpha` exactly `k` times.
 ///

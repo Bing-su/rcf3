@@ -43,27 +43,6 @@ impl From<Attribution> for PyAttribution {
     }
 }
 
-/// A Random Cut Forest anomaly detector.
-///
-/// Parameters
-/// ----------
-/// input_dim : int
-///     Number of features per observation (before shingling).
-/// shingle_size : int, optional
-///     Temporal window size (default 1, no shingling).
-/// num_trees : int, optional
-///     Number of trees in the ensemble (default 50).
-/// capacity : int, optional
-///     Maximum samples per tree (default 256).
-/// time_decay : float, optional
-///     Exponential decay for sample weights (default 0 = auto).
-/// output_after : int, optional
-///     Minimum observations before scoring starts (default 0 = auto).
-/// internal_shingling : bool, optional
-///     When True, pass one base observation at a time and the forest
-///     maintains the rolling shingle buffer (default True).
-/// seed : int, optional
-///     Random seed for deterministic forests.
 #[pyclass(name = "Forest", module = "rcf3.rcf3", skip_from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyForest {
@@ -108,26 +87,18 @@ impl PyForest {
         Ok(PyForest { inner })
     }
 
-    /// Update the forest with a new observation.
     fn update(&mut self, point: Vec<f32>) -> PyResult<()> {
         self.inner.update(&point).map_err(to_py_err)
     }
 
-    /// Anomaly score for `point`.  Returns 0.0 before the forest is ready.
     fn score(&self, point: Vec<f32>) -> PyResult<f64> {
         self.inner.score(&point).map_err(to_py_err)
     }
 
-    /// Displacement-based anomaly score for `point`.
     fn displacement_score(&self, point: Vec<f32>) -> PyResult<f64> {
         self.inner.displacement_score(&point).map_err(to_py_err)
     }
 
-    /// Per-dimension attribution of the anomaly score.
-    ///
-    /// Returns a list of dict objects with keys: `below`, `above`.
-    /// `above` captures contribution from cuts above the query value;
-    /// `below` captures contribution from cuts below the query value.
     fn attribution(&self, point: Vec<f32>) -> PyResult<Vec<PyAttribution>> {
         self.inner
             .attribution(&point)
@@ -135,14 +106,10 @@ impl PyForest {
             .map_err(to_py_err)
     }
 
-    /// Density estimate at `point` (higher means more typical).
     fn density(&self, point: Vec<f32>) -> PyResult<f64> {
         self.inner.density(&point).map_err(to_py_err)
     }
 
-    /// Find approximate near-neighbours of `point`.
-    ///
-    /// Returns a list of dict objects with keys: `score`, `point`, `distance`.
     #[pyo3(signature = (point, top_k = 10, percentile = 50))]
     fn near_neighbors(
         &self,
@@ -156,16 +123,6 @@ impl PyForest {
             .map_err(to_py_err)
     }
 
-    /// Impute the missing dimensions of `point`.
-    ///
-    /// Parameters
-    /// ----------
-    /// point : list[float]
-    ///     Full-dimensional query (missing values will be ignored).
-    /// missing : list[int]
-    ///     Indices of dimensions to impute.
-    /// centrality : float, optional
-    ///     1.0 = always pick the nearest candidate (deterministic).
     #[pyo3(signature = (point, missing, centrality = 1.0))]
     fn impute(&self, point: Vec<f32>, missing: Vec<usize>, centrality: f64) -> PyResult<Vec<f32>> {
         self.inner
@@ -173,47 +130,36 @@ impl PyForest {
             .map_err(to_py_err)
     }
 
-    /// Predict the next `look_ahead` base observations.
-    ///
-    /// Requires `internal_shingling = True` and `shingle_size > 1`.
-    /// Returns a flat list of length `look_ahead * input_dim`.
     fn extrapolate(&self, look_ahead: usize) -> PyResult<Vec<f32>> {
         self.inner.extrapolate(look_ahead).map_err(to_py_err)
     }
 
-    /// Whether the forest has seen enough observations to return scores.
     fn is_ready(&self) -> bool {
         self.inner.is_ready()
     }
 
-    /// Number of observations processed so far.
     fn entries_seen(&self) -> u64 {
         self.inner.entries_seen()
     }
 
-    /// Number of trees.
     fn num_trees(&self) -> usize {
         self.inner.num_trees()
     }
 
-    /// Serialise the forest state to a JSON string.
     fn to_json(&self) -> PyResult<String> {
         self.inner.to_json().map_err(to_py_err)
     }
 
-    /// Load a forest from a JSON string.
     #[staticmethod]
     fn from_json(json: StrOrBytes) -> PyResult<Self> {
         let inner = Forest::from_json(json).map_err(to_py_err)?;
         Ok(PyForest { inner })
     }
 
-    /// Serialise the forest state to a JSON file.
     fn save_json(&self, path: PathBuf) -> PyResult<()> {
         self.inner.save_json(path).map_err(to_py_err)
     }
 
-    /// Load a forest from a JSON file.
     #[staticmethod]
     fn load_json(path: PathBuf) -> PyResult<Self> {
         let inner = Forest::load_json(path).map_err(to_py_err)?;
