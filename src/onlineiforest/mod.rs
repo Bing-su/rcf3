@@ -7,6 +7,8 @@
 mod config;
 mod detector;
 mod node;
+#[cfg(feature = "python")]
+pub(crate) mod python;
 mod tree;
 
 pub use config::OnlineIForestConfig;

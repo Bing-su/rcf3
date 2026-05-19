@@ -228,3 +228,59 @@ class MStream:
         timestamp: SupportsInt,
     ) -> _MStreamScore:
         "Ingest a record and return a decomposed anomaly score."
+
+@final
+class OnlineIForest:
+    """
+    Online Isolation Forest detector for numerical streams.
+
+    Parameters
+    ----------
+    input_dim : int
+        Number of numerical features in each point.
+    num_trees : int, optional
+        Number of trees in the ensemble (default 32).
+    window_size : int, optional
+        Number of recent points retained by the sliding window (default 2048).
+    max_leaf_samples : int, optional
+        Base leaf-splitting threshold (default 32).
+    seed : int, optional
+        Random seed for deterministic trees.
+    """
+    def __copy__(self, /) -> Self: ...
+    def __deepcopy__(self, /, memo: Any) -> Self: ...
+    def __getstate__(self, /) -> str: ...
+    def __new__(
+        cls,
+        /,
+        input_dim: SupportsInt,
+        num_trees: SupportsInt = 32,
+        window_size: SupportsInt = 2048,
+        max_leaf_samples: SupportsInt = 32,
+        seed: SupportsInt | None = None,
+    ) -> Self: ...
+    def __repr__(self, /) -> str: ...
+    def __setstate__(self, /, state: str) -> None: ...
+    def __str__(self, /) -> str: ...
+    def entries_seen(self, /) -> int:
+        "Number of points processed so far."
+    @staticmethod
+    def from_json(json: str | bytes | bytearray | memoryview) -> OnlineIForest:
+        "Load a detector from a JSON string."
+    def is_ready(self, /) -> bool:
+        "Whether the detector has processed at least one point."
+    @staticmethod
+    def load_json(path: str | PathLike[str]) -> OnlineIForest:
+        "Load a detector from a JSON file path."
+    def num_trees(self, /) -> int:
+        "Number of trees in the ensemble."
+    def save_json(self, /, path: str | PathLike[str]) -> None:
+        "Serialise detector state to a JSON file path."
+    def score(self, /, point: Sequence[SupportsFloat]) -> float:
+        "Preview the current anomaly score for `point` without mutating state."
+    def to_json(self, /) -> str:
+        "Serialise detector state to a JSON string."
+    def update(self, /, point: Sequence[SupportsFloat]) -> None:
+        "Ingest a point without returning its anomaly score."
+    def update_and_score(self, /, point: Sequence[SupportsFloat]) -> float:
+        "Ingest a point and return its anomaly score under the updated forest."

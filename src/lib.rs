@@ -34,5 +34,7 @@ mod rcf3 {
     #[pymodule_export]
     use crate::mstream::python::PyMStream;
     #[pymodule_export]
+    use crate::onlineiforest::python::PyOnlineIForest;
+    #[pymodule_export]
     use crate::rcf::python::PyForest;
 }
