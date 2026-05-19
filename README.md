@@ -1,10 +1,11 @@
-# rcf3
+# RCF3
 
-`rcf3` is a Rust implementation of Random Cut Forest (RCF) for anomaly detection in streaming data, with Python bindings and an mStream detector for mixed numerical and categorical streams.
+`rcf3` provides streaming anomaly detectors in Rust with Python bindings.
 
 ## What it provides
 
 - **Random Cut Forest** for online anomaly detection, feature attribution, neighborhood search, missing-value imputation, and time-series forecasting
+- **Online Isolation Forest** for numerical streams with sliding-window updates
 - **mStream** for mixed numerical/categorical streaming anomaly detection with feature-level score decomposition
 - **Rust and Python APIs** over the same core implementation
 
@@ -12,6 +13,7 @@
 
 - [Documentation index](https://bing-su.github.io/rcf3/)
 - [Forest API guide](https://bing-su.github.io/rcf3/forest/)
+- [OnlineIForest API guide](https://bing-su.github.io/rcf3/onlineiforest/)
 - [MStream API guide](https://bing-su.github.io/rcf3/mstream/)
 
 ## Quick orientation
@@ -23,6 +25,15 @@ use rcf3::Forest;
 
 let mut forest = Forest::builder(2).build()?;
 forest.update(&[1.5, 2.3])?;
+```
+
+Use `OnlineIForest` when you want a compact numerical detector with sliding-window updates:
+
+```rust
+use rcf3::OnlineIForest;
+
+let mut detector = OnlineIForest::builder(2).build()?;
+let score = detector.update_and_score(&[1.5, 2.3])?;
 ```
 
 Use `MStream` when each event has separate numerical and categorical aspects:
