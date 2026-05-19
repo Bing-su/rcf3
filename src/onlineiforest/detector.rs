@@ -241,8 +241,12 @@ impl OnlineIForest {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(feature = "std"))]
+    use alloc::{vec, vec::Vec};
+
     use approx::assert_abs_diff_eq;
     use proptest::prelude::*;
+    use rstest::rstest;
 
     use super::*;
 
@@ -290,18 +294,30 @@ mod tests {
         assert_abs_diff_eq!(committed, preview, epsilon = 1e-12);
     }
 
-    #[test]
-    fn rejects_dimension_mismatch_and_non_finite_values() {
+    #[rstest]
+    #[case::too_short(vec![1.0], 2, 1)]
+    #[case::too_long(vec![1.0, 2.0, 3.0], 2, 3)]
+    fn rejects_dimension_mismatch(
+        #[case] point: Vec<f32>,
+        #[case] expected: usize,
+        #[case] got: usize,
+    ) {
         let detector = OnlineIForest::builder(2).build().unwrap();
         assert!(matches!(
-            detector.score(&[1.0]),
-            Err(RcfError::DimensionMismatch {
-                expected: 2,
-                got: 1
-            })
+            detector.score(&point),
+            Err(RcfError::DimensionMismatch { expected: e, got: g })
+            if e == expected && g == got
         ));
+    }
+
+    #[rstest]
+    #[case::nan(f32::NAN)]
+    #[case::positive_infinity(f32::INFINITY)]
+    #[case::negative_infinity(f32::NEG_INFINITY)]
+    fn rejects_non_finite_values(#[case] value: f32) {
+        let detector = OnlineIForest::builder(2).build().unwrap();
         assert!(matches!(
-            detector.score(&[f32::NAN, 0.0]),
+            detector.score(&[value, 0.0]),
             Err(RcfError::InvalidArgument(_))
         ));
     }

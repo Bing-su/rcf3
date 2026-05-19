@@ -104,6 +104,8 @@ impl OnlineIForestConfig {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     #[test]
@@ -115,31 +117,19 @@ mod tests {
         assert_eq!(config.max_leaf_samples(), 32);
     }
 
-    #[test]
-    fn rejects_invalid_values() {
+    #[rstest]
+    #[case::zero_input_dim(OnlineIForestConfig::new(0))]
+    #[case::zero_trees(OnlineIForestConfig::new(1).with_num_trees(0))]
+    #[case::zero_window(OnlineIForestConfig::new(1).with_window_size(0))]
+    #[case::zero_leaf_samples(OnlineIForestConfig::new(1).with_max_leaf_samples(0))]
+    #[case::window_not_larger_than_leaf_samples(
+        OnlineIForestConfig::new(1)
+            .with_window_size(32)
+            .with_max_leaf_samples(32)
+    )]
+    fn rejects_invalid_values(#[case] config: OnlineIForestConfig) {
         assert!(matches!(
-            OnlineIForestConfig::new(0).validate(),
-            Err(RcfError::InvalidArgument(_))
-        ));
-        assert!(matches!(
-            OnlineIForestConfig::new(1).with_num_trees(0).validate(),
-            Err(RcfError::InvalidArgument(_))
-        ));
-        assert!(matches!(
-            OnlineIForestConfig::new(1).with_window_size(0).validate(),
-            Err(RcfError::InvalidArgument(_))
-        ));
-        assert!(matches!(
-            OnlineIForestConfig::new(1)
-                .with_max_leaf_samples(0)
-                .validate(),
-            Err(RcfError::InvalidArgument(_))
-        ));
-        assert!(matches!(
-            OnlineIForestConfig::new(1)
-                .with_window_size(32)
-                .with_max_leaf_samples(32)
-                .validate(),
+            config.validate(),
             Err(RcfError::InvalidArgument(_))
         ));
     }

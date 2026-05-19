@@ -190,19 +190,38 @@ impl OnlineITree {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
-    fn residual_depth_matches_expected() {
-        assert_eq!(residual_path_length(3, 4), 0.0);
-        assert_eq!(residual_path_length(4, 4), 0.0);
-        assert_eq!(residual_path_length(8, 4), 1.0);
+    #[rstest]
+    #[case::below_threshold(3, 4, 0.0)]
+    #[case::at_threshold(4, 4, 0.0)]
+    #[case::twice_threshold(8, 4, 1.0)]
+    #[case::four_times_threshold(16, 4, 2.0)]
+    fn residual_depth_matches_expected(
+        #[case] height: usize,
+        #[case] max_leaf_samples: usize,
+        #[case] expected: f64,
+    ) {
+        assert_eq!(residual_path_length(height, max_leaf_samples), expected);
     }
 
-    #[test]
-    fn fractional_depth_limit_allows_all_integer_depths_below_it() {
-        assert!(should_split(4, 2, 1, 1.5));
-        assert!(!should_split(8, 2, 2, 1.5));
+    #[rstest]
+    #[case::below_fractional_limit(4, 2, 1, 1.5, true)]
+    #[case::above_fractional_limit(8, 2, 2, 1.5, false)]
+    #[case::below_height_threshold(3, 2, 1, 2.0, false)]
+    fn split_predicate_respects_height_threshold_and_depth_limit(
+        #[case] height: usize,
+        #[case] max_leaf_samples: usize,
+        #[case] depth: usize,
+        #[case] depth_limit: f64,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(
+            should_split(height, max_leaf_samples, depth, depth_limit),
+            expected
+        );
     }
 
     #[test]

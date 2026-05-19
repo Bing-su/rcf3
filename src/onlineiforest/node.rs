@@ -129,6 +129,8 @@ mod tests {
     #[cfg(not(feature = "std"))]
     use alloc::vec;
 
+    use rstest::rstest;
+
     use super::*;
 
     #[test]
@@ -156,13 +158,15 @@ mod tests {
         );
     }
 
-    #[test]
-    fn split_regions_stay_inside_parent() {
+    #[rstest]
+    #[case::first_dimension(0, 1.5)]
+    #[case::second_dimension(1, 0.5)]
+    fn split_regions_stay_inside_parent(#[case] dimension: usize, #[case] value: f32) {
         let parent = Support {
             min: vec![0.0, -1.0],
             max: vec![4.0, 3.0],
         };
-        let (left, right) = parent.split_regions(0, 1.5);
+        let (left, right) = parent.split_regions(dimension, value);
         assert!(parent.contains_support(&left));
         assert!(parent.contains_support(&right));
     }
