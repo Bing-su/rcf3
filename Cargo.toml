@@ -33,6 +33,11 @@ name = "mstream_simulation"
 path = "tests/mstream_simulation.rs"
 required-features = ["std"]
 
+[[test]]
+name = "onlineiforest_simulation"
+path = "tests/onlineiforest_simulation.rs"
+required-features = ["std"]
+
 [[bench]]
 harness = false
 name = "forest_bench"
