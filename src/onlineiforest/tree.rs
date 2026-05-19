@@ -52,6 +52,7 @@ impl OnlineITree {
         let Some(root) = self.root.as_mut() else {
             return;
         };
+        debug_assert!(root.height > 0);
         Self::forget_node(root, point, max_leaf_samples, 0);
         if root.height == 0 {
             self.root = None;
@@ -128,6 +129,14 @@ impl OnlineITree {
     }
 
     fn forget_node(node: &mut Node, point: &[f32], max_leaf_samples: usize, depth: usize) {
+        // Root height tracks the sliding-window size exactly. Child heights are
+        // approximate: when a leaf splits, historical observations are not
+        // replayed into the children; instead, child counts are initialized from
+        // synthetic samples drawn from the parent support. Forgetting an old
+        // observation can therefore route through a child whose count never
+        // included that exact observation. Saturating subtraction keeps those
+        // approximate child counts non-negative while the root-level debug
+        // assertion still catches invalid top-level forget calls.
         node.height = node.height.saturating_sub(1);
 
         let Some(split) = node.split.as_mut() else {

@@ -169,6 +169,10 @@ impl OnlineIForest {
     /// `MStream`. By contrast, `update_and_score(point)` returns the same value
     /// as calling [`update`](Self::update) with `point` and then
     /// [`score`](Self::score) for that same point.
+    ///
+    /// Calling this before [`is_ready`](Self::is_ready) is allowed, but the value
+    /// is not a stable anomaly estimate yet. In an empty forest, all trees have
+    /// depth zero, so the preview score is the maximum score.
     pub fn score(&self, point: &[f32]) -> Result<f64> {
         self.validate_point(point)?;
         Ok(self.score_validated(point))
@@ -275,6 +279,13 @@ mod tests {
         assert!(!detector.is_ready());
         detector.update(&[0.0]).unwrap();
         assert!(detector.is_ready());
+    }
+
+    #[test]
+    fn score_before_ready_is_allowed_but_untrained() {
+        let detector = OnlineIForest::builder(1).build().unwrap();
+        assert!(!detector.is_ready());
+        assert_abs_diff_eq!(detector.score(&[0.0]).unwrap(), 1.0, epsilon = 1e-12);
     }
 
     #[test]
