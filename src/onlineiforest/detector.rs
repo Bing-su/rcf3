@@ -127,13 +127,19 @@ impl OnlineIForest {
 
     /// Ingest a point and return its anomaly score under the updated forest.
     pub fn update_and_score(&mut self, point: &[f32]) -> Result<f64> {
+        self.update(point)?;
+        Ok(self.score_validated(point))
+    }
+
+    /// Ingest a point without returning its score.
+    pub fn update(&mut self, point: &[f32]) -> Result<()> {
         self.validate_point(point)?;
         let point = point.to_vec();
         let depth_limit = self.config.depth_limit();
         let max_leaf_samples = self.config.max_leaf_samples();
 
-        // Match Algorithm 1: learn the incoming point, forget the oldest point
-        // only after the window overflows, then score the just-ingested point.
+        // Match Algorithm 1: learn the incoming point, then forget the oldest
+        // point only after the window overflows.
         self.window.push_back(point.clone());
         for tree in &mut self.trees {
             tree.learn(&point, max_leaf_samples, depth_limit);
@@ -150,12 +156,6 @@ impl OnlineIForest {
         }
 
         self.entries_seen += 1;
-        Ok(self.score_validated(&point))
-    }
-
-    /// Ingest a point without returning its score.
-    pub fn update(&mut self, point: &[f32]) -> Result<()> {
-        let _ = self.update_and_score(point)?;
         Ok(())
     }
 
