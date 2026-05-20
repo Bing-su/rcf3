@@ -141,9 +141,10 @@ impl OnlineIForest {
 
         // Match Algorithm 1: learn the incoming point, then forget the oldest
         // point only after the window overflows.
-        self.window.push_back(point.clone());
+        self.window.push_back(point);
+        let point = self.window.back().expect("just pushed a point");
         for tree in &mut self.trees {
-            tree.learn(&point, max_leaf_samples, depth_limit);
+            tree.learn(point, max_leaf_samples, depth_limit);
         }
 
         if self.window.len() > self.config.window_size() {
