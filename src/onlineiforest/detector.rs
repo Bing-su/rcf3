@@ -97,10 +97,11 @@ impl OnlineIForest {
         let trees = (0..config.num_trees())
             .map(|_| OnlineITree::new(rng.next_u64()))
             .collect();
+        let window_size = config.window_size();
         Ok(Self {
             config,
             trees,
-            window: VecDeque::new(),
+            window: VecDeque::with_capacity(window_size),
             entries_seen: 0,
         })
     }
