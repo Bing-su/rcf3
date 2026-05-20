@@ -88,6 +88,9 @@ impl OnlineIForestConfig {
         if self.window_size == 0 {
             return Err(RcfError::InvalidArgument("window_size must be > 0".into()));
         }
+        if self.window_size.checked_add(1).is_none() {
+            return Err(RcfError::InvalidArgument("window_size is too large".into()));
+        }
         if self.max_leaf_samples == 0 {
             return Err(RcfError::InvalidArgument(
                 "max_leaf_samples must be > 0".into(),
