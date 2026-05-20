@@ -20,6 +20,12 @@ repos:
         args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format
 
+  - repo: https://github.com/oxc-project/mirrors-oxfmt
+    rev: v0.51.0
+    hooks:
+      - id: oxfmt
+        types_or: [json, markdown, yaml]
+
   - repo: https://github.com/tombi-toml/tombi-pre-commit
     rev: v0.11.5
     hooks:
