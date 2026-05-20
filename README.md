@@ -1,5 +1,7 @@
 # RCF3
 
+[![Crates.io](https://img.shields.io/crates/v/rcf3)](https://crates.io/crates/rcf3) [![PyPI](https://img.shields.io/pypi/v/rcf3)](https://pypi.org/project/rcf3/) [![Documentation](https://img.shields.io/badge/docs-latest-blue)](https://bing-su.github.io/rcf3/) ![License](https://img.shields.io/crates/l/rcf3)
+
 `rcf3` provides streaming anomaly detectors in Rust with Python bindings.
 
 ## What it provides
