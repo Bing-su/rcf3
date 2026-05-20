@@ -6,12 +6,14 @@ extern crate alloc;
 
 pub mod error;
 pub mod mstream;
+pub mod onlineiforest;
 #[cfg(feature = "python")]
 mod pyutil;
 pub mod rcf;
 
 pub use error::{RcfError, Result};
 pub use mstream::{MStream, MStreamBuilder, MStreamConfig, MStreamScore};
+pub use onlineiforest::{OnlineIForest, OnlineIForestBuilder, OnlineIForestConfig};
 pub use rcf::{Attribution, Forest, ForestBuilder, RcfConfig, ScoreMode};
 pub use rcf::{bounding_box, config, cut, forest, node_arena, point_store, sampler, score, tree};
 
@@ -31,6 +33,8 @@ mod rcf3 {
 
     #[pymodule_export]
     use crate::mstream::python::PyMStream;
+    #[pymodule_export]
+    use crate::onlineiforest::python::PyOnlineIForest;
     #[pymodule_export]
     use crate::rcf::python::PyForest;
 }

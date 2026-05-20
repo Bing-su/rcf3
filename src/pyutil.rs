@@ -30,3 +30,15 @@ impl AsRef<[u8]> for StrOrBytes {
         }
     }
 }
+
+impl From<String> for StrOrBytes {
+    fn from(value: String) -> Self {
+        Self::Str(value)
+    }
+}
+
+impl From<Vec<u8>> for StrOrBytes {
+    fn from(value: Vec<u8>) -> Self {
+        Self::Bytes(value)
+    }
+}

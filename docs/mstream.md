@@ -1,6 +1,8 @@
 # MStream API
 
-`MStream` implements the multi-aspect streaming anomaly detector described in the mStream paper. It is designed for events that contain separate numerical and categorical features, such as login traffic with byte counts plus country or endpoint IDs.
+`MStream` is a practical multi-aspect streaming anomaly detector for events
+that contain separate numerical and categorical features, such as login traffic
+with byte counts plus country or endpoint IDs.
 
 ## Configuration
 
@@ -17,16 +19,16 @@ At least one of `numeric_dim` or `categorical_dim` must be greater than zero.
 
 ## Implementation choices
 
-`MStream` follows the paper's overall detector structure, while making a small
-number of practical implementation choices for library use:
+`MStream` keeps the core mStream sketch layout, while making a small number of
+practical implementation choices for library use:
 
-- For real-valued features, the paper applies `log(1+x)`. This library uses
-  `asinh(x)` instead so that all finite signed numerical inputs are supported,
-  including values at or below `-1`.
-- For categorical hashing, the paper describes linear hash functions. This
-  library uses seeded `ahash` instances instead of implementing the paper's
-  arithmetic linear hashes directly, while still keeping the per-row hash
-  layout deterministic from the detector seed.
+- Real-valued features are normalized with `asinh(x)` so that all finite signed
+  numerical inputs are supported, including values at or below `-1`. The paper
+  applies `log(1+x)`, which is only defined for `x > -1`.
+- Categorical hashing uses seeded `ahash` instances. The paper describes
+  arithmetic linear hash functions; this library uses `ahash` because benchmark
+  runs were faster with it while keeping the per-row hash layout deterministic
+  from the detector seed.
 
 ## Timestamp semantics
 
@@ -36,7 +38,8 @@ number of practical implementation choices for library use:
 - a gap of `k` ticks applies the temporal decay factor `alpha` exactly `k` times
 - timestamps must be positive and monotonically non-decreasing
 
-For paper-style usage, pass the same timestamp for all records in the same tick, then increment it when the stream advances.
+For batched stream ticks, pass the same timestamp for all records in the same
+tick, then increment it when the stream advances.
 
 ## Rust API
 

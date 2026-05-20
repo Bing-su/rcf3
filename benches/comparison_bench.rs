@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use ndarray::{Array2, ArrayView1, Axis};
-use rcf3::{Forest, MStream};
+use rcf3::{Forest, MStream, OnlineIForest};
 
 const DIM: usize = 8;
 const EVENTS: usize = 2_000;
@@ -69,6 +69,22 @@ fn build_ready_forest(warmup: &StreamData) -> Forest {
     forest
 }
 
+fn build_ready_onlineiforest(warmup: &StreamData) -> OnlineIForest {
+    let mut detector = OnlineIForest::builder(DIM)
+        .num_trees(50)
+        .window_size(256)
+        .max_leaf_samples(8)
+        .seed(42)
+        .build()
+        .unwrap();
+
+    for point in warmup.numeric.axis_iter(Axis(0)) {
+        detector.update(row_slice(&point)).unwrap();
+    }
+
+    detector
+}
+
 fn build_ready_mstream(warmup: &StreamData, scenario: MStreamScenario) -> MStream {
     let mut detector = MStream::builder(DIM, scenario.categorical_dim)
         .seed(42)
@@ -100,6 +116,7 @@ fn bench_numeric_stream_step(c: &mut Criterion) {
     let warmup = StreamData::new(WARMUP_EVENTS, 0);
     let events = StreamData::new(EVENTS, 0);
     let forest = build_ready_forest(&warmup);
+    let onlineiforest = build_ready_onlineiforest(&warmup);
 
     let mut group = c.benchmark_group("numeric_stream_step");
     group.throughput(Throughput::Elements(EVENTS as u64));
@@ -110,6 +127,40 @@ fn bench_numeric_stream_step(c: &mut Criterion) {
         |b, events| {
             b.iter_batched(
                 || forest.clone(),
+                |mut detector| {
+                    for point in events.numeric.axis_iter(Axis(0)) {
+                        let point = row_slice(&point);
+                        let _ = detector.score(point).unwrap();
+                        detector.update(point).unwrap();
+                    }
+                },
+                BatchSize::SmallInput,
+            );
+        },
+    );
+
+    group.bench_with_input(
+        BenchmarkId::new("onlineiforest_update_and_score", "d8_t50_w256_l8"),
+        &events,
+        |b, events| {
+            b.iter_batched(
+                || onlineiforest.clone(),
+                |mut detector| {
+                    for point in events.numeric.axis_iter(Axis(0)) {
+                        let _ = detector.update_and_score(row_slice(&point)).unwrap();
+                    }
+                },
+                BatchSize::SmallInput,
+            );
+        },
+    );
+
+    group.bench_with_input(
+        BenchmarkId::new("onlineiforest_score_then_update", "d8_t50_w256_l8"),
+        &events,
+        |b, events| {
+            b.iter_batched(
+                || onlineiforest.clone(),
                 |mut detector| {
                     for point in events.numeric.axis_iter(Axis(0)) {
                         let point = row_slice(&point);

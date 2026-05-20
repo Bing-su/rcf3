@@ -1,7 +1,7 @@
 import math
 import tempfile
 
-from rcf3 import Forest, MStream
+from rcf3 import Forest, MStream, OnlineIForest
 
 
 def test_creating_forest_basic():
@@ -294,6 +294,63 @@ def test_mstream_practical_example():
     print(f"country contribution={suspicious['categorical_features'][0]}")
 
 
+def test_onlineiforest_basic_usage():
+    """Test the basic OnlineIForest documentation flow."""
+    detector = OnlineIForest(
+        input_dim=2,
+        num_trees=32,
+        window_size=128,
+        max_leaf_samples=8,
+        seed=7,
+    )
+
+    score = detector.update_and_score([1.5, 2.3])
+    preview = detector.score([1.6, 2.4])
+
+    assert score >= 0.0
+    assert preview >= 0.0
+    assert detector.is_ready()
+    assert detector.entries_seen() == 1
+    assert detector.num_trees() == 32
+
+
+def test_onlineiforest_serialization():
+    """Test the OnlineIForest JSON documentation example."""
+    detector = OnlineIForest(input_dim=2, window_size=128, max_leaf_samples=8, seed=7)
+    detector.update([1.5, 2.3])
+
+    json_str = detector.to_json()
+    restored = OnlineIForest.from_json(json_str)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        path = f"{tmp_dir}/onlineiforest.json"
+        detector.save_json(path)
+        restored_from_file = OnlineIForest.load_json(path)
+
+    assert restored.entries_seen() == detector.entries_seen()
+    assert restored.num_trees() == detector.num_trees()
+    assert restored_from_file.entries_seen() == detector.entries_seen()
+    assert restored_from_file.num_trees() == detector.num_trees()
+
+
+def test_onlineiforest_practical_example():
+    """Test the practical OnlineIForest documentation example."""
+    detector = OnlineIForest(
+        input_dim=2,
+        window_size=128,
+        max_leaf_samples=8,
+        seed=2026,
+    )
+
+    for i in range(64):
+        value = i * 0.01
+        detector.update([value, value + 1.0])
+
+    normal_score = detector.score([0.5, 1.5])
+    anomaly_score = detector.score([10.0, -10.0])
+
+    print(f"normal={normal_score}, anomaly={anomaly_score}")
+
+
 if __name__ == "__main__":
     import sys
 
@@ -315,6 +372,9 @@ if __name__ == "__main__":
         test_mstream_preview_and_detailed_scores()
         test_mstream_serialization()
         test_mstream_practical_example()
+        test_onlineiforest_basic_usage()
+        test_onlineiforest_serialization()
+        test_onlineiforest_practical_example()
 
         print("\n✅ All tests passed!")
     except AssertionError as e:

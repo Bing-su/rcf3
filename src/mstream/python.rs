@@ -26,7 +26,12 @@ impl From<MStreamScore> for PyMStreamScore {
     }
 }
 
-/// A mixed numerical/categorical streaming anomaly detector.
+/// mStream detector for mixed numerical/categorical records.
+///
+/// `timestamp` is interpreted as a logical time tick, not as wall-clock time.
+/// Scores are invariant to adding a constant offset to all timestamps, while a
+/// gap of `k` ticks applies the temporal decay factor `alpha` exactly `k`
+/// times.
 ///
 /// Parameters
 /// ----------
@@ -78,7 +83,7 @@ impl PyMStream {
         Ok(Self { inner })
     }
 
-    /// Ingest a record without returning its anomaly score.
+    /// Ingest a record without returning its score.
     fn update(&mut self, numeric: Vec<f32>, categorical: Vec<i64>, timestamp: u64) -> PyResult<()> {
         self.inner
             .update(&numeric, &categorical, timestamp)
@@ -86,6 +91,9 @@ impl PyMStream {
     }
 
     /// Preview the anomaly score for a record without mutating detector state.
+    ///
+    /// The preview answers what this record would score if it were ingested
+    /// next, using the same timestamp semantics as `update_and_score()`.
     fn score(&self, numeric: Vec<f32>, categorical: Vec<i64>, timestamp: u64) -> PyResult<f64> {
         self.inner
             .score(&numeric, &categorical, timestamp)
@@ -93,6 +101,10 @@ impl PyMStream {
     }
 
     /// Ingest a record and return its anomaly score.
+    ///
+    /// `timestamp` must be a monotonically non-decreasing tick index. Only tick
+    /// differences matter: shifting all timestamps by the same constant does
+    /// not change the scores.
     fn update_and_score(
         &mut self,
         numeric: Vec<f32>,
@@ -104,7 +116,7 @@ impl PyMStream {
             .map_err(to_py_err)
     }
 
-    /// Preview a decomposed anomaly score without mutating detector state.
+    /// Preview the decomposed anomaly score without mutating detector state.
     fn score_detailed(
         &self,
         numeric: Vec<f32>,
@@ -117,7 +129,7 @@ impl PyMStream {
             .map_err(to_py_err)
     }
 
-    /// Ingest a record and return a decomposed anomaly score.
+    /// Ingest a record and return the decomposed score used to form the final anomaly score.
     fn update_and_score_detailed(
         &mut self,
         numeric: Vec<f32>,
@@ -130,39 +142,39 @@ impl PyMStream {
             .map_err(to_py_err)
     }
 
-    /// Whether the detector has processed at least one record.
+    /// Return True once the detector has processed at least one record.
     fn is_ready(&self) -> bool {
         self.inner.is_ready()
     }
 
-    /// Number of records processed so far.
+    /// Return the number of processed records.
     fn entries_seen(&self) -> u64 {
         self.inner.entries_seen()
     }
 
-    /// Last timestamp observed by the detector.
+    /// Return the last timestamp observed by the detector.
     fn current_time(&self) -> Option<u64> {
         self.inner.current_time()
     }
 
-    /// Serialise detector state to a JSON string.
+    /// Serialize the detector state to JSON.
     fn to_json(&self) -> PyResult<String> {
         self.inner.to_json().map_err(to_py_err)
     }
 
-    /// Load a detector from a JSON string.
+    /// Deserialize detector state from a JSON string previously written by `to_json()`.
     #[staticmethod]
     fn from_json(json: StrOrBytes) -> PyResult<Self> {
         let inner = MStream::from_json(json).map_err(to_py_err)?;
         Ok(Self { inner })
     }
 
-    /// Serialise detector state to a JSON file.
+    /// Serialize the detector state to a JSON file.
     fn save_json(&self, path: PathBuf) -> PyResult<()> {
         self.inner.save_json(path).map_err(to_py_err)
     }
 
-    /// Load a detector from a JSON file.
+    /// Deserialize detector state from a JSON file previously written by `save_json()`.
     #[staticmethod]
     fn load_json(path: PathBuf) -> PyResult<Self> {
         let inner = MStream::load_json(path).map_err(to_py_err)?;
@@ -204,7 +216,7 @@ impl PyMStream {
     }
 
     fn __setstate__(&mut self, state: String) -> PyResult<()> {
-        let new = Self::from_json(StrOrBytes::Str(state))?;
+        let new = Self::from_json(state.into())?;
         *self = new;
         Ok(())
     }

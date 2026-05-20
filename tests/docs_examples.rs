@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod docs_examples {
-    use rcf3::{Forest, MStream};
+    use rcf3::{Forest, MStream, OnlineIForest};
 
     #[test]
     fn test_creating_forest_basic() -> Result<(), Box<dyn std::error::Error>> {
@@ -323,6 +323,70 @@ mod docs_examples {
             "country contribution={}",
             suspicious.categorical_features[0]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_onlineiforest_basic_usage() -> Result<(), Box<dyn std::error::Error>> {
+        let mut detector = OnlineIForest::builder(2)
+            .num_trees(32)
+            .window_size(128)
+            .max_leaf_samples(8)
+            .seed(7)
+            .build()?;
+
+        let score = detector.update_and_score(&[1.5, 2.3])?;
+        let preview = detector.score(&[1.6, 2.4])?;
+
+        assert!(score >= 0.0);
+        assert!(preview >= 0.0);
+        assert!(detector.is_ready());
+        assert_eq!(detector.entries_seen(), 1);
+        assert_eq!(detector.num_trees(), 32);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_onlineiforest_serialization() -> Result<(), Box<dyn std::error::Error>> {
+        let mut detector = OnlineIForest::builder(2)
+            .window_size(128)
+            .max_leaf_samples(8)
+            .seed(7)
+            .build()?;
+        detector.update(&[1.5, 2.3])?;
+
+        let json = detector.to_json()?;
+        let restored = OnlineIForest::from_json(json)?;
+        let tmpdir = tempfile::tempdir()?;
+        let path = tmpdir.path().join("onlineiforest.json");
+        detector.save_json(&path)?;
+        let restored_from_file = OnlineIForest::load_json(&path)?;
+
+        assert_eq!(restored.entries_seen(), detector.entries_seen());
+        assert_eq!(restored.num_trees(), detector.num_trees());
+        assert_eq!(restored_from_file.entries_seen(), detector.entries_seen());
+        assert_eq!(restored_from_file.num_trees(), detector.num_trees());
+        Ok(())
+    }
+
+    #[test]
+    fn test_onlineiforest_practical_example() -> Result<(), Box<dyn std::error::Error>> {
+        let mut detector = OnlineIForest::builder(2)
+            .window_size(128)
+            .max_leaf_samples(8)
+            .seed(2026)
+            .build()?;
+
+        for i in 0..64 {
+            let value = (i as f32) * 0.01;
+            detector.update(&[value, value + 1.0])?;
+        }
+
+        let normal_score = detector.score(&[0.5, 1.5])?;
+        let anomaly_score = detector.score(&[10.0, -10.0])?;
+
+        println!("normal={normal_score}, anomaly={anomaly_score}");
         Ok(())
     }
 }
