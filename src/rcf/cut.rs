@@ -1,13 +1,9 @@
-#[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
-
-use itertools::izip;
-
 use super::bounding_box::BoundingBox;
 
 /// Return the dimension index that `pos` falls into when walking the cumulative range array.
 ///
 /// `pos` is in `[0, total)`.  Dimensions with `ranges[i] == 0.0` are skipped.
+#[cfg(test)]
 fn select_cut_dim(ranges: &[f64], mut pos: f64) -> usize {
     if ranges.is_empty() {
         return 0;
@@ -23,6 +19,22 @@ fn select_cut_dim(ranges: &[f64], mut pos: f64) -> usize {
         pos -= r;
     }
     last_nonzero
+}
+
+/// Select a random cut dimension and return its position within that dimension.
+fn select_cut_dim_from_box(bbox: &BoundingBox, point: &[f32], mut pos: f64) -> (usize, f64) {
+    let mut last_nonzero = 0;
+    for i in 0..point.len() {
+        let range = (bbox.max[i].max(point[i]) - bbox.min[i].min(point[i])) as f64;
+        if range > 0.0 {
+            last_nonzero = i;
+        }
+        if pos < range {
+            return (i, pos);
+        }
+        pos -= range;
+    }
+    (last_nonzero, 0.0)
 }
 
 /// Clamp `raw` into the half-open interval `[lo, hi)`.
@@ -47,11 +59,9 @@ pub struct Cut {
 /// equals `point` (no cut possible).
 pub fn random_cut(bbox: &BoundingBox, point: &[f32], factor: f64) -> Option<(Cut, bool)> {
     // Per-dimension extended range: covers both the existing box and the new point.
-    let extended: Vec<f64> = izip!(&bbox.min, &bbox.max, point)
-        .map(|(&bmin, &bmax, &p)| (bmax.max(p) - bmin.min(p)) as f64)
-        .collect();
-
-    let total: f64 = extended.iter().sum();
+    let total: f64 = (0..point.len())
+        .map(|i| (bbox.max[i].max(point[i]) - bbox.min[i].min(point[i])) as f64)
+        .sum();
 
     if total == 0.0 {
         // point coincides with a degenerate single-point box; nothing to cut.
@@ -60,10 +70,7 @@ pub fn random_cut(bbox: &BoundingBox, point: &[f32], factor: f64) -> Option<(Cut
 
     // Walk the dimensions to find which one the random position falls into.
     let pos = factor * total;
-    let cut_dim = select_cut_dim(&extended, pos);
-    // pos after subtracting preceding dimensions — recompute for the chosen dim.
-    let preceding: f64 = extended[..cut_dim].iter().sum();
-    let pos_in_dim = (pos - preceding).max(0.0);
+    let (cut_dim, pos_in_dim) = select_cut_dim_from_box(bbox, point, pos);
 
     let lo = bbox.min[cut_dim].min(point[cut_dim]);
     let hi = bbox.max[cut_dim].max(point[cut_dim]);

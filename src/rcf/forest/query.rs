@@ -38,16 +38,10 @@ impl Forest {
         let dim = self.config.dim();
         let mode = ScoreMode::standard();
         let n = self.trees.len() as f64;
-        let total_attr = self
-            .trees
-            .iter()
-            .map(|tree| tree.attribution(&q, &mode))
-            .fold(vec![Attribution::default(); dim], |mut acc, tree_attr| {
-                for i in 0..dim {
-                    acc[i] += tree_attr[i];
-                }
-                acc
-            });
+        let mut total_attr = vec![Attribution::default(); dim];
+        for tree in &self.trees {
+            tree.attribution_into(&q, &mode, &mut total_attr);
+        }
         Ok(total_attr.into_iter().map(|a| a.scale(1.0 / n)).collect())
     }
 

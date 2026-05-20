@@ -119,26 +119,25 @@ impl PointStore {
     /// the store shifts the rolling buffer and fills in the new observation.
     pub fn shingled_point(&mut self, base: &[f32]) -> Result<Vec<f32>> {
         if self.internal_shingling {
-            if base.len() != self.input_dim {
-                return Err(RcfError::DimensionMismatch {
-                    expected: self.input_dim,
-                    got: base.len(),
-                });
-            }
-            // Shift buffer left by input_dim, then append new values.
-            self.shingle_buf.copy_within(self.input_dim.., 0);
-            let start = self.dim - self.input_dim;
-            self.shingle_buf[start..].copy_from_slice(base);
+            self.advance_shingle(base)?;
             Ok(self.shingle_buf.clone())
         } else {
-            if base.len() != self.dim {
-                return Err(RcfError::DimensionMismatch {
-                    expected: self.dim,
-                    got: base.len(),
-                });
-            }
+            self.validate_full_point(base)?;
             Ok(base.to_vec())
         }
+    }
+
+    pub(crate) fn advance_shingle(&mut self, base: &[f32]) -> Result<()> {
+        if base.len() != self.input_dim {
+            return Err(RcfError::DimensionMismatch {
+                expected: self.input_dim,
+                got: base.len(),
+            });
+        }
+        self.shingle_buf.copy_within(self.input_dim.., 0);
+        let start = self.dim - self.input_dim;
+        self.shingle_buf[start..].copy_from_slice(base);
+        Ok(())
     }
 
     /// Peek at the current shingled point without advancing the shingle buffer.
@@ -155,13 +154,33 @@ impl PointStore {
     /// The reference count is initialised to 0; callers must call
     /// [`Self::inc_ref`] for each tree that accepts this point.
     pub fn add(&mut self, point: &[f32]) -> Result<usize> {
+        self.validate_full_point(point)?;
+        self.store_point(point)
+    }
+
+    pub(crate) fn add_current_shingled(&mut self) -> Result<usize> {
+        let idx = self.allocate_slot()?;
+        self.store
+            .row_mut(idx)
+            .assign(&ArrayView1::from(&self.shingle_buf[..]));
+        self.occupied[idx] = true;
+        self.ref_count[idx] = 0;
+        self.size += 1;
+        self.entries_seen += 1;
+        Ok(idx)
+    }
+
+    pub(crate) fn validate_full_point(&self, point: &[f32]) -> Result<()> {
         if point.len() != self.dim {
             return Err(RcfError::DimensionMismatch {
                 expected: self.dim,
                 got: point.len(),
             });
         }
+        Ok(())
+    }
 
+    fn store_point(&mut self, point: &[f32]) -> Result<usize> {
         let idx = self.allocate_slot()?;
         self.store.row_mut(idx).assign(&ArrayView1::from(point));
         self.occupied[idx] = true;
@@ -266,6 +285,12 @@ impl PointStore {
     pub fn next_indices(&self, look_ahead: usize) -> Vec<usize> {
         let offset = lookahead_offset(self.dim, self.input_dim, look_ahead);
         (0..self.input_dim).map(|i| offset + i).collect()
+    }
+
+    pub(crate) fn next_indices_into(&self, look_ahead: usize, indices: &mut Vec<usize>) {
+        indices.clear();
+        let offset = lookahead_offset(self.dim, self.input_dim, look_ahead);
+        indices.extend((0..self.input_dim).map(|i| offset + i));
     }
 
     /// Convert `missing` base-dimension indices into full-dimension indices
