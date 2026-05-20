@@ -53,14 +53,18 @@ impl Support {
         // The paper samples from every feature dimension. We intentionally skip
         // zero-width dimensions here: they cannot produce a useful split, and a
         // fully degenerate support should remain an unsplit leaf.
-        let active_dims: Vec<usize> = izip!(&self.min, &self.max)
-            .enumerate()
-            .filter_map(|(idx, (&lo, &hi))| (lo < hi).then_some(idx))
-            .collect();
-        if active_dims.is_empty() {
+        let active_dim_count = izip!(&self.min, &self.max)
+            .filter(|&(&lo, &hi)| lo < hi)
+            .count();
+        if active_dim_count == 0 {
             return None;
         }
-        let dimension = *active_dims.get(rng.random_range(0..active_dims.len()))?;
+        let active_index = rng.random_range(0..active_dim_count);
+        let dimension = izip!(&self.min, &self.max)
+            .enumerate()
+            .filter_map(|(idx, (&lo, &hi))| (lo < hi).then_some(idx))
+            .nth(active_index)
+            .expect("selected active dimension exists");
         let value = rng.random_range(self.min[dimension]..self.max[dimension]);
         Some((dimension, value))
     }
