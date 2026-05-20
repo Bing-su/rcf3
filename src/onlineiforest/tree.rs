@@ -106,12 +106,13 @@ impl OnlineITree {
             .support
             .sample_partition_supports(dimension, value, node.height, rng);
 
-        let (left_region, right_region) = node.support.split_regions(dimension, value);
         // The paper leaves the empty-partition edge case implicit. Preserve a
         // geometric half-region when one synthetic side gets no samples so the
         // newborn child still has a valid support rectangle.
-        let left_support = left_support.unwrap_or(left_region);
-        let right_support = right_support.unwrap_or(right_region);
+        let left_support =
+            left_support.unwrap_or_else(|| node.support.left_split_region(dimension, value));
+        let right_support =
+            right_support.unwrap_or_else(|| node.support.right_split_region(dimension, value));
 
         debug_assert!(depth < usize::MAX);
         node.split = Some(Split {

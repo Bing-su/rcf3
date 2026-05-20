@@ -41,12 +41,24 @@ impl Support {
         support
     }
 
+    #[cfg(test)]
     pub(crate) fn split_regions(&self, dimension: usize, value: f32) -> (Self, Self) {
+        (
+            self.left_split_region(dimension, value),
+            self.right_split_region(dimension, value),
+        )
+    }
+
+    pub(crate) fn left_split_region(&self, dimension: usize, value: f32) -> Self {
         let mut left = self.clone();
-        let mut right = self.clone();
         left.max[dimension] = value;
+        left
+    }
+
+    pub(crate) fn right_split_region(&self, dimension: usize, value: f32) -> Self {
+        let mut right = self.clone();
         right.min[dimension] = value;
-        (left, right)
+        right
     }
 
     pub(crate) fn sample_split(&self, rng: &mut Xoshiro256PlusPlus) -> Option<(usize, f32)> {
