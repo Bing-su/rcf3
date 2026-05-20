@@ -23,15 +23,6 @@ impl Support {
         }
     }
 
-    pub(crate) fn from_points(points: &[Vec<f32>]) -> Option<Self> {
-        let first = points.first()?;
-        let mut support = Self::from_point(first);
-        for point in &points[1..] {
-            support.expand(point);
-        }
-        Some(support)
-    }
-
     pub(crate) fn expand(&mut self, point: &[f32]) {
         for (lo, hi, value) in izip!(&mut self.min, &mut self.max, point) {
             *lo = lo.min(*value);
@@ -58,18 +49,6 @@ impl Support {
         (left, right)
     }
 
-    pub(crate) fn sample_point(&self, rng: &mut Xoshiro256PlusPlus) -> Vec<f32> {
-        izip!(&self.min, &self.max)
-            .map(|(&lo, &hi)| {
-                if lo == hi {
-                    lo
-                } else {
-                    rng.random_range(lo..hi)
-                }
-            })
-            .collect()
-    }
-
     pub(crate) fn sample_split(&self, rng: &mut Xoshiro256PlusPlus) -> Option<(usize, f32)> {
         // The paper samples from every feature dimension. We intentionally skip
         // zero-width dimensions here: they cannot produce a useful split, and a
@@ -84,6 +63,77 @@ impl Support {
         let dimension = *active_dims.get(rng.random_range(0..active_dims.len()))?;
         let value = rng.random_range(self.min[dimension]..self.max[dimension]);
         Some((dimension, value))
+    }
+
+    pub(crate) fn sample_partition_supports(
+        &self,
+        dimension: usize,
+        value: f32,
+        samples: usize,
+        rng: &mut Xoshiro256PlusPlus,
+    ) -> (usize, Option<Self>, usize, Option<Self>) {
+        let mut left_height = 0;
+        let mut right_height = 0;
+        let mut left_support = None;
+        let mut right_support = None;
+
+        for _ in 0..samples {
+            let split_value = self.sample_value(dimension, rng);
+            let (height, support) = if split_value < value {
+                (&mut left_height, &mut left_support)
+            } else {
+                (&mut right_height, &mut right_support)
+            };
+            *height += 1;
+            self.accumulate_sampled_point(dimension, split_value, support, rng);
+        }
+
+        (left_height, left_support, right_height, right_support)
+    }
+
+    fn sample_value(&self, dimension: usize, rng: &mut Xoshiro256PlusPlus) -> f32 {
+        let lo = self.min[dimension];
+        let hi = self.max[dimension];
+        if lo == hi {
+            lo
+        } else {
+            rng.random_range(lo..hi)
+        }
+    }
+
+    fn accumulate_sampled_point(
+        &self,
+        split_dimension: usize,
+        split_value: f32,
+        support: &mut Option<Self>,
+        rng: &mut Xoshiro256PlusPlus,
+    ) {
+        if support.is_none() {
+            let mut min = Vec::with_capacity(self.min.len());
+            let mut max = Vec::with_capacity(self.max.len());
+            for dimension in 0..self.min.len() {
+                let value = if dimension == split_dimension {
+                    split_value
+                } else {
+                    self.sample_value(dimension, rng)
+                };
+                min.push(value);
+                max.push(value);
+            }
+            *support = Some(Self { min, max });
+            return;
+        }
+
+        let support = support.as_mut().expect("initialized above");
+        for dimension in 0..self.min.len() {
+            let value = if dimension == split_dimension {
+                split_value
+            } else {
+                self.sample_value(dimension, rng)
+            };
+            support.min[dimension] = support.min[dimension].min(value);
+            support.max[dimension] = support.max[dimension].max(value);
+        }
     }
 
     #[cfg(test)]
@@ -191,5 +241,61 @@ mod tests {
         let support = Support::from_point(&[1.0, 1.0]);
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(9);
         assert_eq!(support.sample_split(&mut rng), None);
+    }
+
+    #[test]
+    fn sampled_partition_supports_accumulate_counts_and_bounds() {
+        let support = Support {
+            min: vec![0.0, -1.0],
+            max: vec![4.0, 3.0],
+        };
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(11);
+
+        let (left_height, left_support, right_height, right_support) =
+            support.sample_partition_supports(0, 2.0, 128, &mut rng);
+        let left_support = left_support.unwrap();
+        let right_support = right_support.unwrap();
+
+        assert_eq!(left_height + right_height, 128);
+        assert!(left_height > 0);
+        assert!(right_height > 0);
+        assert!(support.contains_support(&left_support));
+        assert!(support.contains_support(&right_support));
+        assert!(left_support.max[0] < 2.0);
+        assert!(right_support.min[0] >= 2.0);
+    }
+
+    #[test]
+    fn sampled_partition_supports_allow_empty_partitions() {
+        let support = Support {
+            min: vec![0.0, -1.0],
+            max: vec![4.0, 3.0],
+        };
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(11);
+
+        let (left_height, left_support, right_height, right_support) =
+            support.sample_partition_supports(0, 0.0, 16, &mut rng);
+
+        assert_eq!(left_height, 0);
+        assert!(left_support.is_none());
+        assert_eq!(right_height, 16);
+        assert!(right_support.is_some());
+    }
+
+    #[test]
+    fn sampled_partition_supports_handle_zero_samples() {
+        let support = Support {
+            min: vec![0.0, -1.0],
+            max: vec![4.0, 3.0],
+        };
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(11);
+
+        let (left_height, left_support, right_height, right_support) =
+            support.sample_partition_supports(0, 2.0, 0, &mut rng);
+
+        assert_eq!(left_height, 0);
+        assert!(left_support.is_none());
+        assert_eq!(right_height, 0);
+        assert!(right_support.is_none());
     }
 }

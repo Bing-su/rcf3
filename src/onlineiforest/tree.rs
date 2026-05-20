@@ -1,5 +1,5 @@
 #[cfg(not(feature = "std"))]
-use alloc::{boxed::Box, vec::Vec};
+use alloc::boxed::Box;
 
 use rand::prelude::*;
 use rand::rngs::Xoshiro256PlusPlus;
@@ -98,33 +98,27 @@ impl OnlineITree {
             return;
         };
 
-        let mut left_points = Vec::new();
-        let mut right_points = Vec::new();
         // New child bins are initialized from synthetic samples drawn from the
         // parent support, exactly as the paper's piecewise-uniform approximation
-        // prescribes; they are not reconstructed from historical observations.
-        for _ in 0..node.height {
-            let point = node.support.sample_point(rng);
-            if point[dimension] < value {
-                left_points.push(point);
-            } else {
-                right_points.push(point);
-            }
-        }
+        // prescribes. Only child counts and support rectangles are accumulated;
+        // the synthetic points are not stored or reconstructed from history.
+        let (left_height, left_support, right_height, right_support) = node
+            .support
+            .sample_partition_supports(dimension, value, node.height, rng);
 
         let (left_region, right_region) = node.support.split_regions(dimension, value);
         // The paper leaves the empty-partition edge case implicit. Preserve a
         // geometric half-region when one synthetic side gets no samples so the
         // newborn child still has a valid support rectangle.
-        let left_support = Support::from_points(&left_points).unwrap_or(left_region);
-        let right_support = Support::from_points(&right_points).unwrap_or(right_region);
+        let left_support = left_support.unwrap_or(left_region);
+        let right_support = right_support.unwrap_or(right_region);
 
         debug_assert!(depth < usize::MAX);
         node.split = Some(Split {
             dimension,
             value,
-            left: Box::new(Node::new(left_points.len(), left_support)),
-            right: Box::new(Node::new(right_points.len(), right_support)),
+            left: Box::new(Node::new(left_height, left_support)),
+            right: Box::new(Node::new(right_height, right_support)),
         });
     }
 
@@ -252,6 +246,21 @@ mod tests {
             left_root.split.as_ref().unwrap().value,
             right_root.split.as_ref().unwrap().value
         );
+    }
+
+    #[test]
+    fn split_initializes_child_counts_and_nested_supports() {
+        let mut tree = OnlineITree::new(7);
+        let points = [[0.0], [1.0], [2.0], [3.0]];
+        for point in points {
+            tree.learn(&point, 2, 4.0);
+        }
+
+        let root = tree.root().unwrap();
+        let split = root.split.as_ref().unwrap();
+
+        assert_eq!(split.left.height + split.right.height, root.height);
+        assert!(tree.supports_are_nested());
     }
 
     #[test]
