@@ -257,7 +257,7 @@ impl PyForest {
     }
 
     fn __setstate__(&mut self, state: String) -> PyResult<()> {
-        let new = Self::from_json(StrOrBytes::Str(state))?;
+        let new = Self::from_json(state.into())?;
         *self = new;
         Ok(())
     }
