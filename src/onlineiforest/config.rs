@@ -124,6 +124,7 @@ mod tests {
     #[case::zero_input_dim(OnlineIForestConfig::new(0))]
     #[case::zero_trees(OnlineIForestConfig::new(1).with_num_trees(0))]
     #[case::zero_window(OnlineIForestConfig::new(1).with_window_size(0))]
+    #[case::large_window(OnlineIForestConfig::new(1).with_window_size(usize::MAX))]
     #[case::zero_leaf_samples(OnlineIForestConfig::new(1).with_max_leaf_samples(0))]
     #[case::window_not_larger_than_leaf_samples(
         OnlineIForestConfig::new(1)
