@@ -415,6 +415,7 @@ mod tests {
             .num_trees(1)
             .capacity(8)
             .output_after(0)
+            .initial_accept_fraction(1.0)
             .seed(42)
             .build()
             .unwrap();

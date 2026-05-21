@@ -15,8 +15,9 @@ use serde::{Deserialize, Serialize};
 /// that eviction removes the point most likely to be replaced.
 ///
 /// A point is accepted when:
-/// - the sampler is not yet full (initial warm-up), OR
-/// - the new weight is *less than* the current maximum weight.
+/// - the caller marks it as accepted by the initial warm-up policy, OR
+/// - the sampler is full and the new weight is *less than* the current maximum
+///   weight.
 ///
 /// This matches the exponential-reservoir scheme used in the reference
 /// implementation.
@@ -131,11 +132,17 @@ impl Sampler {
     /// If accepted, the caller must follow up with [`Self::add_point`] once
     /// the candidate has been materialized in the shared point store.
     pub(super) fn accept(&mut self, is_initial: bool, weight: f64) -> AcceptResult {
-        if is_initial || (self.size < self.capacity) {
-            // Warm-up: always accept; no eviction yet.
-            self.stage_accepted_weight(weight);
+        if self.size < self.capacity {
+            // Warm-up policy accepted this point; no eviction before capacity.
+            if is_initial {
+                self.stage_accepted_weight(weight);
+                return AcceptResult {
+                    accepted: true,
+                    evicted: None,
+                };
+            }
             return AcceptResult {
-                accepted: true,
+                accepted: false,
                 evicted: None,
             };
         }
@@ -281,6 +288,17 @@ mod tests {
         assert!(!result.accepted);
     }
 
+    #[test]
+    fn sampler_rejects_unapproved_warmup_candidate() {
+        let mut s = Sampler::new(2);
+
+        let result = s.accept(false, -100.0);
+
+        assert!(!result.accepted);
+        assert!(!s.pending_accept);
+        assert!(s.points().is_empty());
+    }
+
     #[cfg(debug_assertions)]
     #[test]
     #[should_panic]
@@ -326,8 +344,10 @@ mod tests {
                 let mut s = Sampler::new(capacity);
                 for i in 0..n_adds as u64 {
                     let w = reservoir_weight(0.5, 0.0, i);
-                    s.accept(true, w);
-                    s.add_point(i as usize);
+                    let result = s.accept(!s.is_full(), w);
+                    if result.accepted {
+                        s.add_point(i as usize);
+                    }
                 }
                 prop_assert!(
                     s.points().len() <= capacity,
