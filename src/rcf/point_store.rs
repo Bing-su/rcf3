@@ -168,10 +168,7 @@ impl PointStore {
         self.store
             .row_mut(idx)
             .assign(&ArrayView1::from(&self.shingle_buf[..]));
-        self.occupied[idx] = true;
-        self.ref_count[idx] = 0;
-        self.size += 1;
-        self.entries_seen += 1;
+        self.finish_add(idx);
         Ok(idx)
     }
 
@@ -188,11 +185,15 @@ impl PointStore {
     fn store_point(&mut self, point: &[f32]) -> Result<usize> {
         let idx = self.allocate_slot()?;
         self.store.row_mut(idx).assign(&ArrayView1::from(point));
+        self.finish_add(idx);
+        Ok(idx)
+    }
+
+    fn finish_add(&mut self, idx: usize) {
         self.occupied[idx] = true;
         self.ref_count[idx] = 0;
         self.size += 1;
         self.entries_seen += 1;
-        Ok(idx)
     }
 
     fn allocate_slot(&mut self) -> Result<usize> {
