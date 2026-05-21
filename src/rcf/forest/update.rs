@@ -38,7 +38,7 @@ impl Forest {
         let point_idx = if self.config.internal_shingling {
             self.point_store.add_current_shingled()?
         } else {
-            self.point_store.add(base)?
+            self.point_store.add_validated(base)?
         };
 
         let time_decay = self.config.effective_time_decay();

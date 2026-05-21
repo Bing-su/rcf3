@@ -31,6 +31,32 @@ mod forest_entries_seen {
             prop_assert_eq!(f.entries_seen(), n as u64);
         }
     }
+
+    #[test]
+    fn wrong_full_dim_update_does_not_increment_entries_seen() {
+        let mut f = Forest::builder(2)
+            .shingle_size(3)
+            .internal_shingling(false)
+            .num_trees(5)
+            .capacity(20)
+            .seed(0)
+            .build()
+            .unwrap();
+
+        let err = f.update(&[0.0, 0.0]).unwrap_err();
+
+        assert!(
+            matches!(
+                err,
+                RcfError::DimensionMismatch {
+                    expected: 6,
+                    got: 2
+                }
+            ),
+            "unexpected error variant: {err:?}"
+        );
+        assert_eq!(f.entries_seen(), 0);
+    }
 }
 
 // ---------------------------------------------------------------------------

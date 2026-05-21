@@ -155,6 +155,11 @@ impl PointStore {
     /// [`Self::inc_ref`] for each tree that accepts this point.
     pub fn add(&mut self, point: &[f32]) -> Result<usize> {
         self.validate_full_point(point)?;
+        self.add_validated(point)
+    }
+
+    pub(crate) fn add_validated(&mut self, point: &[f32]) -> Result<usize> {
+        debug_assert_eq!(point.len(), self.dim);
         self.store_point(point)
     }
 
@@ -330,6 +335,18 @@ mod tests {
         let mut ps = PointStore::new(2, 1, 8, false);
         let idx = ps.add(&[1.0, 2.0]).unwrap();
         assert_eq!(ps.get(idx), &[1.0f32, 2.0]);
+    }
+
+    #[test]
+    fn add_validated_stores_full_point() {
+        let mut ps = PointStore::new(2, 2, 8, false);
+
+        let idx = ps.add_validated(&[1.0, 2.0, 3.0, 4.0]).unwrap();
+
+        assert_eq!(idx, 0);
+        assert_eq!(ps.get(idx), &[1.0f32, 2.0, 3.0, 4.0]);
+        assert_eq!(ps.num_points(), 1);
+        assert_eq!(ps.entries_seen, 1);
     }
 
     #[test]
