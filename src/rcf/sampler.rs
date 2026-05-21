@@ -281,6 +281,26 @@ mod tests {
         assert!(!result.accepted);
     }
 
+    #[test]
+    #[should_panic]
+    fn add_point_requires_staged_acceptance() {
+        let mut s = Sampler::new(2);
+        s.add_point(0);
+    }
+
+    #[test]
+    fn rejected_accept_does_not_stage_pending_weight() {
+        let mut s = Sampler::new(1);
+        s.accept(true, -10.0);
+        s.add_point(0);
+        assert!(!s.pending_accept);
+
+        let result = s.accept(false, 999.0);
+
+        assert!(!result.accepted);
+        assert!(!s.pending_accept);
+    }
+
     #[cfg(feature = "std")]
     mod proptest_tests {
         use super::*;
