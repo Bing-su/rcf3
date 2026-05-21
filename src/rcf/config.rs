@@ -251,6 +251,61 @@ mod tests {
         RcfConfig::new(1).validate().unwrap();
     }
 
+    #[test]
+    fn getters_reflect_all_config_fields() {
+        let config = RcfConfig::new(3)
+            .with_shingle_size(4)
+            .with_capacity(128)
+            .with_num_trees(17)
+            .with_time_decay(0.25)
+            .with_output_after(9)
+            .with_internal_shingling(false)
+            .with_initial_accept_fraction(0.5);
+
+        assert_eq!(config.input_dim(), 3);
+        assert_eq!(config.shingle_size(), 4);
+        assert_eq!(config.capacity(), 128);
+        assert_eq!(config.num_trees(), 17);
+        assert_eq!(config.time_decay(), 0.25);
+        assert_eq!(config.output_after(), 9);
+        assert!(!config.internal_shingling());
+        assert_eq!(config.initial_accept_fraction(), 0.5);
+        assert_eq!(config.dim(), 12);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde_preserves_private_field_wire_shape_and_defaults() {
+        let config = RcfConfig::new(3)
+            .with_shingle_size(4)
+            .with_capacity(128)
+            .with_num_trees(17)
+            .with_time_decay(0.25)
+            .with_output_after(9)
+            .with_internal_shingling(false)
+            .with_initial_accept_fraction(0.5);
+
+        let value = serde_json::to_value(&config).unwrap();
+        assert_eq!(value["input_dim"], 3);
+        assert_eq!(value["shingle_size"], 4);
+        assert_eq!(value["capacity"], 128);
+        assert_eq!(value["num_trees"], 17);
+        assert_eq!(value["time_decay"], 0.25);
+        assert_eq!(value["output_after"], 9);
+        assert_eq!(value["internal_shingling"], false);
+        assert_eq!(value["initial_accept_fraction"], 0.5);
+
+        let minimal: RcfConfig = serde_json::from_str(r#"{"input_dim":2}"#).unwrap();
+        assert_eq!(minimal.input_dim(), 2);
+        assert_eq!(minimal.shingle_size(), 1);
+        assert_eq!(minimal.capacity(), 256);
+        assert_eq!(minimal.num_trees(), 50);
+        assert_eq!(minimal.time_decay(), 0.0);
+        assert_eq!(minimal.output_after(), 0);
+        assert!(minimal.internal_shingling());
+        assert_eq!(minimal.initial_accept_fraction(), 0.125);
+    }
+
     #[rstest]
     #[case::zero_input_dim(RcfConfig::new(0), "input_dim")]
     #[case::zero_shingle_size(RcfConfig::new(1).with_shingle_size(0), "shingle_size")]

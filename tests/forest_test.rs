@@ -11,6 +11,73 @@ use proptest::prelude::*;
 use rcf3::{Forest, RcfError};
 
 // ---------------------------------------------------------------------------
+// Public RCF facade shape
+// ---------------------------------------------------------------------------
+mod public_api_surface {
+    use super::*;
+    use rcf3::{Attribution, ForestBuilder, NeighborResult, RcfConfig, rcf};
+
+    #[test]
+    fn top_level_facade_exports_expected_user_facing_types() {
+        let config = RcfConfig::new(2)
+            .with_shingle_size(3)
+            .with_capacity(64)
+            .with_num_trees(7)
+            .with_time_decay(0.01)
+            .with_output_after(5)
+            .with_internal_shingling(false)
+            .with_initial_accept_fraction(0.25);
+
+        assert_eq!(config.input_dim(), 2);
+        assert_eq!(config.shingle_size(), 3);
+        assert_eq!(config.capacity(), 64);
+        assert_eq!(config.num_trees(), 7);
+        assert_eq!(config.time_decay(), 0.01);
+        assert_eq!(config.output_after(), 5);
+        assert!(!config.internal_shingling());
+        assert_eq!(config.initial_accept_fraction(), 0.25);
+
+        let builder: ForestBuilder = Forest::builder(2);
+        let forest = builder.seed(7).build().unwrap();
+        assert_eq!(forest.config().input_dim(), 2);
+
+        let attr = Attribution {
+            below: 1.25,
+            above: 0.75,
+        };
+        assert_eq!(attr.total(), 2.0);
+
+        let neighbor = NeighborResult {
+            score: 0.5,
+            point: vec![1.0, 2.0],
+            distance: 3.0,
+        };
+        assert_eq!(neighbor.point, vec![1.0, 2.0]);
+    }
+
+    #[test]
+    fn rcf_module_facade_exports_same_user_facing_types() {
+        let config = rcf::RcfConfig::new(1).with_capacity(16);
+        let mut forest = rcf::Forest::from_config_seeded(&config, 11).unwrap();
+        forest.update(&[1.0]).unwrap();
+
+        let attr = rcf::Attribution {
+            below: 0.0,
+            above: 0.0,
+        };
+        let neighbor = rcf::NeighborResult {
+            score: 0.0,
+            point: vec![1.0],
+            distance: 0.0,
+        };
+
+        assert_eq!(forest.entries_seen(), 1);
+        assert_eq!(attr.total(), 0.0);
+        assert_eq!(neighbor.distance, 0.0);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Forest::entries_seen monotonicity
 // ---------------------------------------------------------------------------
 mod forest_entries_seen {
