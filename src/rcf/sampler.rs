@@ -281,6 +281,7 @@ mod tests {
         assert!(!result.accepted);
     }
 
+    #[cfg(debug_assertions)]
     #[test]
     #[should_panic]
     fn add_point_requires_staged_acceptance() {
