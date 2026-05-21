@@ -205,7 +205,9 @@ impl PointStore {
         self.entries_seen += 1;
     }
 
-    pub(super) fn record_skipped_add(&mut self) {
+    pub(super) fn record_logical_add_without_storage(&mut self) {
+        // Preserve the logical update count for serde/shingling state even
+        // when lazy sampling rejects the point before materializing a row.
         self.entries_seen += 1;
     }
 
@@ -383,7 +385,7 @@ mod tests {
     #[test]
     fn skipped_add_preserves_logical_add_count_without_storing_point() {
         let mut ps = PointStore::new(2, 1, 8, false);
-        ps.record_skipped_add();
+        ps.record_logical_add_without_storage();
 
         assert_eq!(ps.num_points(), 0);
         assert_eq!(ps.entries_seen(), 1);

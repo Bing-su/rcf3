@@ -3,6 +3,10 @@ use std::time::Duration;
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use rcf3::Forest;
 
+const UPDATE_EVENTS: usize = 20_000;
+const STEADY_WARMUP_EVENTS: usize = 30_000;
+const MIXED_UNIQUE_EVENTS: usize = 500;
+
 fn build_forest(dim: usize, trees: usize, capacity: usize) -> Forest {
     Forest::builder(dim)
         .shingle_size(1)
@@ -13,9 +17,34 @@ fn build_forest(dim: usize, trees: usize, capacity: usize) -> Forest {
         .unwrap()
 }
 
+fn build_steady_rejection_forest() -> Forest {
+    Forest::builder(8)
+        .shingle_size(1)
+        .num_trees(50)
+        .capacity(256)
+        .time_decay(f64::MIN_POSITIVE)
+        .seed(42)
+        .build()
+        .unwrap()
+}
+
+fn mixed_unique_point(i: usize) -> [f32; 8] {
+    let base = i as f32 * 0.001;
+    [
+        base.sin(),
+        base.cos(),
+        (base * 0.5).sin(),
+        (base * 0.5).cos(),
+        (base * 1.7).sin(),
+        (base * 1.7).cos(),
+        (base * 2.3).sin(),
+        (base * 2.3).cos(),
+    ]
+}
+
 fn bench_update(c: &mut Criterion) {
     let mut group = c.benchmark_group("update");
-    for &(dim, trees, cap, n) in &[(8, 50, 256, 20_000), (16, 100, 512, 20_000)] {
+    for &(dim, trees, cap, n) in &[(8, 50, 256, UPDATE_EVENTS), (16, 100, 512, UPDATE_EVENTS)] {
         group.throughput(Throughput::Elements(n as u64));
         group.bench_with_input(
             BenchmarkId::from_parameter(format!("d{dim}_t{trees}_c{cap}")),
@@ -32,26 +61,19 @@ fn bench_update(c: &mut Criterion) {
         );
     }
 
-    group.throughput(Throughput::Elements(20_000));
+    group.throughput(Throughput::Elements(UPDATE_EVENTS as u64));
     group.bench_function("steady_rejection_d8_t50_c256", |b| {
         b.iter_batched(
             || {
-                let mut f = Forest::builder(8)
-                    .shingle_size(1)
-                    .num_trees(50)
-                    .capacity(256)
-                    .time_decay(f64::MIN_POSITIVE)
-                    .seed(42)
-                    .build()
-                    .unwrap();
+                let mut f = build_steady_rejection_forest();
                 let p = vec![0.1_f32; 8];
-                for _ in 0..30_000 {
+                for _ in 0..STEADY_WARMUP_EVENTS {
                     f.update(&p).unwrap();
                 }
                 (f, p)
             },
             |(mut f, p)| {
-                for _ in 0..20_000 {
+                for _ in 0..UPDATE_EVENTS {
                     f.update(&p).unwrap();
                 }
             },
@@ -59,23 +81,13 @@ fn bench_update(c: &mut Criterion) {
         );
     });
 
-    group.throughput(Throughput::Elements(500));
+    group.throughput(Throughput::Elements(MIXED_UNIQUE_EVENTS as u64));
     group.bench_function("mixed_unique_d8_t50_c256", |b| {
         b.iter_batched(
             || build_forest(8, 50, 256),
             |mut f| {
-                for i in 0..500 {
-                    let base = i as f32 * 0.001;
-                    let p = [
-                        base.sin(),
-                        base.cos(),
-                        (base * 0.5).sin(),
-                        (base * 0.5).cos(),
-                        (base * 1.7).sin(),
-                        (base * 1.7).cos(),
-                        (base * 2.3).sin(),
-                        (base * 2.3).cos(),
-                    ];
+                for i in 0..MIXED_UNIQUE_EVENTS {
+                    let p = mixed_unique_point(i);
                     f.update(&p).unwrap();
                 }
             },

@@ -104,6 +104,17 @@ impl Sampler {
         }
     }
 
+    fn stage_accepted_weight(&mut self, weight: f64) {
+        self.pending_weight = weight;
+        self.pending_accept = true;
+    }
+
+    fn take_staged_weight(&mut self) -> f64 {
+        debug_assert!(self.pending_accept);
+        self.pending_accept = false;
+        self.pending_weight
+    }
+
     // -----------------------------------------------------------------------
     // Public API
     // -----------------------------------------------------------------------
@@ -122,8 +133,7 @@ impl Sampler {
     pub(super) fn accept(&mut self, is_initial: bool, weight: f64) -> AcceptResult {
         if is_initial || (self.size < self.capacity) {
             // Warm-up: always accept; no eviction yet.
-            self.pending_weight = weight;
-            self.pending_accept = true;
+            self.stage_accepted_weight(weight);
             return AcceptResult {
                 accepted: true,
                 evicted: None,
@@ -133,8 +143,7 @@ impl Sampler {
         if weight < self.max_weight() {
             // Replace the current maximum-weight point.
             let evicted_idx = self.point_indices[0];
-            self.pending_weight = weight;
-            self.pending_accept = true;
+            self.stage_accepted_weight(weight);
             AcceptResult {
                 accepted: true,
                 evicted: Some(evicted_idx),
@@ -153,23 +162,21 @@ impl Sampler {
     /// `tree_point_idx` is the index that the tree assigned to the new point
     /// (may differ from the original if it was merged with a duplicate leaf).
     pub(super) fn add_point(&mut self, tree_point_idx: usize) {
-        debug_assert!(self.pending_accept);
+        let weight = self.take_staged_weight();
 
         if self.size < self.capacity {
             // Still filling: append.
             let i = self.size;
-            self.weights[i] = self.pending_weight;
+            self.weights[i] = weight;
             self.point_indices[i] = tree_point_idx;
             self.size += 1;
             self.sift_up(i);
         } else {
             // Replace heap root (the evicted point).
-            self.weights[0] = self.pending_weight;
+            self.weights[0] = weight;
             self.point_indices[0] = tree_point_idx;
             self.sift_down(0);
         }
-
-        self.pending_accept = false;
     }
 
     /// Whether the sampler has reached capacity.

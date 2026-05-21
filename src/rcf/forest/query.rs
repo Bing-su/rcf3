@@ -94,7 +94,10 @@ impl Forest {
     // Internal helpers
     // -----------------------------------------------------------------------
 
-    /// Validate and shingle `query`.  Returns the full-dimensional vector.
+    /// Validate and shingle `query`.
+    ///
+    /// Full-dimensional queries are borrowed directly; only base-dimensional
+    /// queries with internal shingling allocate a temporary shingled vector.
     pub(super) fn prepare_query<'a>(&self, query: &'a [f32]) -> Result<Cow<'a, [f32]>> {
         let base_dim = self.config.input_dim();
         let full_dim = self.config.dim();

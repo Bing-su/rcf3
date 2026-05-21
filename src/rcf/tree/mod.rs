@@ -16,6 +16,12 @@ use super::{
 mod mutation;
 mod traversal;
 
+#[derive(Clone, Copy, Debug)]
+struct PathEntry {
+    parent: usize,
+    sibling: usize,
+}
+
 // ---------------------------------------------------------------------------
 // RcfTree
 // ---------------------------------------------------------------------------
@@ -31,7 +37,7 @@ pub(super) struct RcfTree {
     rng: Xoshiro256PlusPlus,
     dims: usize,
     #[cfg_attr(feature = "serde", serde(skip, default))]
-    path_scratch: Vec<(usize, usize)>,
+    path_scratch: Vec<PathEntry>,
 }
 
 fn split_children(query_value: f32, cut_val: f32, left: usize, right: usize) -> (usize, usize) {
@@ -136,7 +142,7 @@ impl RcfTree {
 // ---------------------------------------------------------------------------
 
 /// Build an owned bounding box for the entire sub-tree rooted at `node_id`.
-fn subtree_bbox_owned(arena: &NodeArena, node_id: usize, point_store: &PointStore) -> BoundingBox {
+fn owned_subtree_bbox(arena: &NodeArena, node_id: usize, point_store: &PointStore) -> BoundingBox {
     match arena.get(node_id) {
         Node::Leaf { point_idx, .. } => BoundingBox::from_point(point_store.get(*point_idx)),
         Node::Internal { bbox, .. } => bbox.clone(),

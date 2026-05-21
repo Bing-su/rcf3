@@ -1,6 +1,6 @@
 use rand::prelude::*;
 
-use super::Forest;
+use super::{AcceptedUpdate, Forest};
 use crate::error::Result;
 use crate::rcf::sampler::reservoir_weight;
 
@@ -15,25 +15,44 @@ impl Forest {
     /// `input_dim`.  Otherwise pass the full shingled vector of length
     /// `input_dim * shingle_size`.
     pub fn update(&mut self, base: &[f32]) -> Result<()> {
+        self.prepare_update_input(base)?;
+        self.entries_seen += 1;
+
+        if !self.has_primed_shingle() {
+            return Ok(());
+        }
+
+        self.collect_accepted_updates();
+
+        if self.update_scratch.is_empty() {
+            self.point_store.record_logical_add_without_storage();
+            return Ok(());
+        }
+
+        let point_idx = self.store_update_point(base)?;
+        self.apply_accepted_updates(point_idx)
+    }
+
+    fn prepare_update_input(&mut self, base: &[f32]) -> Result<()> {
         if self.config.internal_shingling() {
             self.point_store.advance_shingle(base)?;
         } else {
             self.point_store.validate_full_point(base)?;
         }
-        self.entries_seen += 1;
+        Ok(())
+    }
 
-        // Only update the trees once the shingle buffer is primed.
-        // With internal shingling the first shingle_size - 1 observations
-        // only fill the buffer.
+    fn has_primed_shingle(&self) -> bool {
         let shingle_lag = if self.config.internal_shingling() {
             self.config.shingle_size().saturating_sub(1)
         } else {
             0
         };
-        if self.entries_seen as usize <= shingle_lag {
-            return Ok(());
-        }
 
+        self.entries_seen as usize > shingle_lag
+    }
+
+    fn collect_accepted_updates(&mut self) {
         let time_decay = self.config.effective_time_decay();
         let initial_frac = self.config.initial_accept_fraction();
 
@@ -60,27 +79,29 @@ impl Forest {
 
             let result = self.samplers[t].accept(is_initial, weight);
             if result.accepted {
-                self.update_scratch.push((t, result.evicted));
+                self.update_scratch.push(AcceptedUpdate {
+                    tree_index: t,
+                    evicted_point: result.evicted,
+                });
             }
         }
+    }
 
-        if self.update_scratch.is_empty() {
-            self.point_store.record_skipped_add();
-            return Ok(());
-        }
-
-        // Add point to the shared store only after at least one tree accepts it.
-        let point_idx = if self.config.internal_shingling() {
-            self.point_store.add_current_shingled()?
+    fn store_update_point(&mut self, base: &[f32]) -> Result<usize> {
+        if self.config.internal_shingling() {
+            self.point_store.add_current_shingled()
         } else {
-            self.point_store.add_validated(base)?
-        };
+            self.point_store.add_validated(base)
+        }
+    }
 
+    fn apply_accepted_updates(&mut self, point_idx: usize) -> Result<()> {
         for i in 0..self.update_scratch.len() {
-            let (t, evicted) = self.update_scratch[i];
+            let update = self.update_scratch[i];
+            let t = update.tree_index;
 
             // Evict old point if necessary.
-            if let Some(evicted_idx) = evicted {
+            if let Some(evicted_idx) = update.evicted_point {
                 self.trees[t].delete(evicted_idx, &self.point_store)?;
                 self.point_store.dec_ref(evicted_idx);
             }

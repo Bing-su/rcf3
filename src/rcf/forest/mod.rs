@@ -31,6 +31,13 @@ pub(in crate::rcf) struct NeighborCandidate {
     pub(in crate::rcf) distance: f64,
 }
 
+/// Per-tree update decision kept between sampler acceptance and point storage.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct AcceptedUpdate {
+    pub(super) tree_index: usize,
+    pub(super) evicted_point: Option<usize>,
+}
+
 impl From<(f64, usize, f64)> for NeighborCandidate {
     fn from(value: (f64, usize, f64)) -> Self {
         Self {
@@ -71,6 +78,12 @@ impl From<(f64, Vec<f32>, f64)> for NeighborResult {
     }
 }
 
+impl From<NeighborResult> for (f64, Vec<f32>, f64) {
+    fn from(value: NeighborResult) -> Self {
+        (value.score, value.point, value.distance)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Forest
 // ---------------------------------------------------------------------------
@@ -101,14 +114,9 @@ pub struct Forest {
     entries_seen: u64,
     rng: Xoshiro256PlusPlus,
     #[cfg_attr(feature = "serde", serde(skip, default))]
-    update_scratch: Vec<(usize, Option<usize>)>,
+    update_scratch: Vec<AcceptedUpdate>,
 }
 
-impl From<NeighborResult> for (f64, Vec<f32>, f64) {
-    fn from(value: NeighborResult) -> Self {
-        (value.score, value.point, value.distance)
-    }
-}
 impl Forest {
     // -----------------------------------------------------------------------
     // Construction
