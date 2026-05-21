@@ -4,7 +4,7 @@
 /// of the public API, but the constructors below document the scoring modes
 /// the tree traversal can support.
 #[derive(Clone, Debug)]
-pub(crate) struct ScoreMode {
+pub(in crate::rcf) struct ScoreMode {
     score_seen: fn(usize, usize) -> f64,
     score_unseen: fn(usize, usize) -> f64,
     damp: fn(usize, usize) -> f64,
@@ -66,7 +66,7 @@ fn identity(x: f64, _y: usize) -> f64 {
 
 impl ScoreMode {
     /// Standard anomaly-score mode (matches the AWS reference default).
-    pub(crate) fn standard() -> Self {
+    pub(in crate::rcf) fn standard() -> Self {
         ScoreMode {
             score_seen,
             score_unseen,
@@ -76,7 +76,7 @@ impl ScoreMode {
     }
 
     /// Displacement-based score (density-sensitive).
-    pub(crate) fn displacement() -> Self {
+    pub(in crate::rcf) fn displacement() -> Self {
         ScoreMode {
             score_seen: score_seen_displacement,
             score_unseen: score_unseen_displacement,
@@ -91,7 +91,7 @@ impl ScoreMode {
     /// mode documents the equivalent scoring shape if density is later routed
     /// through the generic scoring visitor again.
     #[allow(dead_code)]
-    pub(crate) fn density() -> Self {
+    pub(in crate::rcf) fn density() -> Self {
         ScoreMode {
             score_seen: score_unseen_displacement,
             score_unseen: score_unseen_displacement,
@@ -106,7 +106,7 @@ impl ScoreMode {
     /// reference for how custom scoring can be represented without reopening
     /// the public API.
     #[allow(dead_code)]
-    pub(crate) fn custom(
+    pub(in crate::rcf) fn custom(
         score_seen: fn(usize, usize) -> f64,
         score_unseen: fn(usize, usize) -> f64,
         damp: fn(usize, usize) -> f64,
@@ -120,19 +120,19 @@ impl ScoreMode {
         }
     }
 
-    pub(crate) fn score_seen(&self, depth: usize, mass: usize) -> f64 {
+    pub(in crate::rcf) fn score_seen(&self, depth: usize, mass: usize) -> f64 {
         (self.score_seen)(depth, mass)
     }
 
-    pub(crate) fn score_unseen(&self, depth: usize, mass: usize) -> f64 {
+    pub(in crate::rcf) fn score_unseen(&self, depth: usize, mass: usize) -> f64 {
         (self.score_unseen)(depth, mass)
     }
 
-    pub(crate) fn damp(&self, mass: usize, tree_mass: usize) -> f64 {
+    pub(in crate::rcf) fn damp(&self, mass: usize, tree_mass: usize) -> f64 {
         (self.damp)(mass, tree_mass)
     }
 
-    pub(crate) fn normalize(&self, raw: f64, tree_mass: usize) -> f64 {
+    pub(in crate::rcf) fn normalize(&self, raw: f64, tree_mass: usize) -> f64 {
         (self.normalizer)(raw, tree_mass)
     }
 }
@@ -197,7 +197,7 @@ impl core::ops::AddAssign for Attribution {
 
 /// Sum of all attribution components equals `score` (up to floating-point error).
 #[cfg(test)]
-pub(crate) fn attribution_total(attr: &[Attribution]) -> f64 {
+pub(in crate::rcf) fn attribution_total(attr: &[Attribution]) -> f64 {
     attr.iter().map(|a| a.total()).sum()
 }
 

@@ -82,7 +82,11 @@ impl RcfTree {
 
     /// Insert `point_idx` into the tree.  `point` is the actual coordinate
     /// vector (borrowed from the point store for computations here).
-    pub fn insert(&mut self, point_idx: usize, point_store: &PointStore) -> Result<()> {
+    pub(in crate::rcf) fn insert(
+        &mut self,
+        point_idx: usize,
+        point_store: &PointStore,
+    ) -> Result<()> {
         let point = point_store.get(point_idx);
 
         if self.root == NULL {
@@ -237,7 +241,11 @@ impl RcfTree {
     // -----------------------------------------------------------------------
 
     /// Remove `point_idx` from the tree.
-    pub fn delete(&mut self, point_idx: usize, point_store: &PointStore) -> Result<()> {
+    pub(in crate::rcf) fn delete(
+        &mut self,
+        point_idx: usize,
+        point_store: &PointStore,
+    ) -> Result<()> {
         if self.root == NULL {
             return Err(RcfError::EmptyTree);
         }

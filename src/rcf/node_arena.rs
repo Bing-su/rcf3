@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::bounding_box::BoundingBox;
 
-pub const NULL: usize = usize::MAX;
+pub(super) const NULL: usize = usize::MAX;
 
 // ---------------------------------------------------------------------------
 // Node representation
@@ -19,7 +19,7 @@ pub const NULL: usize = usize::MAX;
 /// their entire sub-tree (kept up-to-date on every insert / delete).
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum Node {
+pub(super) enum Node {
     Leaf {
         /// Index into the forest-wide [`crate::rcf::point_store::PointStore`].
         point_idx: usize,
@@ -38,7 +38,7 @@ pub enum Node {
 }
 
 impl Node {
-    pub fn mass(&self) -> usize {
+    pub(super) fn mass(&self) -> usize {
         match self {
             Node::Leaf { mass, .. } => *mass,
             Node::Internal { mass, .. } => *mass,
@@ -53,13 +53,13 @@ impl Node {
 /// Arena of [`Node`]s with O(1) alloc / free.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct NodeArena {
+pub(super) struct NodeArena {
     nodes: Vec<Option<Node>>,
     free: Vec<usize>,
 }
 
 impl NodeArena {
-    pub fn new(initial_capacity: usize) -> Self {
+    pub(super) fn new(initial_capacity: usize) -> Self {
         NodeArena {
             nodes: Vec::with_capacity(initial_capacity),
             free: Vec::new(),
@@ -67,7 +67,7 @@ impl NodeArena {
     }
 
     /// Allocate a new node and return its index.
-    pub fn alloc(&mut self, node: Node) -> usize {
+    pub(super) fn alloc(&mut self, node: Node) -> usize {
         if let Some(id) = self.free.pop() {
             self.nodes[id] = Some(node);
             id
@@ -79,21 +79,21 @@ impl NodeArena {
     }
 
     /// Return the node at `id`.  Panics if `id` is NULL or freed.
-    pub fn get(&self, id: usize) -> &Node {
+    pub(super) fn get(&self, id: usize) -> &Node {
         self.nodes[id]
             .as_ref()
             .expect("accessed freed or uninitialized node")
     }
 
     /// Mutably return the node at `id`.
-    pub fn get_mut(&mut self, id: usize) -> &mut Node {
+    pub(super) fn get_mut(&mut self, id: usize) -> &mut Node {
         self.nodes[id]
             .as_mut()
             .expect("accessed freed or uninitialized node")
     }
 
     /// Free the node at `id`.
-    pub fn free(&mut self, id: usize) {
+    pub(super) fn free(&mut self, id: usize) {
         debug_assert!(id < self.nodes.len());
         self.nodes[id] = None;
         self.free.push(id);
@@ -101,7 +101,7 @@ impl NodeArena {
 
     /// Number of allocated slots (including freed ones).
     #[cfg(test)]
-    pub fn slot_count(&self) -> usize {
+    fn slot_count(&self) -> usize {
         self.nodes.len()
     }
 }

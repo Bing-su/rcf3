@@ -21,9 +21,9 @@ mod traversal;
 /// [`PointStore`]; the tree only stores indices and bounding-box metadata.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct RcfTree {
-    pub(crate) root: usize,
-    pub(crate) tree_mass: usize,
+pub(super) struct RcfTree {
+    root: usize,
+    tree_mass: usize,
     arena: NodeArena,
     rng: Xoshiro256PlusPlus,
     dims: usize,
@@ -105,7 +105,7 @@ impl RcfTree {
 
     /// Create a new random-cut tree with the given dimensionality, point
     /// capacity hint, and RNG seed.
-    pub fn new(dims: usize, capacity: usize, seed: u64) -> Self {
+    pub(super) fn new(dims: usize, capacity: usize, seed: u64) -> Self {
         RcfTree {
             root: NULL,
             tree_mass: 0,
@@ -120,7 +120,7 @@ impl RcfTree {
 
     /// Whether the tree currently has no root node.
     #[cfg(test)]
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.root == NULL
     }
 }
@@ -130,11 +130,7 @@ impl RcfTree {
 // ---------------------------------------------------------------------------
 
 /// Build the bounding box for the entire sub-tree rooted at `node_id`.
-pub(crate) fn subtree_bbox(
-    arena: &NodeArena,
-    node_id: usize,
-    point_store: &PointStore,
-) -> BoundingBox {
+fn subtree_bbox(arena: &NodeArena, node_id: usize, point_store: &PointStore) -> BoundingBox {
     match arena.get(node_id) {
         Node::Leaf { point_idx, .. } => BoundingBox::from_point(point_store.get(*point_idx)),
         Node::Internal { bbox, .. } => bbox.clone(),

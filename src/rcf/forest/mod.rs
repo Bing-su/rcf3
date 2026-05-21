@@ -22,13 +22,13 @@ mod update;
 /// Gathered per-tree inside [`Forest::near_neighbors`] and then aggregated
 /// and converted into [`NeighborResult`].
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct NeighborCandidate {
+pub(in crate::rcf) struct NeighborCandidate {
     /// Anomaly score of this candidate point.
-    pub(crate) score: f64,
+    pub(in crate::rcf) score: f64,
     /// Index of the point in the [`PointStore`].
-    pub(crate) point_idx: usize,
+    pub(in crate::rcf) point_idx: usize,
     /// L1 distance to the query point.
-    pub(crate) distance: f64,
+    pub(in crate::rcf) distance: f64,
 }
 
 impl From<(f64, usize, f64)> for NeighborCandidate {
@@ -94,10 +94,10 @@ impl From<(f64, Vec<f32>, f64)> for NeighborResult {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Forest {
-    pub(crate) config: RcfConfig,
+    config: RcfConfig,
     trees: Vec<RcfTree>,
     samplers: Vec<Sampler>,
-    pub(crate) point_store: PointStore,
+    point_store: PointStore,
     entries_seen: u64,
     rng: Xoshiro256PlusPlus,
 }

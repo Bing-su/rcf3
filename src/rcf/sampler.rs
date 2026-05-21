@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 /// implementation.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct Sampler {
+pub(super) struct Sampler {
     capacity: usize,
     weights: Vec<f64>,
     point_indices: Vec<usize>,
@@ -34,15 +34,15 @@ pub struct Sampler {
 
 /// Outcome of a call to [`Sampler::accept`].
 #[derive(Debug)]
-pub struct AcceptResult {
+pub(super) struct AcceptResult {
     /// Whether the new point was accepted into the sampler.
-    pub accepted: bool,
+    pub(super) accepted: bool,
     /// If a previously-sampled point was evicted, its index.
-    pub evicted: Option<usize>,
+    pub(super) evicted: Option<usize>,
 }
 
 impl Sampler {
-    pub fn new(capacity: usize) -> Self {
+    pub(super) fn new(capacity: usize) -> Self {
         Sampler {
             capacity,
             weights: vec![0.0f64; capacity],
@@ -117,7 +117,12 @@ impl Sampler {
     ///
     /// If accepted, the caller must follow up with [`Self::add_point`] once the
     /// actual point index is known (after possible de-duplication by the tree).
-    pub fn accept(&mut self, is_initial: bool, weight: f64, point_idx: usize) -> AcceptResult {
+    pub(super) fn accept(
+        &mut self,
+        is_initial: bool,
+        weight: f64,
+        point_idx: usize,
+    ) -> AcceptResult {
         if is_initial || (self.size < self.capacity) {
             // Warm-up: always accept; no eviction yet.
             self.pending_weight = weight;
@@ -150,7 +155,7 @@ impl Sampler {
     ///
     /// `tree_point_idx` is the index that the tree assigned to the new point
     /// (may differ from the original if it was merged with a duplicate leaf).
-    pub fn add_point(&mut self, tree_point_idx: usize) {
+    pub(super) fn add_point(&mut self, tree_point_idx: usize) {
         debug_assert!(self.pending_point != usize::MAX);
 
         if self.size < self.capacity {
@@ -171,18 +176,18 @@ impl Sampler {
     }
 
     /// Whether the sampler has reached capacity.
-    pub fn is_full(&self) -> bool {
+    pub(super) fn is_full(&self) -> bool {
         self.size == self.capacity
     }
 
     /// Fraction of capacity currently used, in the range `[0.0, 1.0]`.
-    pub fn fill_fraction(&self) -> f64 {
+    pub(super) fn fill_fraction(&self) -> f64 {
         self.size as f64 / self.capacity as f64
     }
 
     /// All point indices currently in the sampler.
     #[cfg(test)]
-    pub fn points(&self) -> &[usize] {
+    fn points(&self) -> &[usize] {
         &self.point_indices[..self.size]
     }
 }
@@ -195,7 +200,7 @@ impl Sampler {
 ///
 /// `u` must be in `(0, 1)`.  Values at or outside this range are clamped to
 /// avoid NaN/infinity.
-pub fn reservoir_weight(u: f64, time_decay: f64, entries_seen: u64) -> f64 {
+pub(super) fn reservoir_weight(u: f64, time_decay: f64, entries_seen: u64) -> f64 {
     let u = u.clamp(f64::EPSILON, 1.0 - f64::EPSILON);
     libm::log(-libm::log(u)) - time_decay * entries_seen as f64
 }

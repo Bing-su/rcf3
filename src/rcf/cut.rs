@@ -44,9 +44,9 @@ fn clamp_cut_val(raw: f32, lo: f32, hi: f32) -> f32 {
 
 /// A single random cut: split on `dim` at threshold `val`.
 #[derive(Clone, Debug)]
-pub struct Cut {
-    pub dim: usize,
-    pub val: f32,
+pub(super) struct Cut {
+    pub(super) dim: usize,
+    pub(super) val: f32,
 }
 
 /// Choose a random cut that separates `point` from `bbox`.
@@ -57,7 +57,7 @@ pub struct Cut {
 /// `point` on the opposite side from the existing box content.
 /// Returns `None` when `bbox` is a degenerate single-point box that already
 /// equals `point` (no cut possible).
-pub fn random_cut(bbox: &BoundingBox, point: &[f32], factor: f64) -> Option<(Cut, bool)> {
+pub(super) fn random_cut(bbox: &BoundingBox, point: &[f32], factor: f64) -> Option<(Cut, bool)> {
     // Per-dimension extended range: covers both the existing box and the new point.
     let total: f64 = (0..point.len())
         .map(|i| (bbox.max[i].max(point[i]) - bbox.min[i].min(point[i])) as f64)

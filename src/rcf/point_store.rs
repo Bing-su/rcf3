@@ -47,17 +47,22 @@ type PointMatrix = Array2<f32>;
 /// zero-copy `ArrayView1<f32>` or `&[f32]` slice.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct PointStore {
+pub(super) struct PointStore {
     /// Full dimensionality: `input_dim * shingle_size`.
-    pub dim: usize,
+    dim: usize,
     /// Base input dimensionality (before shingling).
-    pub input_dim: usize,
+    input_dim: usize,
     /// Shingle size (temporal window).
+    ///
+    /// Kept in serialized state even though current production code derives
+    /// the same information from `dim` and `input_dim`.
     #[allow(dead_code)]
-    pub shingle_size: usize,
+    shingle_size: usize,
     /// Whether the store manages the rolling shingle buffer.
+    ///
+    /// Kept in serialized state to preserve historical Forest snapshots.
     #[allow(dead_code)]
-    pub internal_shingling: bool,
+    internal_shingling: bool,
 
     /// Row-indexed point matrix (shape: `capacity × dim`).
     store: PointMatrix,
@@ -77,14 +82,14 @@ pub struct PointStore {
     /// Rolling shingle buffer (used when `internal_shingling = true`).
     shingle_buf: Vec<f32>,
     /// Total number of `add` calls (for shingling state tracking).
-    pub entries_seen: u64,
+    entries_seen: u64,
 }
 
 impl PointStore {
     /// Create a new store.
     ///
     /// `input_dim` × `shingle_size` = full model dimension.
-    pub fn new(
+    pub(super) fn new(
         input_dim: usize,
         shingle_size: usize,
         capacity: usize,
@@ -120,7 +125,7 @@ impl PointStore {
     /// When `internal_shingling` is true, `base` must have length `input_dim`;
     /// the store shifts the rolling buffer and fills in the new observation.
     #[cfg(test)]
-    pub fn shingled_point(&mut self, base: &[f32]) -> Result<Vec<f32>> {
+    fn shingled_point(&mut self, base: &[f32]) -> Result<Vec<f32>> {
         if self.internal_shingling {
             self.advance_shingle(base)?;
             Ok(self.shingle_buf.clone())
@@ -130,7 +135,7 @@ impl PointStore {
         }
     }
 
-    pub(crate) fn advance_shingle(&mut self, base: &[f32]) -> Result<()> {
+    pub(super) fn advance_shingle(&mut self, base: &[f32]) -> Result<()> {
         if base.len() != self.input_dim {
             return Err(RcfError::DimensionMismatch {
                 expected: self.input_dim,
@@ -144,7 +149,7 @@ impl PointStore {
     }
 
     /// Peek at the current shingled point without advancing the shingle buffer.
-    pub fn current_shingled(&self) -> &[f32] {
+    pub(super) fn current_shingled(&self) -> &[f32] {
         &self.shingle_buf
     }
 
@@ -157,17 +162,17 @@ impl PointStore {
     /// The reference count is initialised to 0; callers must call
     /// [`Self::inc_ref`] for each tree that accepts this point.
     #[cfg(test)]
-    pub fn add(&mut self, point: &[f32]) -> Result<usize> {
+    pub(super) fn add(&mut self, point: &[f32]) -> Result<usize> {
         self.validate_full_point(point)?;
         self.add_validated(point)
     }
 
-    pub(crate) fn add_validated(&mut self, point: &[f32]) -> Result<usize> {
+    pub(super) fn add_validated(&mut self, point: &[f32]) -> Result<usize> {
         debug_assert_eq!(point.len(), self.dim);
         self.store_point(point)
     }
 
-    pub(crate) fn add_current_shingled(&mut self) -> Result<usize> {
+    pub(super) fn add_current_shingled(&mut self) -> Result<usize> {
         let idx = self.allocate_slot()?;
         self.store
             .row_mut(idx)
@@ -176,7 +181,7 @@ impl PointStore {
         Ok(idx)
     }
 
-    pub(crate) fn validate_full_point(&self, point: &[f32]) -> Result<()> {
+    pub(super) fn validate_full_point(&self, point: &[f32]) -> Result<()> {
         if point.len() != self.dim {
             return Err(RcfError::DimensionMismatch {
                 expected: self.dim,
@@ -225,12 +230,12 @@ impl PointStore {
     }
 
     /// Increment reference count for slot `idx`.
-    pub fn inc_ref(&mut self, idx: usize) {
+    pub(super) fn inc_ref(&mut self, idx: usize) {
         self.ref_count[idx] += 1;
     }
 
     /// Decrement reference count; free the slot when it reaches zero.
-    pub fn dec_ref(&mut self, idx: usize) {
+    pub(super) fn dec_ref(&mut self, idx: usize) {
         if self.ref_count[idx] > 0 {
             self.ref_count[idx] -= 1;
         }
@@ -246,7 +251,7 @@ impl PointStore {
     // -----------------------------------------------------------------------
 
     /// Return the point at `idx`.  Panics if `idx` is not occupied.
-    pub fn get(&self, idx: usize) -> &[f32] {
+    pub(super) fn get(&self, idx: usize) -> &[f32] {
         debug_assert!(self.occupied[idx], "accessing unoccupied slot {idx}");
         self.store
             .row(idx)
@@ -255,24 +260,29 @@ impl PointStore {
     }
 
     /// Check whether the stored point at `idx` equals `point` component-wise.
-    pub fn is_equal(&self, point: &[f32], idx: usize) -> bool {
+    pub(super) fn is_equal(&self, point: &[f32], idx: usize) -> bool {
         self.store.row(idx) == ArrayView1::from(point)
     }
 
     /// L1 distance between `query` and the stored point at `idx`.
-    pub fn l1_distance(&self, query: &[f32], idx: usize) -> f64 {
+    pub(super) fn l1_distance(&self, query: &[f32], idx: usize) -> f64 {
         let stored = self.get(idx);
         l1_distance_slices(query, stored)
     }
 
     /// L1 distance ignoring `missing` dimensions.
-    pub fn l1_distance_ignore_missing(&self, query: &[f32], idx: usize, missing: &[bool]) -> f64 {
+    pub(super) fn l1_distance_ignore_missing(
+        &self,
+        query: &[f32],
+        idx: usize,
+        missing: &[bool],
+    ) -> f64 {
         let stored = self.get(idx);
         l1_distance_slices_ignore_missing(query, stored, missing)
     }
 
     /// Return a copy of the point at `idx`.
-    pub fn copy_point(&self, idx: usize) -> Vec<f32> {
+    pub(super) fn copy_point(&self, idx: usize) -> Vec<f32> {
         self.get(idx).to_vec()
     }
 
@@ -287,12 +297,12 @@ impl PointStore {
     /// `next_indices(0)` returns the positions that the *next* base observation
     /// would fill (the newest slot in the buffer).
     #[cfg(test)]
-    pub fn next_indices(&self, look_ahead: usize) -> Vec<usize> {
+    fn next_indices(&self, look_ahead: usize) -> Vec<usize> {
         let offset = lookahead_offset(self.dim, self.input_dim, look_ahead);
         (0..self.input_dim).map(|i| offset + i).collect()
     }
 
-    pub(crate) fn next_indices_into(&self, look_ahead: usize, indices: &mut Vec<usize>) {
+    pub(super) fn next_indices_into(&self, look_ahead: usize, indices: &mut Vec<usize>) {
         indices.clear();
         let offset = lookahead_offset(self.dim, self.input_dim, look_ahead);
         indices.extend((0..self.input_dim).map(|i| offset + i));
@@ -301,7 +311,7 @@ impl PointStore {
     /// Convert `missing` base-dimension indices into full-dimension indices
     /// within the shingled vector, shifted by `look_ahead` steps.
     #[cfg(test)]
-    pub fn missing_indices_with_lookahead(
+    fn missing_indices_with_lookahead(
         &self,
         look_ahead: usize,
         missing_base: &[usize],
@@ -316,8 +326,23 @@ impl PointStore {
 
     /// Number of points currently retained in the store.
     #[cfg(test)]
-    pub fn num_points(&self) -> usize {
+    fn num_points(&self) -> usize {
         self.size
+    }
+
+    #[cfg(test)]
+    fn dim(&self) -> usize {
+        self.dim
+    }
+
+    #[cfg(test)]
+    fn input_dim(&self) -> usize {
+        self.input_dim
+    }
+
+    #[cfg(test)]
+    fn entries_seen(&self) -> u64 {
+        self.entries_seen
     }
 }
 
@@ -348,7 +373,7 @@ mod tests {
         assert_eq!(idx, 0);
         assert_eq!(ps.get(idx), &[1.0f32, 2.0, 3.0, 4.0]);
         assert_eq!(ps.num_points(), 1);
-        assert_eq!(ps.entries_seen, 1);
+        assert_eq!(ps.entries_seen(), 1);
     }
 
     #[test]
@@ -408,7 +433,7 @@ mod tests {
         #[case] expected_indices: Vec<usize>,
     ) {
         let ps = PointStore::new(2, 3, 8, true);
-        let offset = lookahead_offset(ps.dim, ps.input_dim, look_ahead);
+        let offset = lookahead_offset(ps.dim(), ps.input_dim(), look_ahead);
 
         assert_eq!(offset, expected_indices[0]);
         assert_eq!(ps.next_indices(look_ahead), expected_indices);

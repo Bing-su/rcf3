@@ -186,7 +186,7 @@ impl RcfConfig {
         self.input_dim * self.shingle_size
     }
 
-    pub(crate) fn validate(&self) -> Result<()> {
+    pub(in crate::rcf) fn validate(&self) -> Result<()> {
         if self.input_dim == 0 {
             return Err(RcfError::InvalidArgument("input_dim must be > 0".into()));
         }

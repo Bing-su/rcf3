@@ -23,7 +23,12 @@ impl RcfTree {
     /// Compute the anomaly score for `query` using the given `mode`.
     ///
     /// Returns the normalized anomaly score as an `f64`.
-    pub fn raw_score(&self, query: &[f32], point_store: &PointStore, mode: &ScoreMode) -> f64 {
+    pub(in crate::rcf) fn raw_score(
+        &self,
+        query: &[f32],
+        point_store: &PointStore,
+        mode: &ScoreMode,
+    ) -> f64 {
         if self.is_effectively_empty() {
             return 0.0;
         }
@@ -74,7 +79,7 @@ impl RcfTree {
     ///
     /// The buffer is not cleared. Callers should start from a zeroed buffer
     /// when they need only this tree's attribution.
-    pub(crate) fn accumulate_attribution_into(
+    pub(in crate::rcf) fn accumulate_attribution_into(
         &self,
         query: &[f32],
         mode: &ScoreMode,
@@ -151,7 +156,7 @@ impl RcfTree {
     // -----------------------------------------------------------------------
 
     /// Density estimate at `query` (uses the displacement score function).
-    pub fn density(&self, query: &[f32], point_store: &PointStore) -> f64 {
+    pub(in crate::rcf) fn density(&self, query: &[f32], point_store: &PointStore) -> f64 {
         if self.is_effectively_empty() {
             return 0.0;
         }
@@ -191,7 +196,7 @@ impl RcfTree {
     // Near-neighbor traversal
     // -----------------------------------------------------------------------
 
-    pub(crate) fn near_neighbors_into(
+    pub(in crate::rcf) fn near_neighbors_into(
         &self,
         query: &[f32],
         point_store: &PointStore,
@@ -274,7 +279,7 @@ impl RcfTree {
     /// Returns the best matching candidate. Missing dimensions are
     /// treated as marginalized out (both children are explored when the cut
     /// falls on a missing dimension).
-    pub fn conditional_field(
+    pub(in crate::rcf) fn conditional_field(
         &self,
         query: &[f32],
         missing: &[bool],
