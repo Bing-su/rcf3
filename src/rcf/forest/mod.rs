@@ -431,6 +431,33 @@ mod tests {
     }
 
     #[test]
+    fn internal_shingling_priming_counts_logical_point_store_updates() {
+        let mut f = Forest::builder(1)
+            .shingle_size(4)
+            .num_trees(1)
+            .capacity(8)
+            .output_after(0)
+            .initial_accept_fraction(1.0)
+            .seed(42)
+            .build()
+            .unwrap();
+
+        for i in 0..3 {
+            f.update(&[i as f32]).unwrap();
+        }
+
+        assert_eq!(f.entries_seen(), 3);
+        assert_eq!(f.point_store.entries_seen(), 3);
+        assert_eq!(f.point_store.num_points(), 0);
+
+        f.update(&[3.0]).unwrap();
+
+        assert_eq!(f.entries_seen(), 4);
+        assert_eq!(f.point_store.entries_seen(), 4);
+        assert_eq!(f.point_store.num_points(), 1);
+    }
+
+    #[test]
     fn attribution_sums_close_to_score() {
         let mut f = make_forest();
         for i in 0..200 {

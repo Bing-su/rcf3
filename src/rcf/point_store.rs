@@ -353,7 +353,7 @@ impl PointStore {
     }
 
     #[cfg(test)]
-    fn entries_seen(&self) -> u64 {
+    pub(super) fn entries_seen(&self) -> u64 {
         self.entries_seen
     }
 }

@@ -19,6 +19,7 @@ impl Forest {
         self.entries_seen += 1;
 
         if !self.has_primed_shingle() {
+            self.point_store.record_logical_add_without_storage();
             return Ok(());
         }
 
