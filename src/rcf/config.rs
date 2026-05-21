@@ -153,6 +153,11 @@ impl RcfConfig {
         if self.shingle_size == 0 {
             return Err(RcfError::InvalidArgument("shingle_size must be > 0".into()));
         }
+        if self.input_dim.checked_mul(self.shingle_size).is_none() {
+            return Err(RcfError::InvalidArgument(
+                "input_dim * shingle_size overflows usize".into(),
+            ));
+        }
         if self.capacity == 0 {
             return Err(RcfError::InvalidArgument("capacity must be > 0".into()));
         }
