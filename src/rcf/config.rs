@@ -1,6 +1,8 @@
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::error::{RcfError, Result};
+
 /// Hyperparameters for a Random Cut Forest.
 ///
 /// Use [`RcfConfig::new`] then chain the builder methods, or deserialise from JSON.
@@ -143,12 +145,30 @@ impl RcfConfig {
     pub fn dim(&self) -> usize {
         self.input_dim * self.shingle_size
     }
+
+    pub(crate) fn validate(&self) -> Result<()> {
+        if self.input_dim == 0 {
+            return Err(RcfError::InvalidArgument("input_dim must be > 0".into()));
+        }
+        if self.shingle_size == 0 {
+            return Err(RcfError::InvalidArgument("shingle_size must be > 0".into()));
+        }
+        if self.capacity == 0 {
+            return Err(RcfError::InvalidArgument("capacity must be > 0".into()));
+        }
+        if self.num_trees == 0 {
+            return Err(RcfError::InvalidArgument("num_trees must be > 0".into()));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
+    use crate::error::RcfError;
     use proptest::prelude::*;
+    use rstest::rstest;
 
     proptest! {
         #[test]
@@ -179,5 +199,27 @@ mod tests {
             let cfg = RcfConfig::new(1).with_num_trees(n);
             prop_assert_eq!(cfg.num_trees, n);
         }
+    }
+
+    #[test]
+    fn validate_accepts_default_config() {
+        RcfConfig::new(1).validate().unwrap();
+    }
+
+    #[rstest]
+    #[case::zero_input_dim(RcfConfig::new(0), "input_dim")]
+    #[case::zero_shingle_size(RcfConfig::new(1).with_shingle_size(0), "shingle_size")]
+    #[case::zero_capacity(RcfConfig::new(1).with_capacity(0), "capacity")]
+    #[case::zero_num_trees(RcfConfig::new(1).with_num_trees(0), "num_trees")]
+    fn validate_rejects_invalid_core_fields(
+        #[case] config: RcfConfig,
+        #[case] expected_message: &str,
+    ) {
+        let err = config.validate().unwrap_err();
+
+        assert!(
+            matches!(err, RcfError::InvalidArgument(ref msg) if msg.contains(expected_message)),
+            "unexpected error variant: {err:?}"
+        );
     }
 }
