@@ -191,7 +191,7 @@ impl Sampler {
 
     /// All point indices currently in the sampler.
     #[cfg(test)]
-    fn points(&self) -> &[usize] {
+    pub(super) fn points(&self) -> &[usize] {
         &self.point_indices[..self.size]
     }
 }

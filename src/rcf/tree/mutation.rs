@@ -163,20 +163,20 @@ impl RcfTree {
     // Insert
     // -----------------------------------------------------------------------
 
-    /// Insert `point_idx` into the tree.  `point` is the actual coordinate
-    /// vector (borrowed from the point store for computations here).
+    /// Insert `point_idx` into the tree and return the point-store index that
+    /// the tree actually references after insertion.
     pub(in crate::rcf) fn insert(
         &mut self,
         point_idx: usize,
         point_store: &PointStore,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         let point = point_store.get(point_idx);
 
         if self.root == NULL {
             // First point in this tree.
             self.root = self.arena.alloc(Node::Leaf { point_idx, mass: 1 });
             self.tree_mass = 1;
-            return Ok(());
+            return Ok(point_idx);
         }
 
         let leaf_id = self.path_to_leaf(point);
@@ -193,7 +193,7 @@ impl RcfTree {
                 *mass += 1;
             }
             Self::update_ancestors_after_change(&mut self.arena, &self.path_scratch, point_store);
-            return Ok(());
+            return Ok(leaf_point_idx);
         }
 
         // Different point: need a new internal node with a random cut.
@@ -206,7 +206,7 @@ impl RcfTree {
                 *mass += 1;
             }
             Self::update_ancestors_after_change(&mut self.arena, &self.path_scratch, point_store);
-            return Ok(());
+            return Ok(leaf_point_idx);
         };
 
         // Determine which side new point and existing subtree go on.
@@ -254,7 +254,7 @@ impl RcfTree {
             point_store,
         );
 
-        Ok(())
+        Ok(point_idx)
     }
 
     // -----------------------------------------------------------------------

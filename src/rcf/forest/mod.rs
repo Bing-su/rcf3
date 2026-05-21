@@ -409,6 +409,27 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_updates_share_canonical_point_storage() {
+        let mut f = Forest::builder(2)
+            .shingle_size(1)
+            .num_trees(1)
+            .capacity(8)
+            .output_after(0)
+            .seed(42)
+            .build()
+            .unwrap();
+
+        for _ in 0..8 {
+            f.update(&[1.0f32, 2.0]).unwrap();
+        }
+
+        assert_eq!(f.point_store.num_points(), 1);
+        assert_eq!(f.samplers[0].points(), &[0; 8]);
+        assert_eq!(f.point_store.ref_count(0), f.samplers[0].points().len());
+        assert!(f.score(&[1.0f32, 2.0]).unwrap().is_finite());
+    }
+
+    #[test]
     fn attribution_sums_close_to_score() {
         let mut f = make_forest();
         for i in 0..200 {

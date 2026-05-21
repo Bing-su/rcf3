@@ -96,6 +96,8 @@ impl Forest {
     }
 
     fn apply_accepted_updates(&mut self, point_idx: usize) -> Result<()> {
+        let mut new_point_refs = 0usize;
+
         for i in 0..self.update_scratch.len() {
             let update = self.update_scratch[i];
             let t = update.tree_index;
@@ -107,9 +109,16 @@ impl Forest {
             }
 
             // Insert new point.
-            self.trees[t].insert(point_idx, &self.point_store)?;
-            self.point_store.inc_ref(point_idx);
-            self.samplers[t].add_point(point_idx);
+            let tree_point_idx = self.trees[t].insert(point_idx, &self.point_store)?;
+            if tree_point_idx == point_idx {
+                new_point_refs += 1;
+            }
+            self.point_store.inc_ref(tree_point_idx);
+            self.samplers[t].add_point(tree_point_idx);
+        }
+
+        if new_point_refs == 0 {
+            self.point_store.dec_ref(point_idx);
         }
 
         Ok(())

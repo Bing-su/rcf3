@@ -332,8 +332,13 @@ impl PointStore {
 
     /// Number of points currently retained in the store.
     #[cfg(test)]
-    fn num_points(&self) -> usize {
+    pub(super) fn num_points(&self) -> usize {
         self.size
+    }
+
+    #[cfg(test)]
+    pub(super) fn ref_count(&self, idx: usize) -> usize {
+        self.ref_count[idx]
     }
 
     #[cfg(test)]
