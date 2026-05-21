@@ -81,7 +81,8 @@ pub(super) struct PointStore {
 
     /// Rolling shingle buffer (used when `internal_shingling = true`).
     shingle_buf: Vec<f32>,
-    /// Total number of `add` calls (for shingling state tracking).
+    /// Total number of logical input updates seen, including `add` calls and
+    /// logical adds without storage (for shingling state tracking).
     entries_seen: u64,
 }
 
