@@ -9,7 +9,9 @@ use rand::rngs::Xoshiro256PlusPlus;
 use serde::{Deserialize, Serialize};
 
 use super::{config::RcfConfig, point_store::PointStore, sampler::Sampler, tree::RcfTree};
-use crate::error::{RcfError, Result};
+#[cfg(any(feature = "serde", test))]
+use crate::error::RcfError;
+use crate::error::Result;
 
 mod impute;
 mod query;
@@ -111,18 +113,7 @@ impl Forest {
     // -----------------------------------------------------------------------
 
     fn new_internal(config: RcfConfig, seed: u64) -> Result<Self> {
-        if config.input_dim == 0 {
-            return Err(RcfError::InvalidArgument("input_dim must be > 0".into()));
-        }
-        if config.shingle_size == 0 {
-            return Err(RcfError::InvalidArgument("shingle_size must be > 0".into()));
-        }
-        if config.capacity == 0 {
-            return Err(RcfError::InvalidArgument("capacity must be > 0".into()));
-        }
-        if config.num_trees == 0 {
-            return Err(RcfError::InvalidArgument("num_trees must be > 0".into()));
-        }
+        config.validate()?;
 
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
         let dim = config.dim();

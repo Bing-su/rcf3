@@ -9,13 +9,19 @@ use crate::error::{RcfError, Result};
 
 pub(super) fn make_missing_flags(missing: &[usize], dim: usize) -> Result<Vec<bool>> {
     let mut missing_flags = vec![false; dim];
+    fill_missing_flags(missing, &mut missing_flags)?;
+    Ok(missing_flags)
+}
+
+fn fill_missing_flags(missing: &[usize], missing_flags: &mut [bool]) -> Result<()> {
+    missing_flags.fill(false);
     for &i in missing {
-        if i >= dim {
+        if i >= missing_flags.len() {
             return Err(RcfError::IndexOutOfBounds(i));
         }
         missing_flags[i] = true;
     }
-    Ok(missing_flags)
+    Ok(())
 }
 
 pub(super) fn median_in_place(vals: &mut [f32]) -> f32 {
@@ -61,11 +67,13 @@ impl Forest {
 
         let missing_flags = make_missing_flags(missing, dim)?;
         let mut seed_rng = self.rng.clone();
-        let candidate_idxs = self.collect_conditional_candidate_indices(
+        let mut candidate_idxs = Vec::with_capacity(self.trees.len());
+        self.collect_conditional_candidate_indices_into(
             query,
             &missing_flags,
             centrality,
             seed_rng.next_u64(),
+            &mut candidate_idxs,
         );
 
         if candidate_idxs.is_empty() {
@@ -73,7 +81,8 @@ impl Forest {
         }
 
         let mut result = query.to_vec();
-        self.impute_dimensions_from_candidates(&mut result, missing, &candidate_idxs);
+        let mut values = Vec::with_capacity(candidate_idxs.len());
+        self.impute_dimensions_from_candidates(&mut result, missing, &candidate_idxs, &mut values);
 
         Ok(result)
     }
@@ -114,23 +123,33 @@ impl Forest {
         let dim = self.config.dim();
         let mut fictitious = self.point_store.current_shingled().to_vec();
         let mut result = Vec::with_capacity(look_ahead * input_dim);
+        let mut missing_indices = Vec::with_capacity(input_dim);
+        let mut missing_flags = vec![false; dim];
+        let mut candidate_idxs = Vec::with_capacity(self.trees.len());
+        let mut values = Vec::with_capacity(self.trees.len());
 
         let mut rng = self.rng.clone();
         let _ = rng.next_u64();
 
         for step in 0..look_ahead {
-            let missing_indices = self.point_store.next_indices(step);
-            let missing_flags = make_missing_flags(&missing_indices, dim)?;
+            self.point_store
+                .next_indices_into(step, &mut missing_indices);
+            fill_missing_flags(&missing_indices, &mut missing_flags)?;
             let seed = rng.next_u64();
-            let candidate_idxs =
-                self.collect_conditional_candidate_indices(&fictitious, &missing_flags, 1.0, seed);
+            self.collect_conditional_candidate_indices_into(
+                &fictitious,
+                &missing_flags,
+                1.0,
+                seed,
+                &mut candidate_idxs,
+            );
 
             if candidate_idxs.is_empty() {
                 return Err(RcfError::NotReady);
             }
 
             for &mi in &missing_indices {
-                let median = self.median_for_dimension(&candidate_idxs, mi);
+                let median = self.median_for_dimension_into(&candidate_idxs, mi, &mut values);
                 fictitious[mi] = median;
                 result.push(median);
             }
@@ -138,28 +157,27 @@ impl Forest {
 
         Ok(result)
     }
-    fn collect_conditional_candidate_indices(
+    fn collect_conditional_candidate_indices_into(
         &self,
         query: &[f32],
         missing_flags: &[bool],
         centrality: f64,
         seed: u64,
-    ) -> Vec<usize> {
+        output: &mut Vec<usize>,
+    ) {
+        output.clear();
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
-        self.trees
-            .iter()
-            .filter_map(|tree| {
-                let tree_seed = rng.next_u64();
-                tree.conditional_field(
-                    query,
-                    missing_flags,
-                    &self.point_store,
-                    centrality,
-                    tree_seed,
-                )
-                .map(|c| c.point_idx)
-            })
-            .collect()
+        output.extend(self.trees.iter().filter_map(|tree| {
+            let tree_seed = rng.next_u64();
+            tree.conditional_field(
+                query,
+                missing_flags,
+                &self.point_store,
+                centrality,
+                tree_seed,
+            )
+            .map(|c| c.point_idx)
+        }));
     }
 
     fn impute_dimensions_from_candidates(
@@ -167,17 +185,25 @@ impl Forest {
         result: &mut [f32],
         missing: &[usize],
         candidate_idxs: &[usize],
+        values: &mut Vec<f32>,
     ) {
         for &mi in missing {
-            result[mi] = self.median_for_dimension(candidate_idxs, mi);
+            result[mi] = self.median_for_dimension_into(candidate_idxs, mi, values);
         }
     }
 
-    fn median_for_dimension(&self, candidate_idxs: &[usize], dim_idx: usize) -> f32 {
-        let mut vals: Vec<f32> = candidate_idxs
-            .iter()
-            .map(|&i| self.point_store.get(i)[dim_idx])
-            .collect();
-        median_in_place(&mut vals)
+    fn median_for_dimension_into(
+        &self,
+        candidate_idxs: &[usize],
+        dim_idx: usize,
+        values: &mut Vec<f32>,
+    ) -> f32 {
+        values.clear();
+        values.extend(
+            candidate_idxs
+                .iter()
+                .map(|&i| self.point_store.get(i)[dim_idx]),
+        );
+        median_in_place(values)
     }
 }

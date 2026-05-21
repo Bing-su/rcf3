@@ -75,12 +75,26 @@ impl RcfTree {
     /// Returns a `Vec<Attribution>` of length `dims`.
     pub fn attribution(&self, query: &[f32], mode: &ScoreMode) -> Vec<Attribution> {
         let mut attr = vec![Attribution::default(); self.dims];
+        self.accumulate_attribution_into(query, mode, &mut attr);
+        attr
+    }
+
+    /// Add this tree's attribution contributions into `attr`.
+    ///
+    /// The buffer is not cleared. Callers that need only this tree's attribution
+    /// should start from a zeroed buffer or use [`Self::attribution`].
+    pub(crate) fn accumulate_attribution_into(
+        &self,
+        query: &[f32],
+        mode: &ScoreMode,
+        attr: &mut [Attribution],
+    ) {
+        debug_assert_eq!(attr.len(), self.dims);
         if self.is_effectively_empty() {
-            return attr;
+            return;
         }
         let norm = mode.normalize(1.0, self.tree_mass);
-        self.attribution_recursive(self.root, query, 0, mode, 1.0, norm, &mut attr);
-        attr
+        self.attribution_recursive(self.root, query, 0, mode, 1.0, norm, attr);
     }
 
     /// Accumulate attribution contributions weighted by the path probability.
@@ -96,7 +110,7 @@ impl RcfTree {
         mode: &ScoreMode,
         weight: f64,
         norm: f64,
-        attr: &mut Vec<Attribution>,
+        attr: &mut [Attribution],
     ) {
         match self.arena.get(node_id) {
             Node::Leaf { .. } => {
