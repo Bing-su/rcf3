@@ -11,11 +11,25 @@ jobs:
   benchmark:
     name: Benchmark
     runs-on: ubuntu-latest
-    env:
-      BENCHER_PROJECT: rcf3
-      BENCHER_API_TOKEN: ${{ secrets.BENCHER_API_TOKEN }}
+    permissions:
+      checks: write
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: bencherdev/bencher@v0.6.6
-      - run: bencher run --adapter rust_criterion "cargo bench --bench comparison_bench"
+      - name: Track base branch benchmarks with Bencher
+        run: |
+          bencher run \
+          --project rcf3 \
+          --key '${{ secrets.BENCHER_API_KEY }}' \
+          --branch main \
+          --testbed ubuntu-latest \
+          --threshold-measure latency \
+          --threshold-test t_test \
+          --threshold-max-sample-size 64 \
+          --threshold-upper-boundary 0.99 \
+          --thresholds-reset \
+          --error-on-alert \
+          --adapter rust_criterion \
+          --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+          "cargo bench --bench comparison_bench"
