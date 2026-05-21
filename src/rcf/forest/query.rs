@@ -40,7 +40,7 @@ impl Forest {
         let n = self.trees.len() as f64;
         let mut total_attr = vec![Attribution::default(); dim];
         for tree in &self.trees {
-            tree.attribution_into(&q, &mode, &mut total_attr);
+            tree.accumulate_attribution_into(&q, &mode, &mut total_attr);
         }
         Ok(total_attr.into_iter().map(|a| a.scale(1.0 / n)).collect())
     }

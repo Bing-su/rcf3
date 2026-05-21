@@ -75,11 +75,15 @@ impl RcfTree {
     /// Returns a `Vec<Attribution>` of length `dims`.
     pub fn attribution(&self, query: &[f32], mode: &ScoreMode) -> Vec<Attribution> {
         let mut attr = vec![Attribution::default(); self.dims];
-        self.attribution_into(query, mode, &mut attr);
+        self.accumulate_attribution_into(query, mode, &mut attr);
         attr
     }
 
-    pub(crate) fn attribution_into(
+    /// Add this tree's attribution contributions into `attr`.
+    ///
+    /// The buffer is not cleared. Callers that need only this tree's attribution
+    /// should start from a zeroed buffer or use [`Self::attribution`].
+    pub(crate) fn accumulate_attribution_into(
         &self,
         query: &[f32],
         mode: &ScoreMode,
