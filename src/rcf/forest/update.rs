@@ -15,7 +15,7 @@ impl Forest {
     /// `input_dim`.  Otherwise pass the full shingled vector of length
     /// `input_dim * shingle_size`.
     pub fn update(&mut self, base: &[f32]) -> Result<()> {
-        if self.config.internal_shingling {
+        if self.config.internal_shingling() {
             self.point_store.advance_shingle(base)?;
         } else {
             self.point_store.validate_full_point(base)?;
@@ -25,8 +25,8 @@ impl Forest {
         // Only update the trees once the shingle buffer is primed.
         // With internal shingling the first shingle_size - 1 observations
         // only fill the buffer.
-        let shingle_lag = if self.config.internal_shingling {
-            self.config.shingle_size.saturating_sub(1)
+        let shingle_lag = if self.config.internal_shingling() {
+            self.config.shingle_size().saturating_sub(1)
         } else {
             0
         };
@@ -35,14 +35,14 @@ impl Forest {
         }
 
         // Add point to the shared store.
-        let point_idx = if self.config.internal_shingling {
+        let point_idx = if self.config.internal_shingling() {
             self.point_store.add_current_shingled()?
         } else {
             self.point_store.add_validated(base)?
         };
 
         let time_decay = self.config.effective_time_decay();
-        let initial_frac = self.config.initial_accept_fraction;
+        let initial_frac = self.config.initial_accept_fraction();
 
         let mut any_accepted = false;
 

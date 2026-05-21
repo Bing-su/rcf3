@@ -53,8 +53,10 @@ pub struct PointStore {
     /// Base input dimensionality (before shingling).
     pub input_dim: usize,
     /// Shingle size (temporal window).
+    #[allow(dead_code)]
     pub shingle_size: usize,
     /// Whether the store manages the rolling shingle buffer.
+    #[allow(dead_code)]
     pub internal_shingling: bool,
 
     /// Row-indexed point matrix (shape: `capacity × dim`).
@@ -117,6 +119,7 @@ impl PointStore {
     ///
     /// When `internal_shingling` is true, `base` must have length `input_dim`;
     /// the store shifts the rolling buffer and fills in the new observation.
+    #[cfg(test)]
     pub fn shingled_point(&mut self, base: &[f32]) -> Result<Vec<f32>> {
         if self.internal_shingling {
             self.advance_shingle(base)?;
@@ -153,6 +156,7 @@ impl PointStore {
     ///
     /// The reference count is initialised to 0; callers must call
     /// [`Self::inc_ref`] for each tree that accepts this point.
+    #[cfg(test)]
     pub fn add(&mut self, point: &[f32]) -> Result<usize> {
         self.validate_full_point(point)?;
         self.add_validated(point)
@@ -250,12 +254,6 @@ impl PointStore {
             .expect("store must be contiguous")
     }
 
-    /// Return the point at `idx` as an ndarray view (zero-copy).
-    pub fn point_view(&self, idx: usize) -> ArrayView1<'_, f32> {
-        debug_assert!(self.occupied[idx], "accessing unoccupied slot {idx}");
-        self.store.row(idx)
-    }
-
     /// Check whether the stored point at `idx` equals `point` component-wise.
     pub fn is_equal(&self, point: &[f32], idx: usize) -> bool {
         self.store.row(idx) == ArrayView1::from(point)
@@ -288,6 +286,7 @@ impl PointStore {
     /// For a shingle buffer `[t-k+1, …, t]` (k slots of `input_dim` each),
     /// `next_indices(0)` returns the positions that the *next* base observation
     /// would fill (the newest slot in the buffer).
+    #[cfg(test)]
     pub fn next_indices(&self, look_ahead: usize) -> Vec<usize> {
         let offset = lookahead_offset(self.dim, self.input_dim, look_ahead);
         (0..self.input_dim).map(|i| offset + i).collect()
@@ -301,6 +300,7 @@ impl PointStore {
 
     /// Convert `missing` base-dimension indices into full-dimension indices
     /// within the shingled vector, shifted by `look_ahead` steps.
+    #[cfg(test)]
     pub fn missing_indices_with_lookahead(
         &self,
         look_ahead: usize,
@@ -315,6 +315,7 @@ impl PointStore {
     // -----------------------------------------------------------------------
 
     /// Number of points currently retained in the store.
+    #[cfg(test)]
     pub fn num_points(&self) -> usize {
         self.size
     }

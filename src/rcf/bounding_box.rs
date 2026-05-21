@@ -25,6 +25,7 @@ fn excess_outside_box(point: &[f32], min: &[f32], max: &[f32]) -> f32 {
     excess
 }
 
+#[cfg(test)]
 fn excess_outside_box_with_missing(
     point: &[f32],
     min: &[f32],
@@ -52,6 +53,7 @@ fn excess_outside_box_with_missing(
     excess
 }
 
+#[cfg(test)]
 fn active_range_sum_with_missing(min: &[f32], max: &[f32], missing: &[bool]) -> f64 {
     debug_assert_eq!(min.len(), max.len());
     debug_assert_eq!(max.len(), missing.len());
@@ -65,6 +67,7 @@ fn active_range_sum_with_missing(min: &[f32], max: &[f32], missing: &[bool]) -> 
     sum
 }
 
+#[cfg(test)]
 fn componentwise_min_max(a: &[f32], b: &[f32]) -> (Vec<f32>, Vec<f32>) {
     izip!(a, b).map(|(&x, &y)| (x.min(y), x.max(y))).unzip()
 }
@@ -101,6 +104,7 @@ impl BoundingBox {
     }
 
     /// Smallest box containing both `a` and `b`.
+    #[cfg(test)]
     pub fn from_two_points(a: &[f32], b: &[f32]) -> Self {
         debug_assert_eq!(a.len(), b.len());
         let (min, max) = componentwise_min_max(a, b);
@@ -114,6 +118,7 @@ impl BoundingBox {
 
     /// Expand this box to also contain `point`.
     /// Returns `true` if the box expanded.
+    #[cfg(test)]
     pub fn expand_with_point(&mut self, point: &[f32]) -> bool {
         let old = self.range_sum;
         merge_bounds_in_place(&mut self.min, &mut self.max, point, point);
@@ -146,6 +151,7 @@ impl BoundingBox {
     /// Probability of cut, ignoring dimensions marked `true` in `missing`.
     ///
     /// `missing` is a per-dimension mask with the same length as `point`.
+    #[cfg(test)]
     pub fn probability_of_cut_with_missing(&self, point: &[f32], missing: &[bool]) -> f64 {
         let excess = excess_outside_box_with_missing(point, &self.min, &self.max, missing);
         let active_range = active_range_sum_with_missing(&self.min, &self.max, missing);
@@ -159,6 +165,7 @@ impl BoundingBox {
     }
 
     /// Sum of per-dimension ranges for this box.
+    #[cfg(test)]
     pub fn range_sum(&self) -> f64 {
         self.range_sum
     }

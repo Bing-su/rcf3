@@ -98,12 +98,12 @@ impl Forest {
     /// and `look_ahead <= shingle_size`.
     /// Returns a vector of length `look_ahead * input_dim`.
     pub fn extrapolate(&self, look_ahead: usize) -> Result<Vec<f32>> {
-        if !self.config.internal_shingling {
+        if !self.config.internal_shingling() {
             return Err(RcfError::InvalidArgument(
                 "extrapolation requires internal_shingling = true".into(),
             ));
         }
-        if self.config.shingle_size <= 1 {
+        if self.config.shingle_size() <= 1 {
             return Err(RcfError::InvalidArgument(
                 "extrapolation requires shingle_size > 1".into(),
             ));
@@ -111,7 +111,7 @@ impl Forest {
         if look_ahead == 0 {
             return Ok(Vec::new());
         }
-        let shingle_size = self.config.shingle_size;
+        let shingle_size = self.config.shingle_size();
         if look_ahead > shingle_size {
             return Err(RcfError::InvalidArgument(format!(
                 "extrapolation requires look_ahead <= shingle_size (got {look_ahead}, shingle_size={})",
@@ -119,7 +119,7 @@ impl Forest {
             )));
         }
 
-        let input_dim = self.config.input_dim;
+        let input_dim = self.config.input_dim();
         let dim = self.config.dim();
         let mut fictitious = self.point_store.current_shingled().to_vec();
         let mut result = Vec::with_capacity(look_ahead * input_dim);

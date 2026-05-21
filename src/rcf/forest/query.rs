@@ -94,9 +94,9 @@ impl Forest {
 
     /// Validate and shingle `query`.  Returns the full-dimensional vector.
     pub(super) fn prepare_query(&self, query: &[f32]) -> Result<Vec<f32>> {
-        let base_dim = self.config.input_dim;
+        let base_dim = self.config.input_dim();
         let full_dim = self.config.dim();
-        if query.len() == base_dim && self.config.internal_shingling {
+        if query.len() == base_dim && self.config.internal_shingling() {
             // Caller passed a base observation; apply the current shingle state.
             let mut buf = self.point_store.current_shingled().to_vec();
             let start = full_dim - base_dim;

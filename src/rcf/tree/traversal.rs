@@ -1,5 +1,5 @@
 #[cfg(not(feature = "std"))]
-use alloc::{vec, vec::Vec};
+use alloc::vec::Vec;
 
 use rand::prelude::*;
 use rand::rngs::Xoshiro256PlusPlus;
@@ -70,19 +70,10 @@ impl RcfTree {
     // Attribution traversal
     // -----------------------------------------------------------------------
 
-    /// Compute per-dimension anomaly attribution.
-    ///
-    /// Returns a `Vec<Attribution>` of length `dims`.
-    pub fn attribution(&self, query: &[f32], mode: &ScoreMode) -> Vec<Attribution> {
-        let mut attr = vec![Attribution::default(); self.dims];
-        self.accumulate_attribution_into(query, mode, &mut attr);
-        attr
-    }
-
     /// Add this tree's attribution contributions into `attr`.
     ///
-    /// The buffer is not cleared. Callers that need only this tree's attribution
-    /// should start from a zeroed buffer or use [`Self::attribution`].
+    /// The buffer is not cleared. Callers should start from a zeroed buffer
+    /// when they need only this tree's attribution.
     pub(crate) fn accumulate_attribution_into(
         &self,
         query: &[f32],
@@ -199,22 +190,6 @@ impl RcfTree {
     // -----------------------------------------------------------------------
     // Near-neighbor traversal
     // -----------------------------------------------------------------------
-
-    /// Collect candidate neighbours from this tree.
-    ///
-    /// Candidates are leaf points that would receive a high isolation score
-    /// relative to `query`. Callers should deduplicate/merge across trees.
-    pub fn near_neighbors(
-        &self,
-        query: &[f32],
-        point_store: &PointStore,
-        mode: &ScoreMode,
-        percentile: usize,
-    ) -> Vec<NeighborCandidate> {
-        let mut results = Vec::new();
-        self.near_neighbors_into(query, point_store, mode, percentile, &mut results);
-        results
-    }
 
     pub(crate) fn near_neighbors_into(
         &self,

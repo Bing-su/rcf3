@@ -22,13 +22,13 @@ mod update;
 /// Gathered per-tree inside [`Forest::near_neighbors`] and then aggregated
 /// and converted into [`NeighborResult`].
 #[derive(Clone, Debug, PartialEq)]
-pub struct NeighborCandidate {
+pub(crate) struct NeighborCandidate {
     /// Anomaly score of this candidate point.
-    pub score: f64,
+    pub(crate) score: f64,
     /// Index of the point in the [`PointStore`].
-    pub point_idx: usize,
+    pub(crate) point_idx: usize,
     /// L1 distance to the query point.
-    pub distance: f64,
+    pub(crate) distance: f64,
 }
 
 impl From<(f64, usize, f64)> for NeighborCandidate {
@@ -49,7 +49,7 @@ impl From<NeighborCandidate> for (f64, usize, f64) {
 
 /// A near-neighbour result returned by [`Forest::near_neighbors`].
 ///
-/// [`NeighborCandidate`]s collected across all trees are deduplicated and
+/// Candidates collected across all trees are deduplicated and
 /// aggregated by point index, then returned sorted by distance (ascending).
 #[derive(Clone, Debug, PartialEq)]
 pub struct NeighborResult {
@@ -75,7 +75,7 @@ impl From<(f64, Vec<f32>, f64)> for NeighborResult {
 // Forest
 // ---------------------------------------------------------------------------
 
-/// A Random Cut Forest: an ensemble of [`RcfTree`]s sharing a [`PointStore`].
+/// A Random Cut Forest: an ensemble of random-cut trees sharing point storage.
 ///
 /// # Typical usage
 /// ```ignore
@@ -117,8 +117,8 @@ impl Forest {
 
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
         let dim = config.dim();
-        let capacity = config.capacity;
-        let num_trees = config.num_trees;
+        let capacity = config.capacity();
+        let num_trees = config.num_trees();
 
         let store_capacity = (capacity * num_trees + 1).max(2 * capacity);
 
@@ -129,10 +129,10 @@ impl Forest {
         let samplers: Vec<Sampler> = (0..num_trees).map(|_| Sampler::new(capacity)).collect();
 
         let point_store = PointStore::new(
-            config.input_dim,
-            config.shingle_size,
+            config.input_dim(),
+            config.shingle_size(),
             store_capacity,
-            config.internal_shingling,
+            config.internal_shingling(),
         );
 
         Ok(Forest {
@@ -172,8 +172,8 @@ impl Forest {
     /// scoring functions return meaningful values.
     pub fn is_ready(&self) -> bool {
         let needed = self.config.effective_output_after()
-            + if self.config.internal_shingling {
-                self.config.shingle_size.saturating_sub(1)
+            + if self.config.internal_shingling() {
+                self.config.shingle_size().saturating_sub(1)
             } else {
                 0
             };
@@ -333,13 +333,13 @@ mod tests {
     #[test]
     fn builder_uses_default_shingle_size() {
         let f = Forest::builder(2).build().unwrap();
-        assert_eq!(f.config().shingle_size, 1);
+        assert_eq!(f.config().shingle_size(), 1);
     }
 
     #[test]
     fn builder_applies_explicit_shingle_size() {
         let f = Forest::builder(2).shingle_size(4).build().unwrap();
-        assert_eq!(f.config().shingle_size, 4);
+        assert_eq!(f.config().shingle_size(), 4);
     }
 
     #[test]
@@ -474,7 +474,7 @@ mod tests {
 
         let look_ahead = 3;
         let out = f.extrapolate(look_ahead).unwrap();
-        assert_eq!(out.len(), look_ahead * f.config().input_dim);
+        assert_eq!(out.len(), look_ahead * f.config().input_dim());
         assert!(out.iter().all(|x| x.is_finite()));
     }
 
@@ -698,7 +698,7 @@ mod tests {
         // slot (last `input_dim` dimensions). With shingle_size > 1 the earlier
         // slots may still hold normal-range values and dilute the total.
         let attr = f.attribution(&anomaly).unwrap();
-        let input_dim = f.config().input_dim;
+        let input_dim = f.config().input_dim();
         let current_slot = &attr[attr.len() - input_dim..];
         let total_dir0: f64 = current_slot.iter().map(|a| a.below).sum();
         let total_dir1: f64 = current_slot.iter().map(|a| a.above).sum();

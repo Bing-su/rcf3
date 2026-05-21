@@ -181,13 +181,9 @@ impl Sampler {
     }
 
     /// All point indices currently in the sampler.
+    #[cfg(test)]
     pub fn points(&self) -> &[usize] {
         &self.point_indices[..self.size]
-    }
-
-    /// Maximum number of points this sampler can retain.
-    pub fn capacity(&self) -> usize {
-        self.capacity
     }
 }
 

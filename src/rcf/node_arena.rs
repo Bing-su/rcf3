@@ -44,10 +44,6 @@ impl Node {
             Node::Internal { mass, .. } => *mass,
         }
     }
-
-    pub fn is_leaf(&self) -> bool {
-        matches!(self, Node::Leaf { .. })
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -104,6 +100,7 @@ impl NodeArena {
     }
 
     /// Number of allocated slots (including freed ones).
+    #[cfg(test)]
     pub fn slot_count(&self) -> usize {
         self.nodes.len()
     }

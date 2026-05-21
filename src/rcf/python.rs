@@ -231,10 +231,10 @@ impl PyForest {
         let c = self.inner.config();
         format!(
             "Forest(input_dim={}, shingle_size={}, num_trees={}, capacity={}, entries_seen={})",
-            c.input_dim,
-            c.shingle_size,
-            c.num_trees,
-            c.capacity,
+            c.input_dim(),
+            c.shingle_size(),
+            c.num_trees(),
+            c.capacity(),
             self.inner.entries_seen(),
         )
     }
@@ -264,6 +264,6 @@ impl PyForest {
 
     fn __getnewargs__(&self) -> (usize,) {
         let c = self.inner.config();
-        (c.input_dim,)
+        (c.input_dim(),)
     }
 }

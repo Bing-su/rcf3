@@ -10,40 +10,40 @@ use crate::error::{RcfError, Result};
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RcfConfig {
     /// Number of base feature dimensions per observation (before shingling).
-    pub input_dim: usize,
+    input_dim: usize,
 
     /// Temporal window size. When `internal_shingling` is true the forest
     /// maintains a rolling buffer and the effective model dimension is
     /// `input_dim * shingle_size`.
     #[cfg_attr(feature = "serde", serde(default = "default_shingle_size"))]
-    pub shingle_size: usize,
+    shingle_size: usize,
 
     /// Maximum number of points stored per tree.
     #[cfg_attr(feature = "serde", serde(default = "default_capacity"))]
-    pub capacity: usize,
+    capacity: usize,
 
     /// Number of trees in the forest.
     #[cfg_attr(feature = "serde", serde(default = "default_num_trees"))]
-    pub num_trees: usize,
+    num_trees: usize,
 
     /// Exponential time-decay rate applied to sampling weights.
     /// `0.0` means "use the default `0.1 / capacity`".
     #[cfg_attr(feature = "serde", serde(default))]
-    pub time_decay: f64,
+    time_decay: f64,
 
     /// Minimum number of updates before `score` / `attribution` / etc. return
     /// non-trivial results.  `0` means "use `1 + capacity / 4`".
     #[cfg_attr(feature = "serde", serde(default))]
-    pub output_after: usize,
+    output_after: usize,
 
     /// When true the forest manages the shingle buffer automatically so callers
     /// pass one base observation at a time.
     #[cfg_attr(feature = "serde", serde(default = "default_internal_shingling"))]
-    pub internal_shingling: bool,
+    internal_shingling: bool,
 
     /// Controls how quickly the sampler fills to capacity during warm-up.
     #[cfg_attr(feature = "serde", serde(default = "default_initial_accept_fraction"))]
-    pub initial_accept_fraction: f64,
+    initial_accept_fraction: f64,
 }
 
 fn default_shingle_size() -> usize {
@@ -121,6 +121,46 @@ impl RcfConfig {
     pub fn with_initial_accept_fraction(mut self, v: f64) -> Self {
         self.initial_accept_fraction = v;
         self
+    }
+
+    /// Number of base feature dimensions per observation.
+    pub fn input_dim(&self) -> usize {
+        self.input_dim
+    }
+
+    /// Temporal window size.
+    pub fn shingle_size(&self) -> usize {
+        self.shingle_size
+    }
+
+    /// Maximum number of points stored per tree.
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    /// Number of trees in the forest.
+    pub fn num_trees(&self) -> usize {
+        self.num_trees
+    }
+
+    /// Configured exponential time-decay rate.
+    pub fn time_decay(&self) -> f64 {
+        self.time_decay
+    }
+
+    /// Configured minimum number of updates before non-trivial outputs.
+    pub fn output_after(&self) -> usize {
+        self.output_after
+    }
+
+    /// Whether the forest manages the shingle buffer automatically.
+    pub fn internal_shingling(&self) -> bool {
+        self.internal_shingling
+    }
+
+    /// Warm-up acceptance fraction for the sampler.
+    pub fn initial_accept_fraction(&self) -> f64 {
+        self.initial_accept_fraction
     }
 
     /// Effective time-decay (resolves the `0.0 → default` convention).
@@ -202,7 +242,7 @@ mod tests {
         #[test]
         fn setters_reflect_values(n in 1usize..=100) {
             let cfg = RcfConfig::new(1).with_num_trees(n);
-            prop_assert_eq!(cfg.num_trees, n);
+            prop_assert_eq!(cfg.num_trees(), n);
         }
     }
 

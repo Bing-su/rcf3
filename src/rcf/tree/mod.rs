@@ -119,14 +119,9 @@ impl RcfTree {
     // -----------------------------------------------------------------------
 
     /// Whether the tree currently has no root node.
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.root == NULL
-    }
-
-    /// Approximate heap size in bytes.
-    pub fn size_bytes(&self) -> usize {
-        self.arena.slot_count() * core::mem::size_of::<Option<Node>>()
-            + core::mem::size_of::<RcfTree>()
     }
 }
 
