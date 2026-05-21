@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use rcf3::Forest;
 
 fn build_forest(dim: usize, trees: usize, capacity: usize) -> Forest {
@@ -31,6 +31,57 @@ fn bench_update(c: &mut Criterion) {
             },
         );
     }
+
+    group.throughput(Throughput::Elements(20_000));
+    group.bench_function("steady_rejection_d8_t50_c256", |b| {
+        b.iter_batched(
+            || {
+                let mut f = Forest::builder(8)
+                    .shingle_size(1)
+                    .num_trees(50)
+                    .capacity(256)
+                    .time_decay(f64::MIN_POSITIVE)
+                    .seed(42)
+                    .build()
+                    .unwrap();
+                let p = vec![0.1_f32; 8];
+                for _ in 0..30_000 {
+                    f.update(&p).unwrap();
+                }
+                (f, p)
+            },
+            |(mut f, p)| {
+                for _ in 0..20_000 {
+                    f.update(&p).unwrap();
+                }
+            },
+            BatchSize::SmallInput,
+        );
+    });
+
+    group.throughput(Throughput::Elements(500));
+    group.bench_function("mixed_unique_d8_t50_c256", |b| {
+        b.iter_batched(
+            || build_forest(8, 50, 256),
+            |mut f| {
+                for i in 0..500 {
+                    let base = i as f32 * 0.001;
+                    let p = [
+                        base.sin(),
+                        base.cos(),
+                        (base * 0.5).sin(),
+                        (base * 0.5).cos(),
+                        (base * 1.7).sin(),
+                        (base * 1.7).cos(),
+                        (base * 2.3).sin(),
+                        (base * 2.3).cos(),
+                    ];
+                    f.update(&p).unwrap();
+                }
+            },
+            BatchSize::SmallInput,
+        );
+    });
     group.finish();
 }
 

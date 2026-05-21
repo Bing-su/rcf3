@@ -34,17 +34,10 @@ impl Forest {
             return Ok(());
         }
 
-        // Add point to the shared store.
-        let point_idx = if self.config.internal_shingling() {
-            self.point_store.add_current_shingled()?
-        } else {
-            self.point_store.add_validated(base)?
-        };
-
         let time_decay = self.config.effective_time_decay();
         let initial_frac = self.config.initial_accept_fraction();
 
-        let mut any_accepted = false;
+        self.update_scratch.clear();
 
         for t in 0..self.trees.len() {
             let u: f64 = self.rng.random::<f64>();
@@ -65,27 +58,37 @@ impl Forest {
                 self.rng.random::<f64>() < prob
             };
 
-            let result = self.samplers[t].accept(is_initial, weight, point_idx);
-
+            let result = self.samplers[t].accept(is_initial, weight);
             if result.accepted {
-                any_accepted = true;
-
-                // Evict old point if necessary.
-                if let Some(evicted_idx) = result.evicted {
-                    self.trees[t].delete(evicted_idx, &self.point_store)?;
-                    self.point_store.dec_ref(evicted_idx);
-                }
-
-                // Insert new point.
-                self.trees[t].insert(point_idx, &self.point_store)?;
-                self.point_store.inc_ref(point_idx);
-                self.samplers[t].add_point(point_idx);
+                self.update_scratch.push((t, result.evicted));
             }
         }
 
-        // If no tree accepted, dec ref immediately (point is unused).
-        if !any_accepted {
-            self.point_store.dec_ref(point_idx);
+        if self.update_scratch.is_empty() {
+            self.point_store.record_skipped_add();
+            return Ok(());
+        }
+
+        // Add point to the shared store only after at least one tree accepts it.
+        let point_idx = if self.config.internal_shingling() {
+            self.point_store.add_current_shingled()?
+        } else {
+            self.point_store.add_validated(base)?
+        };
+
+        for i in 0..self.update_scratch.len() {
+            let (t, evicted) = self.update_scratch[i];
+
+            // Evict old point if necessary.
+            if let Some(evicted_idx) = evicted {
+                self.trees[t].delete(evicted_idx, &self.point_store)?;
+                self.point_store.dec_ref(evicted_idx);
+            }
+
+            // Insert new point.
+            self.trees[t].insert(point_idx, &self.point_store)?;
+            self.point_store.inc_ref(point_idx);
+            self.samplers[t].add_point(point_idx);
         }
 
         Ok(())

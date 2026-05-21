@@ -205,6 +205,10 @@ impl PointStore {
         self.entries_seen += 1;
     }
 
+    pub(super) fn record_skipped_add(&mut self) {
+        self.entries_seen += 1;
+    }
+
     fn allocate_slot(&mut self) -> Result<usize> {
         if let Some(idx) = self.free_list.pop() {
             return Ok(idx);
@@ -373,6 +377,15 @@ mod tests {
         assert_eq!(idx, 0);
         assert_eq!(ps.get(idx), &[1.0f32, 2.0, 3.0, 4.0]);
         assert_eq!(ps.num_points(), 1);
+        assert_eq!(ps.entries_seen(), 1);
+    }
+
+    #[test]
+    fn skipped_add_preserves_logical_add_count_without_storing_point() {
+        let mut ps = PointStore::new(2, 1, 8, false);
+        ps.record_skipped_add();
+
+        assert_eq!(ps.num_points(), 0);
         assert_eq!(ps.entries_seen(), 1);
     }
 

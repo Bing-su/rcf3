@@ -27,9 +27,11 @@ pub(super) struct Sampler {
     weights: Vec<f64>,
     point_indices: Vec<usize>,
     size: usize,
-    /// State saved between `accept` and `add_point`.
+    /// Weight saved between `accept` and `add_point`.
     pending_weight: f64,
-    pending_point: usize,
+    /// Debug guard for the required `accept` -> `add_point` sequence.
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    pending_accept: bool,
 }
 
 /// Outcome of a call to [`Sampler::accept`].
@@ -49,7 +51,7 @@ impl Sampler {
             point_indices: vec![usize::MAX; capacity],
             size: 0,
             pending_weight: 0.0,
-            pending_point: usize::MAX,
+            pending_accept: false,
         }
     }
 
@@ -106,7 +108,7 @@ impl Sampler {
     // Public API
     // -----------------------------------------------------------------------
 
-    /// Try to accept a point with the given weight.
+    /// Try to accept a candidate point with the given weight.
     ///
     /// `is_initial` should be `true` during the warm-up phase when the sampler
     /// is below capacity; the caller controls this flag to implement the
@@ -115,18 +117,13 @@ impl Sampler {
     /// Returns an [`AcceptResult`] describing whether the point was accepted
     /// and whether an existing point was evicted.
     ///
-    /// If accepted, the caller must follow up with [`Self::add_point`] once the
-    /// actual point index is known (after possible de-duplication by the tree).
-    pub(super) fn accept(
-        &mut self,
-        is_initial: bool,
-        weight: f64,
-        point_idx: usize,
-    ) -> AcceptResult {
+    /// If accepted, the caller must follow up with [`Self::add_point`] once
+    /// the candidate has been materialized in the shared point store.
+    pub(super) fn accept(&mut self, is_initial: bool, weight: f64) -> AcceptResult {
         if is_initial || (self.size < self.capacity) {
             // Warm-up: always accept; no eviction yet.
             self.pending_weight = weight;
-            self.pending_point = point_idx;
+            self.pending_accept = true;
             return AcceptResult {
                 accepted: true,
                 evicted: None,
@@ -137,7 +134,7 @@ impl Sampler {
             // Replace the current maximum-weight point.
             let evicted_idx = self.point_indices[0];
             self.pending_weight = weight;
-            self.pending_point = point_idx;
+            self.pending_accept = true;
             AcceptResult {
                 accepted: true,
                 evicted: Some(evicted_idx),
@@ -156,7 +153,7 @@ impl Sampler {
     /// `tree_point_idx` is the index that the tree assigned to the new point
     /// (may differ from the original if it was merged with a duplicate leaf).
     pub(super) fn add_point(&mut self, tree_point_idx: usize) {
-        debug_assert!(self.pending_point != usize::MAX);
+        debug_assert!(self.pending_accept);
 
         if self.size < self.capacity {
             // Still filling: append.
@@ -172,7 +169,7 @@ impl Sampler {
             self.sift_down(0);
         }
 
-        self.pending_point = usize::MAX;
+        self.pending_accept = false;
     }
 
     /// Whether the sampler has reached capacity.
@@ -202,7 +199,17 @@ impl Sampler {
 /// avoid NaN/infinity.
 pub(super) fn reservoir_weight(u: f64, time_decay: f64, entries_seen: u64) -> f64 {
     let u = u.clamp(f64::EPSILON, 1.0 - f64::EPSILON);
-    libm::log(-libm::log(u)) - time_decay * entries_seen as f64
+    ln(-ln(u)) - time_decay * entries_seen as f64
+}
+
+#[cfg(feature = "std")]
+fn ln(x: f64) -> f64 {
+    x.ln()
+}
+
+#[cfg(not(feature = "std"))]
+fn ln(x: f64) -> f64 {
+    libm::log(x)
 }
 
 // ---------------------------------------------------------------------------
@@ -225,7 +232,7 @@ mod tests {
         let mut s = Sampler::new(capacity);
         for i in 0..capacity as u64 {
             let w = reservoir_weight(0.5, 0.0, i);
-            let result = s.accept(true, w, i as usize);
+            let result = s.accept(true, w);
             assert!(result.accepted);
             s.add_point(i as usize);
         }
@@ -241,13 +248,13 @@ mod tests {
         let mut s = Sampler::new(capacity);
         // Fill with ascending high weights so the max is deterministic.
         for i in 0..capacity {
-            s.accept(true, 100.0 + i as f64, i);
+            s.accept(true, 100.0 + i as f64);
             s.add_point(i);
         }
         assert!(s.is_full());
 
         // A new point with very low weight should evict the current max.
-        let result = s.accept(false, -100.0f64, capacity);
+        let result = s.accept(false, -100.0f64);
         assert!(result.accepted);
         assert!(result.evicted.is_some());
         s.add_point(capacity);
@@ -257,13 +264,13 @@ mod tests {
     fn sampler_rejects_higher_weight_when_full() {
         let mut s = Sampler::new(2);
         let w = -10.0f64;
-        s.accept(true, w, 0);
+        s.accept(true, w);
         s.add_point(0);
-        s.accept(true, w - 1.0, 1);
+        s.accept(true, w - 1.0);
         s.add_point(1);
 
         // A point with weight > current max is rejected.
-        let result = s.accept(false, 999.0f64, 2);
+        let result = s.accept(false, 999.0f64);
         assert!(!result.accepted);
     }
 
@@ -279,7 +286,7 @@ mod tests {
                 let mut s = Sampler::new(capacity);
                 for i in 0..n as u64 {
                     let w = reservoir_weight(0.5, 0.0, i);
-                    s.accept(true, w, i as usize);
+                    s.accept(true, w);
                     s.add_point(i as usize);
                 }
                 let frac = s.fill_fraction();
@@ -291,7 +298,7 @@ mod tests {
                 let mut s = Sampler::new(capacity);
                 for i in 0..n_adds as u64 {
                     let w = reservoir_weight(0.5, 0.0, i);
-                    s.accept(true, w, i as usize);
+                    s.accept(true, w);
                     s.add_point(i as usize);
                 }
                 prop_assert!(

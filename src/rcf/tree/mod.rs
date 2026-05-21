@@ -1,3 +1,6 @@
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
 use rand::prelude::*;
 use rand::rngs::Xoshiro256PlusPlus;
 #[cfg(feature = "serde")]
@@ -27,6 +30,8 @@ pub(super) struct RcfTree {
     arena: NodeArena,
     rng: Xoshiro256PlusPlus,
     dims: usize,
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    path_scratch: Vec<(usize, usize)>,
 }
 
 fn split_children(query_value: f32, cut_val: f32, left: usize, right: usize) -> (usize, usize) {
@@ -112,6 +117,7 @@ impl RcfTree {
             arena: NodeArena::new(2 * capacity + 4),
             rng: Xoshiro256PlusPlus::seed_from_u64(seed),
             dims,
+            path_scratch: Vec::new(),
         }
     }
     // -----------------------------------------------------------------------
@@ -129,11 +135,24 @@ impl RcfTree {
 // Utility: compute bounding box of a sub-tree
 // ---------------------------------------------------------------------------
 
-/// Build the bounding box for the entire sub-tree rooted at `node_id`.
-fn subtree_bbox(arena: &NodeArena, node_id: usize, point_store: &PointStore) -> BoundingBox {
+/// Build an owned bounding box for the entire sub-tree rooted at `node_id`.
+fn subtree_bbox_owned(arena: &NodeArena, node_id: usize, point_store: &PointStore) -> BoundingBox {
     match arena.get(node_id) {
         Node::Leaf { point_idx, .. } => BoundingBox::from_point(point_store.get(*point_idx)),
         Node::Internal { bbox, .. } => bbox.clone(),
+    }
+}
+
+/// Merge the bounding box for `node_id` into `target` without cloning leaf boxes.
+fn merge_subtree_bbox_into(
+    target: &mut BoundingBox,
+    arena: &NodeArena,
+    node_id: usize,
+    point_store: &PointStore,
+) {
+    match arena.get(node_id) {
+        Node::Leaf { point_idx, .. } => target.merge_point(point_store.get(*point_idx)),
+        Node::Internal { bbox, .. } => target.merge(bbox),
     }
 }
 // ---------------------------------------------------------------------------

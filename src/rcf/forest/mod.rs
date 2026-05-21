@@ -100,6 +100,8 @@ pub struct Forest {
     point_store: PointStore,
     entries_seen: u64,
     rng: Xoshiro256PlusPlus,
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    update_scratch: Vec<(usize, Option<usize>)>,
 }
 
 impl From<NeighborResult> for (f64, Vec<f32>, f64) {
@@ -142,6 +144,7 @@ impl Forest {
             point_store,
             entries_seen: 0,
             rng: Xoshiro256PlusPlus::seed_from_u64(rng.next_u64()),
+            update_scratch: Vec::with_capacity(num_trees),
         })
     }
 
@@ -354,7 +357,7 @@ mod tests {
         f.update(&[2.0]).unwrap();
 
         let prepared = f.prepare_query(&[9.0]).unwrap();
-        assert_eq!(prepared, vec![0.0, 1.0, 9.0]);
+        assert_eq!(prepared.as_ref(), &[0.0, 1.0, 9.0]);
     }
 
     #[test]
@@ -433,6 +436,23 @@ mod tests {
         let score_after = f2.score(query).unwrap();
 
         assert_abs_diff_eq!(score_before, score_after, epsilon = 1e-10);
+    }
+
+    #[test]
+    #[cfg(all(feature = "serde", feature = "std"))]
+    fn serde_omits_internal_scratch_buffers() {
+        let mut f = make_forest();
+        for i in 0..100 {
+            f.update(&[i as f32 * 0.01, 0.5]).unwrap();
+        }
+
+        let json = f.to_json().unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert!(value.get("update_scratch").is_none());
+        for tree in value["trees"].as_array().unwrap() {
+            assert!(tree.get("path_scratch").is_none());
+        }
     }
 
     #[test]

@@ -100,7 +100,7 @@ impl NodeArena {
     }
 
     /// Number of allocated slots (including freed ones).
-    #[cfg(test)]
+    #[cfg(all(test, feature = "std"))]
     fn slot_count(&self) -> usize {
         self.nodes.len()
     }

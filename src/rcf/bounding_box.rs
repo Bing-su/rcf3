@@ -132,6 +132,12 @@ impl BoundingBox {
         self.range_sum = range_sum(&self.min, &self.max);
     }
 
+    /// Expand this box to also contain `point`.
+    pub(super) fn merge_point(&mut self, point: &[f32]) {
+        merge_bounds_in_place(&mut self.min, &mut self.max, point, point);
+        self.range_sum = range_sum(&self.min, &self.max);
+    }
+
     /// Probability that a random cut separating `point` from this box would
     /// be made at some dimension when cutting on the merged (box ∪ point) box.
     ///
@@ -168,11 +174,6 @@ impl BoundingBox {
     #[cfg(test)]
     fn range_sum(&self) -> f64 {
         self.range_sum
-    }
-
-    pub(super) fn merge_with(mut self, other: &BoundingBox) -> Self {
-        self.merge(other);
-        self
     }
 }
 
