@@ -204,6 +204,18 @@ impl RcfConfig {
         if self.num_trees == 0 {
             return Err(RcfError::InvalidArgument("num_trees must be > 0".into()));
         }
+        if !self.time_decay.is_finite() || self.time_decay < 0.0 {
+            return Err(RcfError::InvalidArgument(
+                "time_decay must be finite and >= 0.0".into(),
+            ));
+        }
+        if !self.initial_accept_fraction.is_finite()
+            || !(0.0..=1.0).contains(&self.initial_accept_fraction)
+        {
+            return Err(RcfError::InvalidArgument(
+                "initial_accept_fraction must be finite and in [0.0, 1.0]".into(),
+            ));
+        }
         Ok(())
     }
 }
@@ -311,6 +323,28 @@ mod tests {
     #[case::zero_shingle_size(RcfConfig::new(1).with_shingle_size(0), "shingle_size")]
     #[case::zero_capacity(RcfConfig::new(1).with_capacity(0), "capacity")]
     #[case::zero_num_trees(RcfConfig::new(1).with_num_trees(0), "num_trees")]
+    #[case::negative_time_decay(RcfConfig::new(1).with_time_decay(-0.1), "time_decay")]
+    #[case::nan_time_decay(RcfConfig::new(1).with_time_decay(f64::NAN), "time_decay")]
+    #[case::infinite_time_decay(
+        RcfConfig::new(1).with_time_decay(f64::INFINITY),
+        "time_decay"
+    )]
+    #[case::negative_initial_accept_fraction(
+        RcfConfig::new(1).with_initial_accept_fraction(-0.1),
+        "initial_accept_fraction"
+    )]
+    #[case::nan_initial_accept_fraction(
+        RcfConfig::new(1).with_initial_accept_fraction(f64::NAN),
+        "initial_accept_fraction"
+    )]
+    #[case::infinite_initial_accept_fraction(
+        RcfConfig::new(1).with_initial_accept_fraction(f64::INFINITY),
+        "initial_accept_fraction"
+    )]
+    #[case::too_large_initial_accept_fraction(
+        RcfConfig::new(1).with_initial_accept_fraction(1.1),
+        "initial_accept_fraction"
+    )]
     fn validate_rejects_invalid_core_fields(
         #[case] config: RcfConfig,
         #[case] expected_message: &str,
@@ -321,5 +355,20 @@ mod tests {
             matches!(err, RcfError::InvalidArgument(ref msg) if msg.contains(expected_message)),
             "unexpected error variant: {err:?}"
         );
+    }
+
+    #[rstest]
+    #[case::zero_time_decay_and_zero_initial_fraction(
+        RcfConfig::new(1)
+            .with_time_decay(0.0)
+            .with_initial_accept_fraction(0.0)
+    )]
+    #[case::positive_time_decay_and_full_initial_fraction(
+        RcfConfig::new(1)
+            .with_time_decay(0.1)
+            .with_initial_accept_fraction(1.0)
+    )]
+    fn validate_accepts_float_boundaries(#[case] config: RcfConfig) {
+        config.validate().unwrap();
     }
 }
