@@ -63,6 +63,29 @@ fn default_initial_accept_fraction() -> f64 {
     0.125
 }
 
+/// Initial node-arena capacity for a tree with `capacity` sampled points.
+///
+/// Returns `None` when the construction formula would overflow `usize`.
+pub(in crate::rcf) fn checked_tree_arena_capacity(capacity: usize) -> Option<usize> {
+    capacity.checked_mul(2).and_then(|v| v.checked_add(4))
+}
+
+/// Initial shared point-store capacity for a forest.
+///
+/// The store is sized for the lazy update path's shared rows while keeping a
+/// small lower bound for single-tree forests. Returns `None` when the
+/// construction formula would overflow `usize`.
+pub(in crate::rcf) fn checked_point_store_capacity(
+    capacity: usize,
+    num_trees: usize,
+) -> Option<usize> {
+    let shared_capacity = capacity
+        .checked_mul(num_trees)
+        .and_then(|v| v.checked_add(1))?;
+    let minimum_capacity = capacity.checked_mul(2)?;
+    Some(shared_capacity.max(minimum_capacity))
+}
+
 impl RcfConfig {
     /// Create a config with defaults for all optional parameters.
     pub fn new(input_dim: usize) -> Self {
@@ -194,6 +217,11 @@ impl RcfConfig {
         self.input_dim * self.shingle_size
     }
 
+    pub(in crate::rcf) fn point_store_capacity(&self) -> usize {
+        checked_point_store_capacity(self.capacity, self.num_trees)
+            .expect("validated config must have a valid point-store capacity")
+    }
+
     pub(in crate::rcf) fn validate(&self) -> Result<()> {
         if self.input_dim == 0 {
             return Err(RcfError::InvalidArgument("input_dim must be > 0".into()));
@@ -211,6 +239,16 @@ impl RcfConfig {
         }
         if self.num_trees == 0 {
             return Err(RcfError::InvalidArgument("num_trees must be > 0".into()));
+        }
+        if checked_tree_arena_capacity(self.capacity).is_none() {
+            return Err(RcfError::InvalidArgument(
+                "2 * capacity + 4 overflows usize".into(),
+            ));
+        }
+        if checked_point_store_capacity(self.capacity, self.num_trees).is_none() {
+            return Err(RcfError::InvalidArgument(
+                "capacity * num_trees + 1 overflows usize".into(),
+            ));
         }
         if !self.time_decay.is_finite() || self.time_decay < 0.0 {
             return Err(RcfError::InvalidArgument(
@@ -269,6 +307,19 @@ mod tests {
     #[test]
     fn validate_accepts_default_config() {
         RcfConfig::new(1).validate().unwrap();
+    }
+
+    #[rstest]
+    #[case::tree_arena_3(checked_tree_arena_capacity(3), Some(10))]
+    #[case::tree_arena_max(checked_tree_arena_capacity(usize::MAX), None)]
+    #[case::point_store_3_4(checked_point_store_capacity(3, 4), Some(13))]
+    #[case::point_store_3_1(checked_point_store_capacity(3, 1), Some(6))]
+    #[case::point_store_max(checked_point_store_capacity(9, usize::MAX), None)]
+    fn internal_capacity_helpers_match_construction_formulas(
+        #[case] actual: Option<usize>,
+        #[case] expected: Option<usize>,
+    ) {
+        assert_eq!(actual, expected);
     }
 
     #[test]
@@ -331,6 +382,16 @@ mod tests {
     #[case::zero_shingle_size(RcfConfig::new(1).with_shingle_size(0), "shingle_size")]
     #[case::zero_capacity(RcfConfig::new(1).with_capacity(0), "capacity")]
     #[case::zero_num_trees(RcfConfig::new(1).with_num_trees(0), "num_trees")]
+    #[case::tree_arena_capacity_overflow(
+        RcfConfig::new(1).with_capacity(usize::MAX / 2),
+        "2 * capacity + 4"
+    )]
+    #[case::point_store_capacity_overflow(
+        RcfConfig::new(1)
+            .with_capacity(2)
+            .with_num_trees(usize::MAX / 2 + 1),
+        "capacity * num_trees + 1"
+    )]
     #[case::negative_time_decay(RcfConfig::new(1).with_time_decay(-0.1), "time_decay")]
     #[case::nan_time_decay(RcfConfig::new(1).with_time_decay(f64::NAN), "time_decay")]
     #[case::infinite_time_decay(

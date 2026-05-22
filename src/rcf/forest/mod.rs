@@ -130,7 +130,7 @@ impl Forest {
         let capacity = config.capacity();
         let num_trees = config.num_trees();
 
-        let store_capacity = (capacity * num_trees + 1).max(2 * capacity);
+        let store_capacity = config.point_store_capacity();
 
         let trees: Vec<RcfTree> = (0..num_trees)
             .map(|_| RcfTree::new(dim, capacity, rng.next_u64()))

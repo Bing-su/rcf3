@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     bounding_box::BoundingBox,
+    config::checked_tree_arena_capacity,
     forest::NeighborCandidate,
     node_arena::{NULL, Node, NodeArena},
     point_store::PointStore,
@@ -120,7 +121,10 @@ impl RcfTree {
         RcfTree {
             root: NULL,
             tree_mass: 0,
-            arena: NodeArena::new(2 * capacity + 4),
+            arena: NodeArena::new(
+                checked_tree_arena_capacity(capacity)
+                    .expect("validated config must have a valid tree-arena capacity"),
+            ),
             rng: Xoshiro256PlusPlus::seed_from_u64(seed),
             dims,
             path_scratch: Vec::new(),
