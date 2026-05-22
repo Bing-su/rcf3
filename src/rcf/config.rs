@@ -26,8 +26,8 @@ pub struct RcfConfig {
     #[cfg_attr(feature = "serde", serde(default = "default_num_trees"))]
     num_trees: usize,
 
-    /// Exponential time-decay rate applied to sampling weights.
-    /// `0.0` means "use the default `0.1 / capacity`".
+    /// Finite non-negative exponential time-decay rate applied to sampling
+    /// weights. `0.0` means "use the default `0.1 / capacity`".
     #[cfg_attr(feature = "serde", serde(default))]
     time_decay: f64,
 
@@ -41,7 +41,8 @@ pub struct RcfConfig {
     #[cfg_attr(feature = "serde", serde(default = "default_internal_shingling"))]
     internal_shingling: bool,
 
-    /// Controls how quickly the sampler fills to capacity during warm-up.
+    /// Finite value in `[0.0, 1.0]` controlling how often each tree sampler
+    /// accepts points while it is below capacity.
     #[cfg_attr(feature = "serde", serde(default = "default_initial_accept_fraction"))]
     initial_accept_fraction: f64,
 }
@@ -95,7 +96,8 @@ impl RcfConfig {
         self
     }
 
-    /// Set the exponential time-decay rate for sampling weights.
+    /// Set the finite non-negative exponential time-decay rate for sampling
+    /// weights.
     ///
     /// Use `0.0` to keep the default behavior (`0.1 / capacity`).
     pub fn with_time_decay(mut self, v: f64) -> Self {
@@ -117,7 +119,10 @@ impl RcfConfig {
         self
     }
 
-    /// Set the warm-up acceptance fraction for the sampler.
+    /// Set the finite warm-up acceptance fraction for the sampler.
+    ///
+    /// Must be in `[0.0, 1.0]`; lower values throttle acceptance more while
+    /// each tree sampler is below capacity.
     pub fn with_initial_accept_fraction(mut self, v: f64) -> Self {
         self.initial_accept_fraction = v;
         self
@@ -143,7 +148,7 @@ impl RcfConfig {
         self.num_trees
     }
 
-    /// Configured exponential time-decay rate.
+    /// Configured finite non-negative exponential time-decay rate.
     pub fn time_decay(&self) -> f64 {
         self.time_decay
     }
@@ -158,7 +163,10 @@ impl RcfConfig {
         self.internal_shingling
     }
 
-    /// Warm-up acceptance fraction for the sampler.
+    /// Configured warm-up acceptance fraction for the sampler.
+    ///
+    /// Finite value in `[0.0, 1.0]`; lower values throttle acceptance more
+    /// while each tree sampler is below capacity.
     pub fn initial_accept_fraction(&self) -> f64 {
         self.initial_accept_fraction
     }

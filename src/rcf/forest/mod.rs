@@ -276,7 +276,10 @@ impl ForestBuilder {
         self
     }
 
-    /// Set the exponential time-decay rate for sampling weights.
+    /// Set the finite non-negative exponential time-decay rate for sampling
+    /// weights.
+    ///
+    /// Use `0.0` to keep the default behavior (`0.1 / capacity`).
     pub fn time_decay(mut self, d: f64) -> Self {
         self.config = self.config.with_time_decay(d);
         self
@@ -294,7 +297,10 @@ impl ForestBuilder {
         self
     }
 
-    /// Set the warm-up acceptance fraction for the sampler.
+    /// Set the finite warm-up acceptance fraction for the sampler.
+    ///
+    /// Must be in `[0.0, 1.0]`; lower values throttle acceptance more while
+    /// each tree sampler is below capacity.
     pub fn initial_accept_fraction(mut self, f: f64) -> Self {
         self.config = self.config.with_initial_accept_fraction(f);
         self
