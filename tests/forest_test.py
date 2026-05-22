@@ -36,6 +36,7 @@ def make_forest(  # noqa: PLR0913
     num_trees: int = DEFAULT_NUM_TREES,
     capacity: int = DEFAULT_CAPACITY,
     output_after: int = DEFAULT_OUTPUT_AFTER,
+    initial_accept_fraction: float = 0.125,
 ) -> Forest:
     """Create a Forest test fixture with deterministic defaults."""
     return Forest(
@@ -45,6 +46,7 @@ def make_forest(  # noqa: PLR0913
         capacity=capacity,
         output_after=output_after,
         internal_shingling=internal_shingling,
+        initial_accept_fraction=initial_accept_fraction,
         seed=seed,
     )
 
@@ -390,6 +392,23 @@ def test_dimension_mismatch_raises_value_error(
 
     with pytest.raises(ValueError, match="dimension mismatch"):
         forest.update(bad_point)
+
+
+def test_initial_accept_fraction_constructor_argument_is_accepted() -> None:
+    forest = make_forest(input_dim=2, seed=17, initial_accept_fraction=1.0)
+
+    forest.update([0.1, 0.2])
+
+    assert forest.entries_seen() == 1
+
+
+@pytest.mark.parametrize(
+    "value",
+    [-0.1, 1.1, math.nan, math.inf, -math.inf],
+)
+def test_invalid_initial_accept_fraction_raises_value_error(value: float) -> None:
+    with pytest.raises(ValueError, match="initial_accept_fraction"):
+        make_forest(input_dim=2, seed=17, initial_accept_fraction=value)
 
 
 def test_impute_not_ready_raises_runtime_error() -> None:

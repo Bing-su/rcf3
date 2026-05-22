@@ -56,12 +56,16 @@ impl From<Attribution> for PyAttribution {
 /// capacity : int, optional
 ///     Maximum samples per tree (default 256).
 /// time_decay : float, optional
-///     Exponential decay for sample weights (default 0 = auto).
+///     Finite non-negative exponential decay for sample weights
+///     (default 0 = auto).
 /// output_after : int, optional
 ///     Minimum observations before scoring starts (default 0 = auto).
 /// internal_shingling : bool, optional
 ///     When True, pass one base observation at a time and the forest
 ///     maintains the rolling shingle buffer (default True).
+/// initial_accept_fraction : float, optional
+///     Finite value in [0.0, 1.0] controlling warm-up sampler acceptance
+///     before capacity (default 0.125).
 /// seed : int, optional
 ///     Random seed for deterministic forests.
 #[pyclass(name = "Forest", module = "rcf3.rcf3", skip_from_py_object)]
@@ -81,6 +85,7 @@ impl PyForest {
         time_decay = 0.0,
         output_after = 0,
         internal_shingling = true,
+        initial_accept_fraction = 0.125,
         seed = None
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -92,6 +97,7 @@ impl PyForest {
         time_decay: f64,
         output_after: usize,
         internal_shingling: bool,
+        initial_accept_fraction: f64,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         let mut b = Forest::builder(input_dim)
@@ -100,7 +106,8 @@ impl PyForest {
             .capacity(capacity)
             .time_decay(time_decay)
             .output_after(output_after)
-            .internal_shingling(internal_shingling);
+            .internal_shingling(internal_shingling)
+            .initial_accept_fraction(initial_accept_fraction);
         if let Some(s) = seed {
             b = b.seed(s);
         }

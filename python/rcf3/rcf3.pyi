@@ -38,12 +38,17 @@ class Forest:
     capacity : int, optional
         Maximum samples per tree (default 256).
     time_decay : float, optional
-        Exponential decay for sample weights (default 0 = auto).
+        Finite non-negative exponential decay for sample weights
+        (default 0 = auto, computed as 0.1 / capacity).
     output_after : int, optional
-        Minimum observations before scoring starts (default 0 = auto).
+        Minimum observations before scoring starts
+        (default 0 = auto, computed as 1 + capacity // 4).
     internal_shingling : bool, optional
         When True, pass one base observation at a time and the forest
         maintains the rolling shingle buffer (default True).
+    initial_accept_fraction : float, optional
+        Finite value in [0.0, 1.0] controlling warm-up sampler acceptance
+        before capacity (default 0.125).
     seed : int, optional
         Random seed for deterministic forests.
     """
@@ -57,6 +62,7 @@ class Forest:
         time_decay: SupportsFloat = 0.0,
         output_after: SupportsInt = 0,
         internal_shingling: bool = True,
+        initial_accept_fraction: SupportsFloat = 0.125,
         seed: SupportsInt | None = None,
     ) -> Self: ...
     def update(self, /, point: Sequence[SupportsFloat]) -> None:
