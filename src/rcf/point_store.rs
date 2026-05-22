@@ -27,6 +27,13 @@ fn l1_distance_slices_ignore_missing(query: &[f32], stored: &[f32], missing: &[b
         .sum()
 }
 
+fn checked_grown_capacity(capacity: usize) -> Result<usize> {
+    capacity
+        .checked_mul(2)
+        .and_then(|v| v.checked_add(4))
+        .ok_or_else(|| RcfError::Overflow("point store capacity growth overflows usize".into()))
+}
+
 // ---------------------------------------------------------------------------
 // PointStore
 // ---------------------------------------------------------------------------
@@ -230,7 +237,7 @@ impl PointStore {
             return Ok(idx);
         }
         // Grow the store: allocate a larger matrix and copy the existing rows.
-        let new_cap = self.capacity * 2 + 4;
+        let new_cap = checked_grown_capacity(self.capacity)?;
         let mut new_store = Array2::zeros((new_cap, self.dim));
         new_store
             .slice_mut(s![..self.capacity, ..])
@@ -398,6 +405,26 @@ mod tests {
         assert_eq!(ps.get(idx), &[1.0f32, 2.0, 3.0, 4.0]);
         assert_eq!(ps.num_points(), 1);
         assert_eq!(ps.entries_seen(), 1);
+    }
+
+    #[rstest]
+    #[case::small_capacity(8, 20)]
+    #[case::zero_capacity(0, 4)]
+    fn checked_grown_capacity_matches_growth_formula(
+        #[case] capacity: usize,
+        #[case] expected: usize,
+    ) {
+        assert_eq!(checked_grown_capacity(capacity).unwrap(), expected);
+    }
+
+    #[test]
+    fn checked_grown_capacity_rejects_overflow() {
+        let err = checked_grown_capacity(usize::MAX).unwrap_err();
+
+        assert!(
+            matches!(err, RcfError::Overflow(ref msg) if msg.contains("capacity growth")),
+            "unexpected error variant: {err:?}"
+        );
     }
 
     #[test]

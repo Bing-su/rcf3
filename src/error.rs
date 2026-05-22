@@ -13,6 +13,8 @@ pub enum RcfError {
     NotReady,
     #[error("index out of bounds: {0}")]
     IndexOutOfBounds(usize),
+    #[error("overflow: {0}")]
+    Overflow(String),
     #[error("operation on empty tree")]
     EmptyTree,
     #[error("I/O error: {0}")]
