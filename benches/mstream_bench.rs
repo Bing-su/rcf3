@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use rcf3::MStream;
 
 #[derive(Clone, Copy)]
@@ -10,6 +10,12 @@ struct MStreamCase {
     rows: usize,
     buckets: usize,
     events: usize,
+}
+
+#[derive(Clone, Copy)]
+enum TimestampMode {
+    Same(u64),
+    Advancing,
 }
 
 impl MStreamCase {
@@ -93,27 +99,30 @@ fn build_mstream_for_case(case: MStreamCase) -> MStream {
     )
 }
 
-fn run_same_timestamp_case(case: MStreamCase) {
-    let mut detector = build_mstream_for_case(case);
+fn build_case_input(case: MStreamCase) -> (MStream, Vec<f32>, Vec<i64>) {
+    let detector = build_mstream_for_case(case);
     let numeric = vec![0.5_f32; case.numeric_dim];
     let categorical = vec![1_i64; case.categorical_dim];
+    (detector, numeric, categorical)
+}
 
-    for _ in 0..case.events {
-        let _ = detector
-            .update_and_score(&numeric, &categorical, 1)
-            .unwrap();
+fn timestamp_for(mode: TimestampMode, offset: usize) -> u64 {
+    match mode {
+        TimestampMode::Same(ts) => ts,
+        TimestampMode::Advancing => offset as u64 + 1,
     }
 }
 
-fn run_advancing_timestamp_case(case: MStreamCase) {
-    let mut detector = build_mstream_for_case(case);
-    let numeric = vec![0.5_f32; case.numeric_dim];
-    let categorical = vec![1_i64; case.categorical_dim];
-
-    for ts in 1..=case.events as u64 {
-        let _ = detector
-            .update_and_score(&numeric, &categorical, ts)
-            .unwrap();
+fn run_update_and_score_case(
+    detector: &mut MStream,
+    numeric: &[f32],
+    categorical: &[i64],
+    events: usize,
+    timestamp_mode: TimestampMode,
+) {
+    for offset in 0..events {
+        let ts = timestamp_for(timestamp_mode, offset);
+        let _ = detector.update_and_score(numeric, categorical, ts).unwrap();
     }
 }
 
@@ -121,7 +130,7 @@ fn bench_update_and_score_cases(
     c: &mut Criterion,
     group_name: &str,
     cases: &[MStreamCase],
-    run_case: fn(MStreamCase),
+    timestamp_mode: TimestampMode,
 ) {
     let mut group = c.benchmark_group(group_name);
     for &case in cases {
@@ -130,7 +139,19 @@ fn bench_update_and_score_cases(
             BenchmarkId::from_parameter(case.label()),
             &case,
             |b, &case| {
-                b.iter(|| run_case(case));
+                b.iter_batched_ref(
+                    || build_case_input(case),
+                    |(detector, numeric, categorical)| {
+                        run_update_and_score_case(
+                            detector,
+                            numeric,
+                            categorical,
+                            case.events,
+                            timestamp_mode,
+                        );
+                    },
+                    BatchSize::SmallInput,
+                );
             },
         );
     }
@@ -142,7 +163,7 @@ fn bench_update_and_score_same_timestamp(c: &mut Criterion) {
         c,
         "mstream_update_and_score_same_ts",
         SAME_TIMESTAMP_CASES,
-        run_same_timestamp_case,
+        TimestampMode::Same(1),
     );
 }
 
@@ -151,7 +172,7 @@ fn bench_update_and_score_advancing_timestamp(c: &mut Criterion) {
         c,
         "mstream_update_and_score_advancing_ts",
         ADVANCING_TIMESTAMP_CASES,
-        run_advancing_timestamp_case,
+        TimestampMode::Advancing,
     );
 }
 

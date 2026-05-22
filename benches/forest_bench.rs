@@ -6,7 +6,7 @@ use rcf3::Forest;
 const UPDATE_EVENTS: usize = 20_000;
 const STEADY_WARMUP_EVENTS: usize = 30_000;
 const MIXED_UNIQUE_EVENTS: usize = 500;
-const READY_EVENTS: usize = 20_000;
+const READY_FOREST_EVENTS: usize = UPDATE_EVENTS;
 
 #[derive(Clone, Copy)]
 struct ForestUpdateCase {
@@ -86,7 +86,7 @@ fn build_ready_forest(
 ) -> (Forest, Vec<f32>) {
     let mut forest = build_forest(dim, trees, capacity);
     let point = vec![point_value; dim];
-    update_repeatedly(&mut forest, &point, READY_EVENTS);
+    update_repeatedly(&mut forest, &point, READY_FOREST_EVENTS);
     (forest, point)
 }
 
@@ -97,10 +97,14 @@ fn build_steady_rejection_input() -> (Forest, Vec<f32>) {
     (forest, point)
 }
 
-fn run_constant_updates(case: ForestUpdateCase) {
-    let mut forest = build_forest(case.dim, case.trees, case.capacity);
+fn build_update_input(case: ForestUpdateCase) -> (Forest, Vec<f32>) {
+    let forest = build_forest(case.dim, case.trees, case.capacity);
     let point = vec![0.1_f32; case.dim];
-    update_repeatedly(&mut forest, &point, case.events);
+    (forest, point)
+}
+
+fn mixed_unique_points() -> Vec<[f32; 8]> {
+    (0..MIXED_UNIQUE_EVENTS).map(mixed_unique_point).collect()
 }
 
 fn bench_update(c: &mut Criterion) {
@@ -111,30 +115,36 @@ fn bench_update(c: &mut Criterion) {
             BenchmarkId::from_parameter(case.label()),
             &case,
             |b, &case| {
-                b.iter(|| run_constant_updates(case));
+                b.iter_batched_ref(
+                    || build_update_input(case),
+                    |(forest, point)| {
+                        update_repeatedly(forest, point, case.events);
+                    },
+                    BatchSize::SmallInput,
+                );
             },
         );
     }
 
     group.throughput(Throughput::Elements(UPDATE_EVENTS as u64));
     group.bench_function("steady_rejection_d8_t50_c256", |b| {
-        b.iter_batched(
+        b.iter_batched_ref(
             build_steady_rejection_input,
-            |(mut forest, point)| {
-                update_repeatedly(&mut forest, &point, UPDATE_EVENTS);
+            |(forest, point)| {
+                update_repeatedly(forest, point, UPDATE_EVENTS);
             },
             BatchSize::SmallInput,
         );
     });
 
     group.throughput(Throughput::Elements(MIXED_UNIQUE_EVENTS as u64));
+    let points = mixed_unique_points();
     group.bench_function("mixed_unique_d8_t50_c256", |b| {
-        b.iter_batched(
+        b.iter_batched_ref(
             || build_forest(8, 50, 256),
-            |mut f| {
-                for i in 0..MIXED_UNIQUE_EVENTS {
-                    let p = mixed_unique_point(i);
-                    f.update(&p).unwrap();
+            |forest| {
+                for point in &points {
+                    forest.update(point).unwrap();
                 }
             },
             BatchSize::SmallInput,
