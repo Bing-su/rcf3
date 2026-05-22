@@ -1,3 +1,5 @@
+use crate::math;
+
 /// How anomaly scores are computed and normalised.
 ///
 /// This stays crate-internal so low-level scoring choices do not become part
@@ -19,7 +21,7 @@ pub(in crate::rcf) struct ScoreMode {
 ///
 /// `x` = depth, `y` = leaf mass.
 fn score_seen(x: usize, y: usize) -> f64 {
-    1.0 / (x as f64 + log2(1.0 + y as f64))
+    1.0 / (x as f64 + math::log2(1.0 + y as f64))
 }
 
 /// Standard isolation score for a point *not* already in the tree.
@@ -29,17 +31,7 @@ fn score_unseen(x: usize, _y: usize) -> f64 {
 
 /// Standard normalizer: multiplies by log₂(1 + tree_mass).
 fn normalizer(x: f64, y: usize) -> f64 {
-    x * log2(1.0 + y as f64)
-}
-
-#[cfg(feature = "std")]
-fn log2(x: f64) -> f64 {
-    x.log2()
-}
-
-#[cfg(not(feature = "std"))]
-fn log2(x: f64) -> f64 {
-    libm::log2(x)
+    x * math::log2(1.0 + y as f64)
 }
 
 /// Damping applied when the query is a duplicate of a leaf point.

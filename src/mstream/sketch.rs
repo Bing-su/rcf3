@@ -6,6 +6,7 @@ use rand::rngs::Xoshiro256PlusPlus;
 use rand_distr::StandardNormal;
 
 use crate::error::{RcfError, Result};
+use crate::math;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -86,7 +87,7 @@ impl NumericSketch {
 
     fn hash(&self, value: f64) -> usize {
         let upper = (self.num_buckets - 1) as f64;
-        let scaled = libm::floor(value * self.num_buckets as f64);
+        let scaled = math::floor(value * self.num_buckets as f64);
         scaled.clamp(0.0, upper) as usize
     }
 

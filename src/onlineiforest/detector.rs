@@ -11,6 +11,7 @@ use rand::rngs::Xoshiro256PlusPlus;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{RcfError, Result};
+use crate::math;
 
 use super::config::OnlineIForestConfig;
 use super::tree::OnlineITree;
@@ -231,7 +232,7 @@ impl OnlineIForest {
             .map(|tree| tree.point_depth(point, self.config.max_leaf_samples()))
             .sum::<f64>()
             / self.trees.len() as f64;
-        libm::pow(2.0, -average_depth / self.config.normalization_factor())
+        math::powf(2.0, -average_depth / self.config.normalization_factor())
     }
 
     #[cfg(test)]
