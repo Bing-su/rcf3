@@ -1,5 +1,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::string::String;
+#[cfg(all(not(feature = "std"), feature = "serde"))]
+use alloc::string::ToString;
 
 use thiserror::Error;
 
@@ -21,6 +23,16 @@ pub enum RcfError {
     EmptyTree,
     #[error("I/O error: {0}")]
     Io(String),
+}
+
+#[cfg(feature = "serde")]
+impl RcfError {
+    pub(crate) fn invalid_serialized_config(error: Self) -> Self {
+        match error {
+            Self::InvalidArgument(msg) => Self::InvalidSerializedConfig(msg),
+            other => Self::InvalidSerializedConfig(other.to_string()),
+        }
+    }
 }
 
 pub type Result<T> = core::result::Result<T, RcfError>;

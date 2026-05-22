@@ -210,7 +210,7 @@ impl Forest {
         forest
             .config
             .validate()
-            .map_err(|e| RcfError::InvalidSerializedConfig(e.to_string()))?;
+            .map_err(RcfError::invalid_serialized_config)?;
         Ok(forest)
     }
 
@@ -535,10 +535,17 @@ mod tests {
 
         let err = Forest::from_json(value.to_string()).unwrap_err();
 
-        assert!(matches!(
-            err,
-            RcfError::InvalidSerializedConfig(msg) if msg.contains("capacity")
-        ));
+        assert!(
+            matches!(
+                err,
+                RcfError::InvalidSerializedConfig(ref msg) if msg == "capacity must be > 0"
+            ),
+            "unexpected error: {err:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "invalid serialized config: capacity must be > 0"
+        );
     }
 
     #[test]

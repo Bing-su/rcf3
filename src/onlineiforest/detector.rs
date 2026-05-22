@@ -194,7 +194,7 @@ impl OnlineIForest {
         detector
             .config
             .validate()
-            .map_err(|err| RcfError::InvalidSerializedConfig(err.to_string()))?;
+            .map_err(RcfError::invalid_serialized_config)?;
         Ok(detector)
     }
 
@@ -429,11 +429,18 @@ mod tests {
 
         let err = OnlineIForest::from_json(value.to_string()).unwrap_err();
 
-        assert!(matches!(
-            err,
-            RcfError::InvalidSerializedConfig(msg)
-                if msg.contains("window_size")
-        ));
+        assert!(
+            matches!(
+                err,
+                RcfError::InvalidSerializedConfig(ref msg)
+                    if msg == "window_size must be greater than max_leaf_samples"
+            ),
+            "unexpected error: {err:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "invalid serialized config: window_size must be greater than max_leaf_samples"
+        );
     }
 
     proptest! {

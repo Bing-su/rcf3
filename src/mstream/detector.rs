@@ -362,7 +362,7 @@ impl MStream {
         detector
             .config
             .validate()
-            .map_err(|e| RcfError::InvalidSerializedConfig(e.to_string()))?;
+            .map_err(RcfError::invalid_serialized_config)?;
         Ok(detector)
     }
 
@@ -829,9 +829,13 @@ mod tests {
         assert!(
             matches!(
                 err,
-                RcfError::InvalidSerializedConfig(ref msg) if msg.contains("alpha")
+                RcfError::InvalidSerializedConfig(ref msg) if msg == "alpha must be in range (0, 1)"
             ),
             "unexpected error: {err:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "invalid serialized config: alpha must be in range (0, 1)"
         );
     }
 }
