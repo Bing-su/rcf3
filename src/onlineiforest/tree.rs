@@ -6,6 +6,8 @@ use rand::rngs::Xoshiro256PlusPlus;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::math;
+
 use super::node::{Node, Split, Support};
 
 fn split_threshold(max_leaf_samples: usize, depth: usize) -> usize {
@@ -20,7 +22,7 @@ fn residual_path_length(height: usize, max_leaf_samples: usize) -> f64 {
     if height < max_leaf_samples {
         0.0
     } else {
-        libm::log2(height as f64 / max_leaf_samples as f64)
+        math::log2(height as f64 / max_leaf_samples as f64)
     }
 }
 

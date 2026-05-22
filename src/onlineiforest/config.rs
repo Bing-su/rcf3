@@ -2,6 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::{RcfError, Result};
+use crate::math;
 
 /// Configuration for an [`OnlineIForest`](super::OnlineIForest) detector.
 ///
@@ -75,7 +76,7 @@ impl OnlineIForestConfig {
 
     /// Forest-level score normalizer `c(window_size, max_leaf_samples)`.
     pub(crate) fn normalization_factor(&self) -> f64 {
-        libm::log2(self.window_size as f64 / self.max_leaf_samples as f64)
+        math::log2(self.window_size as f64 / self.max_leaf_samples as f64)
     }
 
     pub(crate) fn validate(&self) -> Result<()> {

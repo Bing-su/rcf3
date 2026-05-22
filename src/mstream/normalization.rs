@@ -2,6 +2,7 @@
 use alloc::{vec, vec::Vec};
 
 use crate::error::{RcfError, Result};
+use crate::math;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -45,7 +46,7 @@ impl NumericRangeNormalizer {
             validate_raw(raw)?;
             raw_values.push(raw);
 
-            let transformed = libm::asinh(raw);
+            let transformed = math::asinh(raw);
             normalized.push(self.normalize_transformed(index, transformed, entries_seen));
         }
 
@@ -67,7 +68,7 @@ impl NumericRangeNormalizer {
             validate_raw(raw)?;
             raw_values.push(raw);
 
-            let transformed = libm::asinh(raw);
+            let transformed = math::asinh(raw);
             normalized.push(self.preview_transformed(index, transformed, entries_seen));
         }
 

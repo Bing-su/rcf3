@@ -5,6 +5,7 @@
 extern crate alloc;
 
 pub mod error;
+mod math;
 pub mod mstream;
 pub mod onlineiforest;
 #[cfg(feature = "python")]
