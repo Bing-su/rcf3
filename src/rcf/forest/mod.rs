@@ -31,11 +31,12 @@ pub(in crate::rcf) struct NeighborCandidate {
     pub(in crate::rcf) distance: f64,
 }
 
-/// Per-tree update decision kept between sampler acceptance and point storage.
+/// Per-tree update decision kept from sampler acceptance through sampler finalization.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct AcceptedUpdate {
     pub(super) tree_index: usize,
     pub(super) evicted_point: Option<usize>,
+    pub(super) weight: f64,
 }
 
 impl From<(f64, usize, f64)> for NeighborCandidate {

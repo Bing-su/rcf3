@@ -28,11 +28,6 @@ pub(super) struct Sampler {
     weights: Vec<f64>,
     point_indices: Vec<usize>,
     size: usize,
-    /// Weight saved between `accept` and `add_point`.
-    pending_weight: f64,
-    /// Debug guard for the required `accept` -> `add_point` sequence.
-    #[cfg_attr(feature = "serde", serde(skip, default))]
-    pending_accept: bool,
 }
 
 /// Outcome of a call to [`Sampler::accept`].
@@ -51,8 +46,6 @@ impl Sampler {
             weights: vec![0.0f64; capacity],
             point_indices: vec![usize::MAX; capacity],
             size: 0,
-            pending_weight: 0.0,
-            pending_accept: false,
         }
     }
 
@@ -105,17 +98,6 @@ impl Sampler {
         }
     }
 
-    fn stage_accepted_weight(&mut self, weight: f64) {
-        self.pending_weight = weight;
-        self.pending_accept = true;
-    }
-
-    fn take_staged_weight(&mut self) -> f64 {
-        debug_assert!(self.pending_accept);
-        self.pending_accept = false;
-        self.pending_weight
-    }
-
     // -----------------------------------------------------------------------
     // Public API
     // -----------------------------------------------------------------------
@@ -129,13 +111,13 @@ impl Sampler {
     /// Returns an [`AcceptResult`] describing whether the point was accepted
     /// and whether an existing point was evicted.
     ///
-    /// If accepted, the caller must follow up with [`Self::add_point`] once
-    /// the candidate has been materialized in the shared point store.
-    pub(super) fn accept(&mut self, is_initial: bool, weight: f64) -> AcceptResult {
+    /// The sampler does not stage accepted state internally; callers pass the
+    /// same accepted `weight` to [`Self::add_point`] after the point has been
+    /// materialized in the shared point store.
+    pub(super) fn accept(&self, is_initial: bool, weight: f64) -> AcceptResult {
         if self.size < self.capacity {
             // Warm-up policy accepted this point; no eviction before capacity.
             if is_initial {
-                self.stage_accepted_weight(weight);
                 return AcceptResult {
                     accepted: true,
                     evicted: None,
@@ -150,7 +132,6 @@ impl Sampler {
         if weight < self.max_weight() {
             // Replace the current maximum-weight point.
             let evicted_idx = self.point_indices[0];
-            self.stage_accepted_weight(weight);
             AcceptResult {
                 accepted: true,
                 evicted: Some(evicted_idx),
@@ -168,9 +149,8 @@ impl Sampler {
     ///
     /// `tree_point_idx` is the index that the tree assigned to the new point
     /// (may differ from the original if it was merged with a duplicate leaf).
-    pub(super) fn add_point(&mut self, tree_point_idx: usize) {
-        let weight = self.take_staged_weight();
-
+    /// `weight` must be the same reservoir weight that produced the accepted decision.
+    pub(super) fn add_point(&mut self, tree_point_idx: usize, weight: f64) {
         if self.size < self.capacity {
             // Still filling: append.
             let i = self.size;
@@ -248,7 +228,7 @@ mod tests {
             let w = reservoir_weight(0.5, 0.0, i);
             let result = s.accept(true, w);
             assert!(result.accepted);
-            s.add_point(i as usize);
+            s.add_point(i as usize, w);
         }
         assert!(s.is_full());
         assert_eq!(s.points().len(), capacity);
@@ -262,8 +242,9 @@ mod tests {
         let mut s = Sampler::new(capacity);
         // Fill with ascending high weights so the max is deterministic.
         for i in 0..capacity {
-            s.accept(true, 100.0 + i as f64);
-            s.add_point(i);
+            let weight = 100.0 + i as f64;
+            s.accept(true, weight);
+            s.add_point(i, weight);
         }
         assert!(s.is_full());
 
@@ -271,7 +252,7 @@ mod tests {
         let result = s.accept(false, -100.0f64);
         assert!(result.accepted);
         assert!(result.evicted.is_some());
-        s.add_point(capacity);
+        s.add_point(capacity, -100.0);
     }
 
     #[test]
@@ -279,9 +260,9 @@ mod tests {
         let mut s = Sampler::new(2);
         let w = -10.0f64;
         s.accept(true, w);
-        s.add_point(0);
+        s.add_point(0, w);
         s.accept(true, w - 1.0);
-        s.add_point(1);
+        s.add_point(1, w - 1.0);
 
         // A point with weight > current max is rejected.
         let result = s.accept(false, 999.0f64);
@@ -290,34 +271,25 @@ mod tests {
 
     #[test]
     fn sampler_rejects_unapproved_warmup_candidate() {
-        let mut s = Sampler::new(2);
+        let s = Sampler::new(2);
 
         let result = s.accept(false, -100.0);
 
         assert!(!result.accepted);
-        assert!(!s.pending_accept);
         assert!(s.points().is_empty());
     }
 
-    #[cfg(debug_assertions)]
     #[test]
-    #[should_panic]
-    fn add_point_requires_staged_acceptance() {
-        let mut s = Sampler::new(2);
-        s.add_point(0);
-    }
-
-    #[test]
-    fn rejected_accept_does_not_stage_pending_weight() {
+    fn rejected_accept_does_not_change_sampler_state() {
         let mut s = Sampler::new(1);
-        s.accept(true, -10.0);
-        s.add_point(0);
-        assert!(!s.pending_accept);
+        let accepted_weight = -10.0;
+        s.accept(true, accepted_weight);
+        s.add_point(0, accepted_weight);
 
         let result = s.accept(false, 999.0);
 
         assert!(!result.accepted);
-        assert!(!s.pending_accept);
+        assert_eq!(s.points(), &[0]);
     }
 
     #[cfg(feature = "std")]
@@ -333,7 +305,7 @@ mod tests {
                 for i in 0..n as u64 {
                     let w = reservoir_weight(0.5, 0.0, i);
                     s.accept(true, w);
-                    s.add_point(i as usize);
+                    s.add_point(i as usize, w);
                 }
                 let frac = s.fill_fraction();
                 prop_assert!((0.0..=1.0).contains(&frac), "fill_fraction={frac}");
@@ -346,7 +318,7 @@ mod tests {
                     let w = reservoir_weight(0.5, 0.0, i);
                     let result = s.accept(!s.is_full(), w);
                     if result.accepted {
-                        s.add_point(i as usize);
+                        s.add_point(i as usize, w);
                     }
                 }
                 prop_assert!(

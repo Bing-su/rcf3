@@ -83,6 +83,7 @@ impl Forest {
                 self.update_scratch.push(AcceptedUpdate {
                     tree_index: t,
                     evicted_point: result.evicted,
+                    weight,
                 });
             }
         }
@@ -115,7 +116,7 @@ impl Forest {
                 new_point_refs += 1;
             }
             self.point_store.inc_ref(tree_point_idx);
-            self.samplers[t].add_point(tree_point_idx);
+            self.samplers[t].add_point(tree_point_idx, update.weight);
         }
 
         if new_point_refs == 0 {
