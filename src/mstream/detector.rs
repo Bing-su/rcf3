@@ -357,7 +357,13 @@ impl MStream {
     /// [`Self::to_json`].
     #[cfg(feature = "serde")]
     pub fn from_json(json: impl AsRef<[u8]>) -> Result<Self> {
-        serde_json::from_slice(json.as_ref()).map_err(|e| RcfError::Io(e.to_string()))
+        let detector: Self =
+            serde_json::from_slice(json.as_ref()).map_err(|e| RcfError::Io(e.to_string()))?;
+        detector
+            .config
+            .validate()
+            .map_err(|e| RcfError::InvalidSerializedConfig(e.to_string()))?;
+        Ok(detector)
     }
 
     /// Serialize the detector state to a JSON file.
@@ -806,6 +812,26 @@ mod tests {
         assert_eq!(
             restored.config().categorical_dim(),
             d.config().categorical_dim()
+        );
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn from_json_rejects_invalid_serialized_config() {
+        let mut detector = MStream::builder(1, 0).build().unwrap();
+        detector.update(&[0.1], &[], 1).unwrap();
+        let mut value: serde_json::Value =
+            serde_json::from_str(&detector.to_json().unwrap()).unwrap();
+        value["config"]["alpha"] = serde_json::json!(1.0);
+
+        let err = MStream::from_json(value.to_string()).unwrap_err();
+
+        assert!(
+            matches!(
+                err,
+                RcfError::InvalidSerializedConfig(ref msg) if msg.contains("alpha")
+            ),
+            "unexpected error: {err:?}"
         );
     }
 }

@@ -205,7 +205,13 @@ impl Forest {
     /// [`Self::to_json`].
     #[cfg(feature = "serde")]
     pub fn from_json(json: impl AsRef<[u8]>) -> Result<Self> {
-        serde_json::from_slice(json.as_ref()).map_err(|e| RcfError::Io(e.to_string()))
+        let forest: Self =
+            serde_json::from_slice(json.as_ref()).map_err(|e| RcfError::Io(e.to_string()))?;
+        forest
+            .config
+            .validate()
+            .map_err(|e| RcfError::InvalidSerializedConfig(e.to_string()))?;
+        Ok(forest)
     }
 
     /// Serialize the entire forest state to a JSON file.
@@ -517,6 +523,22 @@ mod tests {
         for tree in value["trees"].as_array().unwrap() {
             assert!(tree.get("path_scratch").is_none());
         }
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn from_json_rejects_invalid_serialized_config() {
+        let forest = make_forest();
+        let mut value: serde_json::Value =
+            serde_json::from_str(&forest.to_json().unwrap()).unwrap();
+        value["config"]["capacity"] = serde_json::json!(0);
+
+        let err = Forest::from_json(value.to_string()).unwrap_err();
+
+        assert!(matches!(
+            err,
+            RcfError::InvalidSerializedConfig(msg) if msg.contains("capacity")
+        ));
     }
 
     #[test]

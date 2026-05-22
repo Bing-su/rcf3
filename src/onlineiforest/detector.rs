@@ -189,7 +189,13 @@ impl OnlineIForest {
     #[cfg(feature = "serde")]
     /// Deserialize detector state from JSON previously written by [`Self::to_json`].
     pub fn from_json(json: impl AsRef<[u8]>) -> Result<Self> {
-        serde_json::from_slice(json.as_ref()).map_err(|err| RcfError::Io(err.to_string()))
+        let detector: Self =
+            serde_json::from_slice(json.as_ref()).map_err(|err| RcfError::Io(err.to_string()))?;
+        detector
+            .config
+            .validate()
+            .map_err(|err| RcfError::InvalidSerializedConfig(err.to_string()))?;
+        Ok(detector)
     }
 
     #[cfg(all(feature = "serde", feature = "std"))]
@@ -410,6 +416,24 @@ mod tests {
             restored.score(&[10.0, 10.0]).unwrap(),
             epsilon = 1e-12
         );
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn from_json_rejects_invalid_serialized_config() {
+        let detector = OnlineIForest::builder(1).build().unwrap();
+        let mut value: serde_json::Value =
+            serde_json::from_str(&detector.to_json().unwrap()).unwrap();
+        value["config"]["window_size"] = serde_json::json!(32);
+        value["config"]["max_leaf_samples"] = serde_json::json!(32);
+
+        let err = OnlineIForest::from_json(value.to_string()).unwrap_err();
+
+        assert!(matches!(
+            err,
+            RcfError::InvalidSerializedConfig(msg)
+                if msg.contains("window_size")
+        ));
     }
 
     proptest! {

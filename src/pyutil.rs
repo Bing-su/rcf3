@@ -8,7 +8,9 @@ use crate::error::RcfError;
 /// Convert an [`RcfError`] to a Python exception.
 pub(crate) fn to_py_err(e: RcfError) -> PyErr {
     match e {
-        RcfError::InvalidArgument(msg) => PyValueError::new_err(msg),
+        RcfError::InvalidArgument(msg) | RcfError::InvalidSerializedConfig(msg) => {
+            PyValueError::new_err(msg)
+        }
         RcfError::DimensionMismatch { expected, got } => PyValueError::new_err(format!(
             "dimension mismatch: expected {expected}, got {got}"
         )),
