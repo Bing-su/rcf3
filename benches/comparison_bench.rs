@@ -28,6 +28,27 @@ impl StreamData {
             categorical: categorical_stream(len, categorical_dim),
         }
     }
+
+    fn for_each_numeric_row(&self, mut visit: impl FnMut(&[f32])) {
+        for point in self.numeric.axis_iter(Axis(0)) {
+            visit(row_slice(&point));
+        }
+    }
+
+    fn for_each_mstream_row(&self, mut visit: impl FnMut(usize, &[f32], &[i64])) {
+        for (offset, (numeric, categorical)) in self
+            .numeric
+            .axis_iter(Axis(0))
+            .zip(self.categorical.axis_iter(Axis(0)))
+            .enumerate()
+        {
+            visit(
+                offset,
+                row_slice(&numeric),
+                categorical_row_slice(&categorical),
+            );
+        }
+    }
 }
 
 fn numeric_stream(len: usize) -> Array2<f32> {
@@ -62,9 +83,7 @@ fn build_ready_forest(warmup: &StreamData) -> Forest {
         .build()
         .unwrap();
 
-    for point in warmup.numeric.axis_iter(Axis(0)) {
-        forest.update(row_slice(&point)).unwrap();
-    }
+    warmup.for_each_numeric_row(|point| forest.update(point).unwrap());
 
     forest
 }
@@ -78,9 +97,7 @@ fn build_ready_onlineiforest(warmup: &StreamData) -> OnlineIForest {
         .build()
         .unwrap();
 
-    for point in warmup.numeric.axis_iter(Axis(0)) {
-        detector.update(row_slice(&point)).unwrap();
-    }
+    warmup.for_each_numeric_row(|point| detector.update(point).unwrap());
 
     detector
 }
@@ -94,22 +111,42 @@ fn build_ready_mstream(warmup: &StreamData, scenario: MStreamScenario) -> MStrea
         .build()
         .unwrap();
 
-    for (idx, (numeric, categorical)) in warmup
-        .numeric
-        .axis_iter(Axis(0))
-        .zip(warmup.categorical.axis_iter(Axis(0)))
-        .enumerate()
-    {
+    warmup.for_each_mstream_row(|offset, numeric, categorical| {
         detector
-            .update_and_score(
-                row_slice(&numeric),
-                categorical_row_slice(&categorical),
-                (idx + 1) as u64,
-            )
+            .update_and_score(numeric, categorical, (offset + 1) as u64)
             .unwrap();
-    }
+    });
 
     detector
+}
+
+fn run_forest_score_then_update(detector: &mut Forest, events: &StreamData) {
+    events.for_each_numeric_row(|point| {
+        let _ = detector.score(point).unwrap();
+        detector.update(point).unwrap();
+    });
+}
+
+fn run_onlineiforest_update_and_score(detector: &mut OnlineIForest, events: &StreamData) {
+    events.for_each_numeric_row(|point| {
+        let _ = detector.update_and_score(point).unwrap();
+    });
+}
+
+fn run_onlineiforest_score_then_update(detector: &mut OnlineIForest, events: &StreamData) {
+    events.for_each_numeric_row(|point| {
+        let _ = detector.score(point).unwrap();
+        detector.update(point).unwrap();
+    });
+}
+
+fn run_mstream_update_and_score(detector: &mut MStream, events: &StreamData) {
+    let start_ts = detector.current_time().unwrap_or(0);
+    events.for_each_mstream_row(|offset, numeric, categorical| {
+        let _ = detector
+            .update_and_score(numeric, categorical, start_ts + offset as u64 + 1)
+            .unwrap();
+    });
 }
 
 fn bench_numeric_stream_step(c: &mut Criterion) {
@@ -127,13 +164,7 @@ fn bench_numeric_stream_step(c: &mut Criterion) {
         |b, events| {
             b.iter_batched(
                 || forest.clone(),
-                |mut detector| {
-                    for point in events.numeric.axis_iter(Axis(0)) {
-                        let point = row_slice(&point);
-                        let _ = detector.score(point).unwrap();
-                        detector.update(point).unwrap();
-                    }
-                },
+                |mut detector| run_forest_score_then_update(&mut detector, events),
                 BatchSize::SmallInput,
             );
         },
@@ -145,11 +176,7 @@ fn bench_numeric_stream_step(c: &mut Criterion) {
         |b, events| {
             b.iter_batched(
                 || onlineiforest.clone(),
-                |mut detector| {
-                    for point in events.numeric.axis_iter(Axis(0)) {
-                        let _ = detector.update_and_score(row_slice(&point)).unwrap();
-                    }
-                },
+                |mut detector| run_onlineiforest_update_and_score(&mut detector, events),
                 BatchSize::SmallInput,
             );
         },
@@ -161,13 +188,7 @@ fn bench_numeric_stream_step(c: &mut Criterion) {
         |b, events| {
             b.iter_batched(
                 || onlineiforest.clone(),
-                |mut detector| {
-                    for point in events.numeric.axis_iter(Axis(0)) {
-                        let point = row_slice(&point);
-                        let _ = detector.score(point).unwrap();
-                        detector.update(point).unwrap();
-                    }
-                },
+                |mut detector| run_onlineiforest_score_then_update(&mut detector, events),
                 BatchSize::SmallInput,
             );
         },
@@ -206,23 +227,7 @@ fn bench_mstream_stream_step(c: &mut Criterion) {
             |b, events| {
                 b.iter_batched(
                     || mstream.clone(),
-                    |mut detector| {
-                        let start_ts = detector.current_time().unwrap_or(0);
-                        for (offset, (numeric, categorical)) in events
-                            .numeric
-                            .axis_iter(Axis(0))
-                            .zip(events.categorical.axis_iter(Axis(0)))
-                            .enumerate()
-                        {
-                            let _ = detector
-                                .update_and_score(
-                                    row_slice(&numeric),
-                                    categorical_row_slice(&categorical),
-                                    start_ts + offset as u64 + 1,
-                                )
-                                .unwrap();
-                        }
-                    },
+                    |mut detector| run_mstream_update_and_score(&mut detector, events),
                     BatchSize::SmallInput,
                 );
             },

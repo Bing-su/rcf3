@@ -6,6 +6,36 @@ use rcf3::Forest;
 const UPDATE_EVENTS: usize = 20_000;
 const STEADY_WARMUP_EVENTS: usize = 30_000;
 const MIXED_UNIQUE_EVENTS: usize = 500;
+const READY_FOREST_EVENTS: usize = UPDATE_EVENTS;
+
+#[derive(Clone, Copy)]
+struct ForestUpdateCase {
+    dim: usize,
+    trees: usize,
+    capacity: usize,
+    events: usize,
+}
+
+impl ForestUpdateCase {
+    fn label(self) -> String {
+        format!("d{}_t{}_c{}", self.dim, self.trees, self.capacity)
+    }
+}
+
+const UPDATE_CASES: &[ForestUpdateCase] = &[
+    ForestUpdateCase {
+        dim: 8,
+        trees: 50,
+        capacity: 256,
+        events: UPDATE_EVENTS,
+    },
+    ForestUpdateCase {
+        dim: 16,
+        trees: 100,
+        capacity: 512,
+        events: UPDATE_EVENTS,
+    },
+];
 
 fn build_forest(dim: usize, trees: usize, capacity: usize) -> Forest {
     Forest::builder(dim)
@@ -42,53 +72,79 @@ fn mixed_unique_point(i: usize) -> [f32; 8] {
     ]
 }
 
+fn update_repeatedly(forest: &mut Forest, point: &[f32], events: usize) {
+    for _ in 0..events {
+        forest.update(point).unwrap();
+    }
+}
+
+fn build_ready_forest(
+    dim: usize,
+    trees: usize,
+    capacity: usize,
+    point_value: f32,
+) -> (Forest, Vec<f32>) {
+    let mut forest = build_forest(dim, trees, capacity);
+    let point = vec![point_value; dim];
+    update_repeatedly(&mut forest, &point, READY_FOREST_EVENTS);
+    (forest, point)
+}
+
+fn build_steady_rejection_input() -> (Forest, Vec<f32>) {
+    let mut forest = build_steady_rejection_forest();
+    let point = vec![0.1_f32; 8];
+    update_repeatedly(&mut forest, &point, STEADY_WARMUP_EVENTS);
+    (forest, point)
+}
+
+fn build_update_input(case: ForestUpdateCase) -> (Forest, Vec<f32>) {
+    let forest = build_forest(case.dim, case.trees, case.capacity);
+    let point = vec![0.1_f32; case.dim];
+    (forest, point)
+}
+
+fn mixed_unique_points() -> Vec<[f32; 8]> {
+    (0..MIXED_UNIQUE_EVENTS).map(mixed_unique_point).collect()
+}
+
 fn bench_update(c: &mut Criterion) {
     let mut group = c.benchmark_group("update");
-    for &(dim, trees, cap, n) in &[(8, 50, 256, UPDATE_EVENTS), (16, 100, 512, UPDATE_EVENTS)] {
-        group.throughput(Throughput::Elements(n as u64));
+    for &case in UPDATE_CASES {
+        group.throughput(Throughput::Elements(case.events as u64));
         group.bench_with_input(
-            BenchmarkId::from_parameter(format!("d{dim}_t{trees}_c{cap}")),
-            &(dim, trees, cap, n),
-            |b, &(dim, trees, cap, n)| {
-                b.iter(|| {
-                    let mut f = build_forest(dim, trees, cap);
-                    let p = vec![0.1_f32; dim];
-                    for _ in 0..n {
-                        f.update(&p).unwrap();
-                    }
-                });
+            BenchmarkId::from_parameter(case.label()),
+            &case,
+            |b, &case| {
+                b.iter_batched_ref(
+                    || build_update_input(case),
+                    |(forest, point)| {
+                        update_repeatedly(forest, point, case.events);
+                    },
+                    BatchSize::SmallInput,
+                );
             },
         );
     }
 
     group.throughput(Throughput::Elements(UPDATE_EVENTS as u64));
     group.bench_function("steady_rejection_d8_t50_c256", |b| {
-        b.iter_batched(
-            || {
-                let mut f = build_steady_rejection_forest();
-                let p = vec![0.1_f32; 8];
-                for _ in 0..STEADY_WARMUP_EVENTS {
-                    f.update(&p).unwrap();
-                }
-                (f, p)
-            },
-            |(mut f, p)| {
-                for _ in 0..UPDATE_EVENTS {
-                    f.update(&p).unwrap();
-                }
+        b.iter_batched_ref(
+            build_steady_rejection_input,
+            |(forest, point)| {
+                update_repeatedly(forest, point, UPDATE_EVENTS);
             },
             BatchSize::SmallInput,
         );
     });
 
     group.throughput(Throughput::Elements(MIXED_UNIQUE_EVENTS as u64));
+    let points = mixed_unique_points();
     group.bench_function("mixed_unique_d8_t50_c256", |b| {
-        b.iter_batched(
+        b.iter_batched_ref(
             || build_forest(8, 50, 256),
-            |mut f| {
-                for i in 0..MIXED_UNIQUE_EVENTS {
-                    let p = mixed_unique_point(i);
-                    f.update(&p).unwrap();
+            |forest| {
+                for point in &points {
+                    forest.update(point).unwrap();
                 }
             },
             BatchSize::SmallInput,
@@ -98,51 +154,37 @@ fn bench_update(c: &mut Criterion) {
 }
 
 fn bench_score(c: &mut Criterion) {
-    let mut f = build_forest(8, 100, 512);
-    let p = vec![0.2_f32; 8];
-    for _ in 0..20_000 {
-        f.update(&p).unwrap();
-    }
+    let (forest, point) = build_ready_forest(8, 100, 512, 0.2);
 
     c.bench_function("score_ready", |b| {
         b.iter(|| {
-            let _ = f.score(&p).unwrap();
+            let _ = forest.score(&point).unwrap();
         });
     });
 
-    let mut f_large = build_forest(8, 1024, 512);
-    for _ in 0..20_000 {
-        f_large.update(&p).unwrap();
-    }
+    let (large_forest, large_point) = build_ready_forest(8, 1024, 512, 0.2);
 
     c.bench_function("score_ready_t1024", |b| {
         b.iter(|| {
-            let _ = f_large.score(&p).unwrap();
+            let _ = large_forest.score(&large_point).unwrap();
         });
     });
 }
 
 fn bench_near_neighbors(c: &mut Criterion) {
-    let mut f = build_forest(8, 100, 512);
-    let p = vec![0.3_f32; 8];
-    for _ in 0..20_000 {
-        f.update(&p).unwrap();
-    }
+    let (forest, point) = build_ready_forest(8, 100, 512, 0.3);
 
     c.bench_function("near_neighbors_top10_p50", |b| {
         b.iter(|| {
-            let _ = f.near_neighbors(&p, 10, 50).unwrap();
+            let _ = forest.near_neighbors(&point, 10, 50).unwrap();
         });
     });
 
-    let mut f_large = build_forest(8, 1024, 512);
-    for _ in 0..20_000 {
-        f_large.update(&p).unwrap();
-    }
+    let (large_forest, large_point) = build_ready_forest(8, 1024, 512, 0.3);
 
     c.bench_function("near_neighbors_top10_p50_t1024", |b| {
         b.iter(|| {
-            let _ = f_large.near_neighbors(&p, 10, 50).unwrap();
+            let _ = large_forest.near_neighbors(&large_point, 10, 50).unwrap();
         });
     });
 }
