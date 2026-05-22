@@ -1,3 +1,6 @@
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
 use rand::prelude::*;
 use rand::rngs::Xoshiro256PlusPlus;
 #[cfg(feature = "serde")]
@@ -5,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     bounding_box::BoundingBox,
+    config::checked_tree_arena_capacity,
     forest::NeighborCandidate,
     node_arena::{NULL, Node, NodeArena},
     point_store::PointStore,
@@ -12,6 +16,12 @@ use super::{
 
 mod mutation;
 mod traversal;
+
+#[derive(Clone, Copy, Debug)]
+struct PathEntry {
+    parent: usize,
+    sibling: usize,
+}
 
 // ---------------------------------------------------------------------------
 // RcfTree
@@ -21,12 +31,14 @@ mod traversal;
 /// [`PointStore`]; the tree only stores indices and bounding-box metadata.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct RcfTree {
-    pub(crate) root: usize,
-    pub(crate) tree_mass: usize,
+pub(super) struct RcfTree {
+    root: usize,
+    tree_mass: usize,
     arena: NodeArena,
     rng: Xoshiro256PlusPlus,
     dims: usize,
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    path_scratch: Vec<PathEntry>,
 }
 
 fn split_children(query_value: f32, cut_val: f32, left: usize, right: usize) -> (usize, usize) {
@@ -105,13 +117,17 @@ impl RcfTree {
 
     /// Create a new random-cut tree with the given dimensionality, point
     /// capacity hint, and RNG seed.
-    pub fn new(dims: usize, capacity: usize, seed: u64) -> Self {
+    pub(super) fn new(dims: usize, capacity: usize, seed: u64) -> Self {
         RcfTree {
             root: NULL,
             tree_mass: 0,
-            arena: NodeArena::new(2 * capacity + 4),
+            arena: NodeArena::new(
+                checked_tree_arena_capacity(capacity)
+                    .expect("validated config must have a valid tree-arena capacity"),
+            ),
             rng: Xoshiro256PlusPlus::seed_from_u64(seed),
             dims,
+            path_scratch: Vec::new(),
         }
     }
     // -----------------------------------------------------------------------
@@ -119,14 +135,9 @@ impl RcfTree {
     // -----------------------------------------------------------------------
 
     /// Whether the tree currently has no root node.
-    pub fn is_empty(&self) -> bool {
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
         self.root == NULL
-    }
-
-    /// Approximate heap size in bytes.
-    pub fn size_bytes(&self) -> usize {
-        self.arena.slot_count() * core::mem::size_of::<Option<Node>>()
-            + core::mem::size_of::<RcfTree>()
     }
 }
 
@@ -134,15 +145,24 @@ impl RcfTree {
 // Utility: compute bounding box of a sub-tree
 // ---------------------------------------------------------------------------
 
-/// Build the bounding box for the entire sub-tree rooted at `node_id`.
-pub(crate) fn subtree_bbox(
-    arena: &NodeArena,
-    node_id: usize,
-    point_store: &PointStore,
-) -> BoundingBox {
+/// Build an owned bounding box for the entire sub-tree rooted at `node_id`.
+fn owned_subtree_bbox(arena: &NodeArena, node_id: usize, point_store: &PointStore) -> BoundingBox {
     match arena.get(node_id) {
         Node::Leaf { point_idx, .. } => BoundingBox::from_point(point_store.get(*point_idx)),
         Node::Internal { bbox, .. } => bbox.clone(),
+    }
+}
+
+/// Merge the bounding box for `node_id` into `target` without cloning leaf boxes.
+fn merge_subtree_bbox_into(
+    target: &mut BoundingBox,
+    arena: &NodeArena,
+    node_id: usize,
+    point_store: &PointStore,
+) {
+    match arena.get(node_id) {
+        Node::Leaf { point_idx, .. } => target.merge_point(point_store.get(*point_idx)),
+        Node::Internal { bbox, .. } => target.merge(bbox),
     }
 }
 // ---------------------------------------------------------------------------

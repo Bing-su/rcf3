@@ -51,23 +51,37 @@ harness = false
 name = "comparison_bench"
 
 [dependencies]
-ahash = { version = "0.8", default-features = false, features = ["runtime-rng"] }
-itertools = { version = "0.14", default-features = false, features = [
-  "use_alloc"
-] }
+ahash = {
+  version = "0.8",
+  default-features = false,
+  features = ["runtime-rng"]
+}
+itertools = {
+  version = "0.14",
+  default-features = false,
+  features = ["use_alloc"]
+}
 libm = "0.2"
 ndarray = { version = "0.17", default-features = false }
-pyo3 = { version = "0.28", features = [
-  "extension-module",
-  "generate-import-lib"
-], optional = true }
+pyo3 = {
+  version = "0.28",
+  features = ["extension-module", "generate-import-lib"],
+  optional = true
+}
 rand = { version = "0.10", default-features = false, features = ["sys_rng"] }
 rand_distr = { version = "0.6", default-features = false }
-serde = { version = "1", default-features = false, features = [
-  "alloc",
-  "derive"
-], optional = true }
-serde_json = { version = "1", default-features = false, features = ["alloc"], optional = true }
+serde = {
+  version = "1",
+  default-features = false,
+  features = ["alloc", "derive"],
+  optional = true
+}
+serde_json = {
+  version = "1",
+  default-features = false,
+  features = ["alloc"],
+  optional = true
+}
 thiserror = { version = "2", default-features = false }
 
 [dev-dependencies]

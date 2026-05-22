@@ -354,7 +354,8 @@ mod tests {
         assert_eq!(current, legacy);
     }
 
-    #[rstest]
+    #[cfg(debug_assertions)]
+    #[test]
     #[should_panic(expected = "input numeric dimension does not match sketch configuration")]
     fn numeric_hash_bits_rejects_dimension_mismatch() {
         let planes = array![[1.0, 0.0], [0.0, 1.0]];

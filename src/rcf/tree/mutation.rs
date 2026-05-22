@@ -1,9 +1,6 @@
-#[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
-
 use rand::prelude::*;
 
-use super::{RcfTree, split_children, subtree_bbox};
+use super::{PathEntry, RcfTree, merge_subtree_bbox_into, owned_subtree_bbox, split_children};
 use crate::error::{RcfError, Result};
 use crate::rcf::{
     bounding_box::BoundingBox,
@@ -12,17 +9,25 @@ use crate::rcf::{
     point_store::PointStore,
 };
 
+#[derive(Clone, Copy, Debug)]
+struct InsertionPoint {
+    cut_dim: usize,
+    cut_val: f32,
+    insert_above: usize,
+    parent_above: usize,
+    ancestor_prefix_len: usize,
+}
+
 impl RcfTree {
     /// Descend to the leaf node whose point equals `point`, returning the path
-    /// as a Vec of `(node_id, sibling_id)` pairs in root-to-leaf traversal
-    /// order. The last pair's first component is the parent of the returned
-    /// leaf.
-    fn path_to_leaf(&self, point: &[f32]) -> (Vec<(usize, usize)>, usize) {
-        let mut path: Vec<(usize, usize)> = Vec::new();
+    /// in root-to-leaf traversal order. The last entry is the parent of the
+    /// returned leaf and the sibling that was not followed at that branch.
+    fn path_to_leaf(&mut self, point: &[f32]) -> usize {
+        self.path_scratch.clear();
         let mut cur = self.root;
         loop {
             match self.arena.get(cur) {
-                Node::Leaf { .. } => return (path, cur),
+                Node::Leaf { .. } => return cur,
                 Node::Internal {
                     left,
                     right,
@@ -31,7 +36,10 @@ impl RcfTree {
                     ..
                 } => {
                     let (child, sibling) = split_children(point[*cut_dim], *cut_val, *left, *right);
-                    path.push((cur, sibling));
+                    self.path_scratch.push(PathEntry {
+                        parent: cur,
+                        sibling,
+                    });
                     cur = child;
                 }
             }
@@ -39,8 +47,8 @@ impl RcfTree {
     }
 
     /// Parent of `node` given `path` (last element of path is the parent).
-    fn parent_of(path: &[(usize, usize)]) -> usize {
-        path.last().map(|(p, _)| *p).unwrap_or(NULL)
+    fn parent_of(path: &[PathEntry]) -> usize {
+        path.last().map(|entry| entry.parent).unwrap_or(NULL)
     }
 
     /// Recompute the bounding box for an internal node from its two children.
@@ -50,11 +58,8 @@ impl RcfTree {
             Node::Leaf { .. } => return,
         };
 
-        let bbox = subtree_bbox(arena, left, point_store).merge_with(&subtree_bbox(
-            arena,
-            right,
-            point_store,
-        ));
+        let mut bbox = owned_subtree_bbox(arena, left, point_store);
+        merge_subtree_bbox_into(&mut bbox, arena, right, point_store);
         let mass = arena.get(left).mass() + arena.get(right).mass();
         if let Node::Internal {
             bbox: b, mass: m, ..
@@ -68,31 +73,113 @@ impl RcfTree {
     /// Walk from `node` up to the root (using `path`), recomputing bboxes.
     fn update_ancestors_after_change(
         arena: &mut NodeArena,
-        path: &[(usize, usize)],
+        path: &[PathEntry],
         point_store: &PointStore,
     ) {
-        for &(ancestor, _) in path.iter().rev() {
-            Self::recompute_bbox(arena, ancestor, point_store);
+        for entry in path.iter().rev() {
+            Self::recompute_bbox(arena, entry.parent, point_store);
         }
+    }
+
+    fn insertion_target_for_step(&self, leaf_id: usize, step_from_leaf: usize) -> (usize, usize) {
+        let path_len = self.path_scratch.len();
+        let insert_above = if step_from_leaf == 0 {
+            leaf_id
+        } else {
+            self.path_scratch[path_len - step_from_leaf].parent
+        };
+
+        let parent_above = if step_from_leaf == path_len {
+            NULL
+        } else if step_from_leaf == 0 {
+            Self::parent_of(&self.path_scratch)
+        } else {
+            self.path_scratch[path_len - step_from_leaf - 1].parent
+        };
+
+        (insert_above, parent_above)
+    }
+
+    fn fallback_insertion_point(
+        &self,
+        point: &[f32],
+        leaf_point: &[f32],
+        leaf_id: usize,
+    ) -> Option<InsertionPoint> {
+        for d in 0..self.dims {
+            if (point[d] - leaf_point[d]).abs() > f32::EPSILON {
+                return Some(InsertionPoint {
+                    cut_dim: d,
+                    cut_val: leaf_point[d].min(point[d]),
+                    insert_above: leaf_id,
+                    parent_above: Self::parent_of(&self.path_scratch),
+                    ancestor_prefix_len: self.path_scratch.len(),
+                });
+            }
+        }
+        None
+    }
+
+    fn find_insertion_point(
+        &mut self,
+        point: &[f32],
+        leaf_point: &[f32],
+        leaf_id: usize,
+        point_store: &PointStore,
+    ) -> Option<InsertionPoint> {
+        let path_len = self.path_scratch.len();
+        let mut current_bbox = BoundingBox::from_point(leaf_point);
+
+        // Scan from leaf upward, expanding the bounding box as we go.
+        for step_from_leaf in 0..=path_len {
+            let factor: f64 = self.rng.random::<f64>();
+            if let Some((cut, sep)) = random_cut(&current_bbox, point, factor)
+                && sep
+            {
+                let (insert_above, parent_above) =
+                    self.insertion_target_for_step(leaf_id, step_from_leaf);
+                return Some(InsertionPoint {
+                    cut_dim: cut.dim,
+                    cut_val: cut.val,
+                    insert_above,
+                    parent_above,
+                    ancestor_prefix_len: path_len.saturating_sub(step_from_leaf),
+                });
+            }
+
+            // Expand box upward by including the sibling subtree.
+            if step_from_leaf < path_len {
+                let sibling = self.path_scratch[path_len - 1 - step_from_leaf].sibling;
+                merge_subtree_bbox_into(&mut current_bbox, &self.arena, sibling, point_store);
+            }
+        }
+
+        // This fallback is only expected when random cuts fail to separate
+        // distinct points in a highly degenerate subtree.
+        self.fallback_insertion_point(point, leaf_point, leaf_id)
     }
 
     // -----------------------------------------------------------------------
     // Insert
     // -----------------------------------------------------------------------
 
-    /// Insert `point_idx` into the tree.  `point` is the actual coordinate
-    /// vector (borrowed from the point store for computations here).
-    pub fn insert(&mut self, point_idx: usize, point_store: &PointStore) -> Result<()> {
+    /// Insert `point_idx` into the tree and return the point-store index that
+    /// the tree actually references after insertion.
+    pub(in crate::rcf) fn insert(
+        &mut self,
+        point_idx: usize,
+        point_store: &PointStore,
+    ) -> Result<usize> {
         let point = point_store.get(point_idx);
 
         if self.root == NULL {
             // First point in this tree.
             self.root = self.arena.alloc(Node::Leaf { point_idx, mass: 1 });
             self.tree_mass = 1;
-            return Ok(());
+            return Ok(point_idx);
         }
 
-        let (path, leaf_id) = self.path_to_leaf(point);
+        let leaf_id = self.path_to_leaf(point);
         let leaf_point_idx = match self.arena.get(leaf_id) {
             Node::Leaf { point_idx, .. } => *point_idx,
             _ => unreachable!(),
@@ -105,107 +192,51 @@ impl RcfTree {
             if let Node::Leaf { mass, .. } = self.arena.get_mut(leaf_id) {
                 *mass += 1;
             }
-            Self::update_ancestors_after_change(&mut self.arena, &path, point_store);
-            return Ok(());
+            Self::update_ancestors_after_change(&mut self.arena, &self.path_scratch, point_store);
+            return Ok(leaf_point_idx);
         }
 
         // Different point: need a new internal node with a random cut.
         let leaf_point = point_store.get(leaf_point_idx);
-        let mut current_bbox = BoundingBox::from_point(leaf_point);
-
-        // Find the highest-in-tree cut that separates the new point.
-        let mut saved_cut_dim = NULL;
-        let mut saved_cut_val = 0.0f32;
-        let mut insert_above: usize = leaf_id; // node below which to insert the new split
-        let mut parent_above = Self::parent_of(&path); // parent of insert_above
-        let mut path_below: Vec<(usize, usize)> = Vec::new(); // path from insert_above down
-
-        // Scan from leaf upward, expanding the bounding box as we go.
-        for step in 0..=path.len() {
-            let factor: f64 = self.rng.random::<f64>();
-            if let Some((cut, sep)) = random_cut(&current_bbox, point, factor)
-                && sep
-            {
-                saved_cut_dim = cut.dim;
-                saved_cut_val = cut.val;
-                insert_above = if step == 0 {
-                    leaf_id
-                } else {
-                    path[path.len() - step].0
-                };
-                parent_above = if step == path.len() {
-                    NULL
-                } else if step == 0 {
-                    Self::parent_of(&path)
-                } else {
-                    path[path.len() - step - 1].0
-                };
-                // Everything below insert_above is in path_below.
-                path_below = path[path.len() - step..].to_vec();
-                break;
+        let Some(insertion) = self.find_insertion_point(point, leaf_point, leaf_id, point_store)
+        else {
+            // Truly identical — treat as duplicate (shouldn't reach here because
+            // `is_equal` would have caught it, but be defensive).
+            if let Node::Leaf { mass, .. } = self.arena.get_mut(leaf_id) {
+                *mass += 1;
             }
-            // Expand box upward by including the sibling subtree.
-            if step < path.len() {
-                let sibling = path[path.len() - 1 - step].1;
-                let sib_bbox = subtree_bbox(&self.arena, sibling, point_store);
-                current_bbox.merge(&sib_bbox);
-            }
-        }
-
-        // If we never found a separating cut, fall back to a cut at the first
-        // dimension where there is variance.
-        if saved_cut_dim == NULL {
-            // This happens only when the entire tree is a single repeated point.
-            // Use a trivial cut between that point and the new one.
-            for d in 0..self.dims {
-                if (point[d] - leaf_point[d]).abs() > f32::EPSILON {
-                    saved_cut_dim = d;
-                    saved_cut_val = leaf_point[d].min(point[d]);
-                    insert_above = leaf_id;
-                    parent_above = Self::parent_of(&path);
-                    path_below = Vec::new();
-                    break;
-                }
-            }
-            if saved_cut_dim == NULL {
-                // Truly identical — treat as duplicate (shouldn't reach here because
-                // `is_equal` would have caught it, but be defensive).
-                if let Node::Leaf { mass, .. } = self.arena.get_mut(leaf_id) {
-                    *mass += 1;
-                }
-                Self::update_ancestors_after_change(&mut self.arena, &path, point_store);
-                return Ok(());
-            }
-        }
+            Self::update_ancestors_after_change(&mut self.arena, &self.path_scratch, point_store);
+            return Ok(leaf_point_idx);
+        };
 
         // Determine which side new point and existing subtree go on.
         let new_leaf_id = self.arena.alloc(Node::Leaf { point_idx, mass: 1 });
-        let (new_left, new_right) = if point[saved_cut_dim] <= saved_cut_val {
-            (new_leaf_id, insert_above)
+        let (new_left, new_right) = if point[insertion.cut_dim] <= insertion.cut_val {
+            (new_leaf_id, insertion.insert_above)
         } else {
-            (insert_above, new_leaf_id)
+            (insertion.insert_above, new_leaf_id)
         };
 
-        let child_mass = self.arena.get(insert_above).mass() + 1;
-        let new_bbox = subtree_bbox(&self.arena, insert_above, point_store)
-            .merge_with(&BoundingBox::from_point(point));
+        let child_mass = self.arena.get(insertion.insert_above).mass() + 1;
+        let mut new_bbox = owned_subtree_bbox(&self.arena, insertion.insert_above, point_store);
+        new_bbox.merge_point(point);
 
         let new_internal = self.arena.alloc(Node::Internal {
             left: new_left,
             right: new_right,
-            cut_dim: saved_cut_dim,
-            cut_val: saved_cut_val,
+            cut_dim: insertion.cut_dim,
+            cut_val: insertion.cut_val,
             mass: child_mass,
             bbox: new_bbox,
         });
 
         // Attach new_internal in place of insert_above.
-        if parent_above == NULL {
+        if insertion.parent_above == NULL {
             self.root = new_internal;
         } else {
-            match self.arena.get_mut(parent_above) {
+            match self.arena.get_mut(insertion.parent_above) {
                 Node::Internal { left, right, .. } => {
-                    if *left == insert_above {
+                    if *left == insertion.insert_above {
                         *left = new_internal;
                     } else {
                         *right = new_internal;
@@ -215,21 +246,15 @@ impl RcfTree {
             }
         }
 
-        // Recompute ancestors above insert_above (path_below gives the path
-        // from the original root down to insert_above; we need the portion
-        // above parent_above).
-        let ancestor_path = if path_below.is_empty() {
-            path.as_slice()
-        } else {
-            // path_below[0].0 == insert_above, so path ancestors are above that.
-            let n = path.len() - path_below.len();
-            &path[..n]
-        };
-        // Recompute new_internal itself first (its mass is already set; bbox is set above).
-        // Then walk up.
-        Self::update_ancestors_after_change(&mut self.arena, ancestor_path, point_store);
+        // Recompute only the ancestors that remain above the insertion point.
+        // The new internal node already has its mass and bbox initialized.
+        Self::update_ancestors_after_change(
+            &mut self.arena,
+            &self.path_scratch[..insertion.ancestor_prefix_len],
+            point_store,
+        );
 
-        Ok(())
+        Ok(point_idx)
     }
 
     // -----------------------------------------------------------------------
@@ -237,13 +262,18 @@ impl RcfTree {
     // -----------------------------------------------------------------------
 
     /// Remove `point_idx` from the tree.
-    pub fn delete(&mut self, point_idx: usize, point_store: &PointStore) -> Result<()> {
+    pub(in crate::rcf) fn delete(
+        &mut self,
+        point_idx: usize,
+        point_store: &PointStore,
+    ) -> Result<()> {
         if self.root == NULL {
             return Err(RcfError::EmptyTree);
         }
 
         let point = point_store.get(point_idx);
-        let (path, leaf_id) = self.path_to_leaf(point);
+        let leaf_id = self.path_to_leaf(point);
+        let path_len = self.path_scratch.len();
 
         let leaf_mass = match self.arena.get(leaf_id) {
             Node::Leaf { mass, .. } => *mass,
@@ -261,21 +291,23 @@ impl RcfTree {
             if let Node::Leaf { mass, .. } = self.arena.get_mut(leaf_id) {
                 *mass -= 1;
             }
-            Self::update_ancestors_after_change(&mut self.arena, &path, point_store);
+            Self::update_ancestors_after_change(&mut self.arena, &self.path_scratch, point_store);
             return Ok(());
         }
 
         // Last copy: remove the leaf and its parent internal node.
-        if path.is_empty() {
+        if path_len == 0 {
             // Tree had only one point.
             self.arena.free(leaf_id);
             self.root = NULL;
             return Ok(());
         }
 
-        let (parent_id, sibling_id) = *path.last().unwrap();
-        let grandparent = if path.len() >= 2 {
-            path[path.len() - 2].0
+        let leaf_parent = self.path_scratch[path_len - 1];
+        let parent_id = leaf_parent.parent;
+        let sibling_id = leaf_parent.sibling;
+        let grandparent = if path_len >= 2 {
+            self.path_scratch[path_len - 2].parent
         } else {
             NULL
         };
@@ -300,8 +332,11 @@ impl RcfTree {
         self.arena.free(parent_id);
 
         // Recompute grandparent and upward.
-        let ancestor_path = &path[..path.len() - 1];
-        Self::update_ancestors_after_change(&mut self.arena, ancestor_path, point_store);
+        Self::update_ancestors_after_change(
+            &mut self.arena,
+            &self.path_scratch[..path_len - 1],
+            point_store,
+        );
 
         Ok(())
     }

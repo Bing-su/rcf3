@@ -14,8 +14,7 @@ pub mod rcf;
 pub use error::{RcfError, Result};
 pub use mstream::{MStream, MStreamBuilder, MStreamConfig, MStreamScore};
 pub use onlineiforest::{OnlineIForest, OnlineIForestBuilder, OnlineIForestConfig};
-pub use rcf::{Attribution, Forest, ForestBuilder, RcfConfig, ScoreMode};
-pub use rcf::{bounding_box, config, cut, forest, node_arena, point_store, sampler, score, tree};
+pub use rcf::{Attribution, Forest, ForestBuilder, NeighborResult, RcfConfig};
 
 // ---------------------------------------------------------------------------
 // Python module registration

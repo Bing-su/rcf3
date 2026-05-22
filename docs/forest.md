@@ -10,10 +10,10 @@
 | `shingle_size`            | `usize` / `int` | `1`          | Temporal window size                                                                 |
 | `capacity`                | `usize` / `int` | `256`        | Maximum number of points stored per tree                                             |
 | `num_trees`               | `usize` / `int` | `50`         | Number of trees in the ensemble                                                      |
-| `time_decay`              | `f64` / `float` | `0.0`        | Exponential time-decay rate; `0.0` uses the automatic default                        |
-| `output_after`            | `usize` / `int` | `0`          | Minimum number of updates before non-trivial outputs; `0` uses the automatic default |
+| `time_decay`              | `f64` / `float` | `0.0`        | Must be finite and non-negative; `0.0` uses `0.1 / capacity`                         |
+| `output_after`            | `usize` / `int` | `0`          | Minimum updates before non-trivial outputs; `0` uses `1 + capacity / 4`              |
 | `internal_shingling`      | `bool`          | `true`       | Whether the forest manages its rolling shingle buffer internally                     |
-| `initial_accept_fraction` | `f64`           | `0.125`      | Warm-up sampling behavior                                                            |
+| `initial_accept_fraction` | `f64` / `float` | `0.125`      | Must be finite and in `[0.0, 1.0]`; lower values throttle warm-up sampler acceptance |
 
 ## Rust API
 

@@ -1,7 +1,9 @@
 #[cfg(not(feature = "std"))]
 use alloc::collections::BTreeMap;
 #[cfg(not(feature = "std"))]
-use alloc::{vec, vec::Vec};
+use alloc::{borrow::Cow, vec, vec::Vec};
+#[cfg(feature = "std")]
+use std::borrow::Cow;
 #[cfg(feature = "std")]
 use std::collections::BTreeMap;
 
@@ -17,13 +19,13 @@ impl Forest {
     /// Anomaly score for `query`. Higher means more anomalous.
     pub fn score(&self, query: &[f32]) -> Result<f64> {
         let q = self.prepare_query(query)?;
-        Ok(self.forest_score(&q, &ScoreMode::standard()))
+        Ok(self.forest_score(q.as_ref(), &ScoreMode::standard()))
     }
 
     /// Displacement-based anomaly score.
     pub fn displacement_score(&self, query: &[f32]) -> Result<f64> {
         let q = self.prepare_query(query)?;
-        Ok(self.forest_score(&q, &ScoreMode::displacement()))
+        Ok(self.forest_score(q.as_ref(), &ScoreMode::displacement()))
     }
 
     /// Per-dimension attribution of the anomaly score.
@@ -40,7 +42,7 @@ impl Forest {
         let n = self.trees.len() as f64;
         let mut total_attr = vec![Attribution::default(); dim];
         for tree in &self.trees {
-            tree.accumulate_attribution_into(&q, &mode, &mut total_attr);
+            tree.accumulate_attribution_into(q.as_ref(), &mode, &mut total_attr);
         }
         Ok(total_attr.into_iter().map(|a| a.scale(1.0 / n)).collect())
     }
@@ -59,7 +61,7 @@ impl Forest {
         let raw: f64 = self
             .trees
             .iter()
-            .map(|t| t.density(&q, &self.point_store))
+            .map(|t| t.density(q.as_ref(), &self.point_store))
             .sum::<f64>()
             / self.trees.len() as f64;
         Ok(raw)
@@ -85,25 +87,28 @@ impl Forest {
     ) -> Result<Vec<NeighborResult>> {
         let q = self.prepare_query(query)?;
         let mode = ScoreMode::standard();
-        let candidates = self.collect_neighbor_candidates(&q, &mode, percentile);
+        let candidates = self.collect_neighbor_candidates(q.as_ref(), &mode, percentile);
         Ok(self.aggregate_neighbor_candidates(candidates, top_k))
     }
     // -----------------------------------------------------------------------
     // Internal helpers
     // -----------------------------------------------------------------------
 
-    /// Validate and shingle `query`.  Returns the full-dimensional vector.
-    pub(super) fn prepare_query(&self, query: &[f32]) -> Result<Vec<f32>> {
-        let base_dim = self.config.input_dim;
+    /// Validate and shingle `query`.
+    ///
+    /// Full-dimensional queries are borrowed directly; only base-dimensional
+    /// queries with internal shingling allocate a temporary shingled vector.
+    pub(super) fn prepare_query<'a>(&self, query: &'a [f32]) -> Result<Cow<'a, [f32]>> {
+        let base_dim = self.config.input_dim();
         let full_dim = self.config.dim();
-        if query.len() == base_dim && self.config.internal_shingling {
+        if query.len() == base_dim && self.config.internal_shingling() {
             // Caller passed a base observation; apply the current shingle state.
             let mut buf = self.point_store.current_shingled().to_vec();
             let start = full_dim - base_dim;
             buf[start..].copy_from_slice(query);
-            Ok(buf)
+            Ok(Cow::Owned(buf))
         } else if query.len() == full_dim {
-            Ok(query.to_vec())
+            Ok(Cow::Borrowed(query))
         } else {
             Err(RcfError::DimensionMismatch {
                 expected: full_dim,

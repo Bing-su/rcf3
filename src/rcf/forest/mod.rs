@@ -22,13 +22,21 @@ mod update;
 /// Gathered per-tree inside [`Forest::near_neighbors`] and then aggregated
 /// and converted into [`NeighborResult`].
 #[derive(Clone, Debug, PartialEq)]
-pub struct NeighborCandidate {
+pub(in crate::rcf) struct NeighborCandidate {
     /// Anomaly score of this candidate point.
-    pub score: f64,
+    pub(in crate::rcf) score: f64,
     /// Index of the point in the [`PointStore`].
-    pub point_idx: usize,
+    pub(in crate::rcf) point_idx: usize,
     /// L1 distance to the query point.
-    pub distance: f64,
+    pub(in crate::rcf) distance: f64,
+}
+
+/// Per-tree update decision kept from sampler acceptance through sampler finalization.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct AcceptedUpdate {
+    pub(super) tree_index: usize,
+    pub(super) evicted_point: Option<usize>,
+    pub(super) weight: f64,
 }
 
 impl From<(f64, usize, f64)> for NeighborCandidate {
@@ -49,7 +57,7 @@ impl From<NeighborCandidate> for (f64, usize, f64) {
 
 /// A near-neighbour result returned by [`Forest::near_neighbors`].
 ///
-/// [`NeighborCandidate`]s collected across all trees are deduplicated and
+/// Candidates collected across all trees are deduplicated and
 /// aggregated by point index, then returned sorted by distance (ascending).
 #[derive(Clone, Debug, PartialEq)]
 pub struct NeighborResult {
@@ -71,11 +79,17 @@ impl From<(f64, Vec<f32>, f64)> for NeighborResult {
     }
 }
 
+impl From<NeighborResult> for (f64, Vec<f32>, f64) {
+    fn from(value: NeighborResult) -> Self {
+        (value.score, value.point, value.distance)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Forest
 // ---------------------------------------------------------------------------
 
-/// A Random Cut Forest: an ensemble of [`RcfTree`]s sharing a [`PointStore`].
+/// A Random Cut Forest: an ensemble of random-cut trees sharing point storage.
 ///
 /// # Typical usage
 /// ```ignore
@@ -94,19 +108,16 @@ impl From<(f64, Vec<f32>, f64)> for NeighborResult {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Forest {
-    pub(crate) config: RcfConfig,
+    config: RcfConfig,
     trees: Vec<RcfTree>,
     samplers: Vec<Sampler>,
-    pub(crate) point_store: PointStore,
+    point_store: PointStore,
     entries_seen: u64,
     rng: Xoshiro256PlusPlus,
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    update_scratch: Vec<AcceptedUpdate>,
 }
 
-impl From<NeighborResult> for (f64, Vec<f32>, f64) {
-    fn from(value: NeighborResult) -> Self {
-        (value.score, value.point, value.distance)
-    }
-}
 impl Forest {
     // -----------------------------------------------------------------------
     // Construction
@@ -117,10 +128,10 @@ impl Forest {
 
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
         let dim = config.dim();
-        let capacity = config.capacity;
-        let num_trees = config.num_trees;
+        let capacity = config.capacity();
+        let num_trees = config.num_trees();
 
-        let store_capacity = (capacity * num_trees + 1).max(2 * capacity);
+        let store_capacity = config.point_store_capacity();
 
         let trees: Vec<RcfTree> = (0..num_trees)
             .map(|_| RcfTree::new(dim, capacity, rng.next_u64()))
@@ -129,10 +140,10 @@ impl Forest {
         let samplers: Vec<Sampler> = (0..num_trees).map(|_| Sampler::new(capacity)).collect();
 
         let point_store = PointStore::new(
-            config.input_dim,
-            config.shingle_size,
+            config.input_dim(),
+            config.shingle_size(),
             store_capacity,
-            config.internal_shingling,
+            config.internal_shingling(),
         );
 
         Ok(Forest {
@@ -142,6 +153,7 @@ impl Forest {
             point_store,
             entries_seen: 0,
             rng: Xoshiro256PlusPlus::seed_from_u64(rng.next_u64()),
+            update_scratch: Vec::with_capacity(num_trees),
         })
     }
 
@@ -172,8 +184,8 @@ impl Forest {
     /// scoring functions return meaningful values.
     pub fn is_ready(&self) -> bool {
         let needed = self.config.effective_output_after()
-            + if self.config.internal_shingling {
-                self.config.shingle_size.saturating_sub(1)
+            + if self.config.internal_shingling() {
+                self.config.shingle_size().saturating_sub(1)
             } else {
                 0
             };
@@ -265,7 +277,10 @@ impl ForestBuilder {
         self
     }
 
-    /// Set the exponential time-decay rate for sampling weights.
+    /// Set the finite non-negative exponential time-decay rate for sampling
+    /// weights.
+    ///
+    /// Use `0.0` to keep the default behavior (`0.1 / capacity`).
     pub fn time_decay(mut self, d: f64) -> Self {
         self.config = self.config.with_time_decay(d);
         self
@@ -283,7 +298,10 @@ impl ForestBuilder {
         self
     }
 
-    /// Set the warm-up acceptance fraction for the sampler.
+    /// Set the finite warm-up acceptance fraction for the sampler.
+    ///
+    /// Must be in `[0.0, 1.0]`; lower values throttle acceptance more while
+    /// each tree sampler is below capacity.
     pub fn initial_accept_fraction(mut self, f: f64) -> Self {
         self.config = self.config.with_initial_accept_fraction(f);
         self
@@ -333,13 +351,13 @@ mod tests {
     #[test]
     fn builder_uses_default_shingle_size() {
         let f = Forest::builder(2).build().unwrap();
-        assert_eq!(f.config().shingle_size, 1);
+        assert_eq!(f.config().shingle_size(), 1);
     }
 
     #[test]
     fn builder_applies_explicit_shingle_size() {
         let f = Forest::builder(2).shingle_size(4).build().unwrap();
-        assert_eq!(f.config().shingle_size, 4);
+        assert_eq!(f.config().shingle_size(), 4);
     }
 
     #[test]
@@ -354,7 +372,7 @@ mod tests {
         f.update(&[2.0]).unwrap();
 
         let prepared = f.prepare_query(&[9.0]).unwrap();
-        assert_eq!(prepared, vec![0.0, 1.0, 9.0]);
+        assert_eq!(prepared.as_ref(), &[0.0, 1.0, 9.0]);
     }
 
     #[test]
@@ -398,6 +416,55 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_updates_share_canonical_point_storage() {
+        let mut f = Forest::builder(2)
+            .shingle_size(1)
+            .num_trees(1)
+            .capacity(8)
+            .output_after(0)
+            .initial_accept_fraction(1.0)
+            .seed(42)
+            .build()
+            .unwrap();
+
+        for _ in 0..8 {
+            f.update(&[1.0f32, 2.0]).unwrap();
+        }
+
+        assert_eq!(f.point_store.num_points(), 1);
+        assert_eq!(f.samplers[0].points(), &[0; 8]);
+        assert_eq!(f.point_store.ref_count(0), f.samplers[0].points().len());
+        assert!(f.score(&[1.0f32, 2.0]).unwrap().is_finite());
+    }
+
+    #[test]
+    fn internal_shingling_priming_counts_logical_point_store_updates() {
+        let mut f = Forest::builder(1)
+            .shingle_size(4)
+            .num_trees(1)
+            .capacity(8)
+            .output_after(0)
+            .initial_accept_fraction(1.0)
+            .seed(42)
+            .build()
+            .unwrap();
+
+        for i in 0..3 {
+            f.update(&[i as f32]).unwrap();
+        }
+
+        assert_eq!(f.entries_seen(), 3);
+        assert_eq!(f.point_store.entries_seen(), 3);
+        assert_eq!(f.point_store.num_points(), 0);
+
+        f.update(&[3.0]).unwrap();
+
+        assert_eq!(f.entries_seen(), 4);
+        assert_eq!(f.point_store.entries_seen(), 4);
+        assert_eq!(f.point_store.num_points(), 1);
+    }
+
+    #[test]
     fn attribution_sums_close_to_score() {
         let mut f = make_forest();
         for i in 0..200 {
@@ -433,6 +500,23 @@ mod tests {
         let score_after = f2.score(query).unwrap();
 
         assert_abs_diff_eq!(score_before, score_after, epsilon = 1e-10);
+    }
+
+    #[test]
+    #[cfg(all(feature = "serde", feature = "std"))]
+    fn serde_omits_internal_scratch_buffers() {
+        let mut f = make_forest();
+        for i in 0..100 {
+            f.update(&[i as f32 * 0.01, 0.5]).unwrap();
+        }
+
+        let json = f.to_json().unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert!(value.get("update_scratch").is_none());
+        for tree in value["trees"].as_array().unwrap() {
+            assert!(tree.get("path_scratch").is_none());
+        }
     }
 
     #[test]
@@ -474,7 +558,7 @@ mod tests {
 
         let look_ahead = 3;
         let out = f.extrapolate(look_ahead).unwrap();
-        assert_eq!(out.len(), look_ahead * f.config().input_dim);
+        assert_eq!(out.len(), look_ahead * f.config().input_dim());
         assert!(out.iter().all(|x| x.is_finite()));
     }
 
@@ -698,7 +782,7 @@ mod tests {
         // slot (last `input_dim` dimensions). With shingle_size > 1 the earlier
         // slots may still hold normal-range values and dilute the total.
         let attr = f.attribution(&anomaly).unwrap();
-        let input_dim = f.config().input_dim;
+        let input_dim = f.config().input_dim();
         let current_slot = &attr[attr.len() - input_dim..];
         let total_dir0: f64 = current_slot.iter().map(|a| a.below).sum();
         let total_dir1: f64 = current_slot.iter().map(|a| a.above).sum();

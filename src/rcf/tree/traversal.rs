@@ -1,5 +1,5 @@
 #[cfg(not(feature = "std"))]
-use alloc::{vec, vec::Vec};
+use alloc::vec::Vec;
 
 use rand::prelude::*;
 use rand::rngs::Xoshiro256PlusPlus;
@@ -23,7 +23,12 @@ impl RcfTree {
     /// Compute the anomaly score for `query` using the given `mode`.
     ///
     /// Returns the normalized anomaly score as an `f64`.
-    pub fn raw_score(&self, query: &[f32], point_store: &PointStore, mode: &ScoreMode) -> f64 {
+    pub(in crate::rcf) fn raw_score(
+        &self,
+        query: &[f32],
+        point_store: &PointStore,
+        mode: &ScoreMode,
+    ) -> f64 {
         if self.is_effectively_empty() {
             return 0.0;
         }
@@ -70,20 +75,11 @@ impl RcfTree {
     // Attribution traversal
     // -----------------------------------------------------------------------
 
-    /// Compute per-dimension anomaly attribution.
-    ///
-    /// Returns a `Vec<Attribution>` of length `dims`.
-    pub fn attribution(&self, query: &[f32], mode: &ScoreMode) -> Vec<Attribution> {
-        let mut attr = vec![Attribution::default(); self.dims];
-        self.accumulate_attribution_into(query, mode, &mut attr);
-        attr
-    }
-
     /// Add this tree's attribution contributions into `attr`.
     ///
-    /// The buffer is not cleared. Callers that need only this tree's attribution
-    /// should start from a zeroed buffer or use [`Self::attribution`].
-    pub(crate) fn accumulate_attribution_into(
+    /// The buffer is not cleared. Callers should start from a zeroed buffer
+    /// when they need only this tree's attribution.
+    pub(in crate::rcf) fn accumulate_attribution_into(
         &self,
         query: &[f32],
         mode: &ScoreMode,
@@ -160,7 +156,7 @@ impl RcfTree {
     // -----------------------------------------------------------------------
 
     /// Density estimate at `query` (uses the displacement score function).
-    pub fn density(&self, query: &[f32], point_store: &PointStore) -> f64 {
+    pub(in crate::rcf) fn density(&self, query: &[f32], point_store: &PointStore) -> f64 {
         if self.is_effectively_empty() {
             return 0.0;
         }
@@ -200,23 +196,7 @@ impl RcfTree {
     // Near-neighbor traversal
     // -----------------------------------------------------------------------
 
-    /// Collect candidate neighbours from this tree.
-    ///
-    /// Candidates are leaf points that would receive a high isolation score
-    /// relative to `query`. Callers should deduplicate/merge across trees.
-    pub fn near_neighbors(
-        &self,
-        query: &[f32],
-        point_store: &PointStore,
-        mode: &ScoreMode,
-        percentile: usize,
-    ) -> Vec<NeighborCandidate> {
-        let mut results = Vec::new();
-        self.near_neighbors_into(query, point_store, mode, percentile, &mut results);
-        results
-    }
-
-    pub(crate) fn near_neighbors_into(
+    pub(in crate::rcf) fn near_neighbors_into(
         &self,
         query: &[f32],
         point_store: &PointStore,
@@ -299,7 +279,7 @@ impl RcfTree {
     /// Returns the best matching candidate. Missing dimensions are
     /// treated as marginalized out (both children are explored when the cut
     /// falls on a missing dimension).
-    pub fn conditional_field(
+    pub(in crate::rcf) fn conditional_field(
         &self,
         query: &[f32],
         missing: &[bool],

@@ -27,6 +27,13 @@ fn l1_distance_slices_ignore_missing(query: &[f32], stored: &[f32], missing: &[b
         .sum()
 }
 
+fn checked_grown_capacity(capacity: usize) -> Result<usize> {
+    capacity
+        .checked_mul(2)
+        .and_then(|v| v.checked_add(4))
+        .ok_or_else(|| RcfError::Overflow("point store capacity growth overflows usize".into()))
+}
+
 // ---------------------------------------------------------------------------
 // PointStore
 // ---------------------------------------------------------------------------
@@ -47,21 +54,33 @@ type PointMatrix = Array2<f32>;
 /// zero-copy `ArrayView1<f32>` or `&[f32]` slice.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct PointStore {
+pub(super) struct PointStore {
     /// Full dimensionality: `input_dim * shingle_size`.
-    pub dim: usize,
+    dim: usize,
     /// Base input dimensionality (before shingling).
-    pub input_dim: usize,
+    input_dim: usize,
     /// Shingle size (temporal window).
-    pub shingle_size: usize,
+    ///
+    /// Kept in serialized state even though current production code derives
+    /// the same information from `dim` and `input_dim`.
+    #[allow(dead_code)]
+    shingle_size: usize,
     /// Whether the store manages the rolling shingle buffer.
-    pub internal_shingling: bool,
+    ///
+    /// Kept in serialized state to preserve historical Forest snapshots.
+    #[allow(dead_code)]
+    internal_shingling: bool,
 
     /// Row-indexed point matrix (shape: `capacity × dim`).
     store: PointMatrix,
     /// Whether each slot is occupied.
     occupied: Vec<bool>,
-    /// Reference count for each slot (how many trees reference it).
+    /// Reference count for each slot.
+    ///
+    /// Counts sampler-slot references, not distinct trees. Duplicate inserts
+    /// can reuse a canonical stored point while adding another sampler entry,
+    /// so one tree may legitimately contribute multiple references to the
+    /// same slot.
     ref_count: Vec<usize>,
     /// Next slot to use when free_list is empty.
     next_free: usize,
@@ -74,15 +93,16 @@ pub struct PointStore {
 
     /// Rolling shingle buffer (used when `internal_shingling = true`).
     shingle_buf: Vec<f32>,
-    /// Total number of `add` calls (for shingling state tracking).
-    pub entries_seen: u64,
+    /// Total number of logical input updates seen, including `add` calls and
+    /// logical adds without storage (for shingling state tracking).
+    entries_seen: u64,
 }
 
 impl PointStore {
     /// Create a new store.
     ///
     /// `input_dim` × `shingle_size` = full model dimension.
-    pub fn new(
+    pub(super) fn new(
         input_dim: usize,
         shingle_size: usize,
         capacity: usize,
@@ -117,7 +137,8 @@ impl PointStore {
     ///
     /// When `internal_shingling` is true, `base` must have length `input_dim`;
     /// the store shifts the rolling buffer and fills in the new observation.
-    pub fn shingled_point(&mut self, base: &[f32]) -> Result<Vec<f32>> {
+    #[cfg(test)]
+    fn shingled_point(&mut self, base: &[f32]) -> Result<Vec<f32>> {
         if self.internal_shingling {
             self.advance_shingle(base)?;
             Ok(self.shingle_buf.clone())
@@ -127,7 +148,7 @@ impl PointStore {
         }
     }
 
-    pub(crate) fn advance_shingle(&mut self, base: &[f32]) -> Result<()> {
+    pub(super) fn advance_shingle(&mut self, base: &[f32]) -> Result<()> {
         if base.len() != self.input_dim {
             return Err(RcfError::DimensionMismatch {
                 expected: self.input_dim,
@@ -141,7 +162,7 @@ impl PointStore {
     }
 
     /// Peek at the current shingled point without advancing the shingle buffer.
-    pub fn current_shingled(&self) -> &[f32] {
+    pub(super) fn current_shingled(&self) -> &[f32] {
         &self.shingle_buf
     }
 
@@ -151,19 +172,23 @@ impl PointStore {
 
     /// Store `point` and return its index.
     ///
-    /// The reference count is initialised to 0; callers must call
-    /// [`Self::inc_ref`] for each tree that accepts this point.
-    pub fn add(&mut self, point: &[f32]) -> Result<usize> {
+    /// The reference count is initialised to 0. Callers increment it only
+    /// after a sampler entry is finalized for the canonical point index
+    /// referenced by the tree. If duplicate insertion reuses an existing leaf,
+    /// the existing slot is incremented and the unused newly stored slot is
+    /// released.
+    #[cfg(test)]
+    pub(super) fn add(&mut self, point: &[f32]) -> Result<usize> {
         self.validate_full_point(point)?;
         self.add_validated(point)
     }
 
-    pub(crate) fn add_validated(&mut self, point: &[f32]) -> Result<usize> {
+    pub(super) fn add_validated(&mut self, point: &[f32]) -> Result<usize> {
         debug_assert_eq!(point.len(), self.dim);
         self.store_point(point)
     }
 
-    pub(crate) fn add_current_shingled(&mut self) -> Result<usize> {
+    pub(super) fn add_current_shingled(&mut self) -> Result<usize> {
         let idx = self.allocate_slot()?;
         self.store
             .row_mut(idx)
@@ -172,7 +197,7 @@ impl PointStore {
         Ok(idx)
     }
 
-    pub(crate) fn validate_full_point(&self, point: &[f32]) -> Result<()> {
+    pub(super) fn validate_full_point(&self, point: &[f32]) -> Result<()> {
         if point.len() != self.dim {
             return Err(RcfError::DimensionMismatch {
                 expected: self.dim,
@@ -196,6 +221,12 @@ impl PointStore {
         self.entries_seen += 1;
     }
 
+    pub(super) fn record_logical_add_without_storage(&mut self) {
+        // Preserve the logical update count for serde/shingling state even
+        // when lazy sampling rejects the point before materializing a row.
+        self.entries_seen += 1;
+    }
+
     fn allocate_slot(&mut self) -> Result<usize> {
         if let Some(idx) = self.free_list.pop() {
             return Ok(idx);
@@ -206,7 +237,7 @@ impl PointStore {
             return Ok(idx);
         }
         // Grow the store: allocate a larger matrix and copy the existing rows.
-        let new_cap = self.capacity * 2 + 4;
+        let new_cap = checked_grown_capacity(self.capacity)?;
         let mut new_store = Array2::zeros((new_cap, self.dim));
         new_store
             .slice_mut(s![..self.capacity, ..])
@@ -220,13 +251,17 @@ impl PointStore {
         Ok(idx)
     }
 
-    /// Increment reference count for slot `idx`.
-    pub fn inc_ref(&mut self, idx: usize) {
+    /// Increment the sampler-slot reference count for slot `idx`.
+    ///
+    /// This may be called multiple times for the same tree when duplicate
+    /// updates share the same canonical stored point but occupy separate
+    /// sampler entries.
+    pub(super) fn inc_ref(&mut self, idx: usize) {
         self.ref_count[idx] += 1;
     }
 
-    /// Decrement reference count; free the slot when it reaches zero.
-    pub fn dec_ref(&mut self, idx: usize) {
+    /// Decrement the sampler-slot reference count; free the slot at zero.
+    pub(super) fn dec_ref(&mut self, idx: usize) {
         if self.ref_count[idx] > 0 {
             self.ref_count[idx] -= 1;
         }
@@ -242,7 +277,7 @@ impl PointStore {
     // -----------------------------------------------------------------------
 
     /// Return the point at `idx`.  Panics if `idx` is not occupied.
-    pub fn get(&self, idx: usize) -> &[f32] {
+    pub(super) fn get(&self, idx: usize) -> &[f32] {
         debug_assert!(self.occupied[idx], "accessing unoccupied slot {idx}");
         self.store
             .row(idx)
@@ -250,31 +285,30 @@ impl PointStore {
             .expect("store must be contiguous")
     }
 
-    /// Return the point at `idx` as an ndarray view (zero-copy).
-    pub fn point_view(&self, idx: usize) -> ArrayView1<'_, f32> {
-        debug_assert!(self.occupied[idx], "accessing unoccupied slot {idx}");
-        self.store.row(idx)
-    }
-
     /// Check whether the stored point at `idx` equals `point` component-wise.
-    pub fn is_equal(&self, point: &[f32], idx: usize) -> bool {
+    pub(super) fn is_equal(&self, point: &[f32], idx: usize) -> bool {
         self.store.row(idx) == ArrayView1::from(point)
     }
 
     /// L1 distance between `query` and the stored point at `idx`.
-    pub fn l1_distance(&self, query: &[f32], idx: usize) -> f64 {
+    pub(super) fn l1_distance(&self, query: &[f32], idx: usize) -> f64 {
         let stored = self.get(idx);
         l1_distance_slices(query, stored)
     }
 
     /// L1 distance ignoring `missing` dimensions.
-    pub fn l1_distance_ignore_missing(&self, query: &[f32], idx: usize, missing: &[bool]) -> f64 {
+    pub(super) fn l1_distance_ignore_missing(
+        &self,
+        query: &[f32],
+        idx: usize,
+        missing: &[bool],
+    ) -> f64 {
         let stored = self.get(idx);
         l1_distance_slices_ignore_missing(query, stored, missing)
     }
 
     /// Return a copy of the point at `idx`.
-    pub fn copy_point(&self, idx: usize) -> Vec<f32> {
+    pub(super) fn copy_point(&self, idx: usize) -> Vec<f32> {
         self.get(idx).to_vec()
     }
 
@@ -288,12 +322,13 @@ impl PointStore {
     /// For a shingle buffer `[t-k+1, …, t]` (k slots of `input_dim` each),
     /// `next_indices(0)` returns the positions that the *next* base observation
     /// would fill (the newest slot in the buffer).
-    pub fn next_indices(&self, look_ahead: usize) -> Vec<usize> {
+    #[cfg(test)]
+    fn next_indices(&self, look_ahead: usize) -> Vec<usize> {
         let offset = lookahead_offset(self.dim, self.input_dim, look_ahead);
         (0..self.input_dim).map(|i| offset + i).collect()
     }
 
-    pub(crate) fn next_indices_into(&self, look_ahead: usize, indices: &mut Vec<usize>) {
+    pub(super) fn next_indices_into(&self, look_ahead: usize, indices: &mut Vec<usize>) {
         indices.clear();
         let offset = lookahead_offset(self.dim, self.input_dim, look_ahead);
         indices.extend((0..self.input_dim).map(|i| offset + i));
@@ -301,7 +336,8 @@ impl PointStore {
 
     /// Convert `missing` base-dimension indices into full-dimension indices
     /// within the shingled vector, shifted by `look_ahead` steps.
-    pub fn missing_indices_with_lookahead(
+    #[cfg(test)]
+    fn missing_indices_with_lookahead(
         &self,
         look_ahead: usize,
         missing_base: &[usize],
@@ -315,8 +351,29 @@ impl PointStore {
     // -----------------------------------------------------------------------
 
     /// Number of points currently retained in the store.
-    pub fn num_points(&self) -> usize {
+    #[cfg(test)]
+    pub(super) fn num_points(&self) -> usize {
         self.size
+    }
+
+    #[cfg(test)]
+    pub(super) fn ref_count(&self, idx: usize) -> usize {
+        self.ref_count[idx]
+    }
+
+    #[cfg(test)]
+    fn dim(&self) -> usize {
+        self.dim
+    }
+
+    #[cfg(test)]
+    fn input_dim(&self) -> usize {
+        self.input_dim
+    }
+
+    #[cfg(test)]
+    pub(super) fn entries_seen(&self) -> u64 {
+        self.entries_seen
     }
 }
 
@@ -347,7 +404,36 @@ mod tests {
         assert_eq!(idx, 0);
         assert_eq!(ps.get(idx), &[1.0f32, 2.0, 3.0, 4.0]);
         assert_eq!(ps.num_points(), 1);
-        assert_eq!(ps.entries_seen, 1);
+        assert_eq!(ps.entries_seen(), 1);
+    }
+
+    #[rstest]
+    #[case::small_capacity(8, 20)]
+    #[case::zero_capacity(0, 4)]
+    fn checked_grown_capacity_matches_growth_formula(
+        #[case] capacity: usize,
+        #[case] expected: usize,
+    ) {
+        assert_eq!(checked_grown_capacity(capacity).unwrap(), expected);
+    }
+
+    #[test]
+    fn checked_grown_capacity_rejects_overflow() {
+        let err = checked_grown_capacity(usize::MAX).unwrap_err();
+
+        assert!(
+            matches!(err, RcfError::Overflow(ref msg) if msg.contains("capacity growth")),
+            "unexpected error variant: {err:?}"
+        );
+    }
+
+    #[test]
+    fn skipped_add_preserves_logical_add_count_without_storing_point() {
+        let mut ps = PointStore::new(2, 1, 8, false);
+        ps.record_logical_add_without_storage();
+
+        assert_eq!(ps.num_points(), 0);
+        assert_eq!(ps.entries_seen(), 1);
     }
 
     #[test]
@@ -407,7 +493,7 @@ mod tests {
         #[case] expected_indices: Vec<usize>,
     ) {
         let ps = PointStore::new(2, 3, 8, true);
-        let offset = lookahead_offset(ps.dim, ps.input_dim, look_ahead);
+        let offset = lookahead_offset(ps.dim(), ps.input_dim(), look_ahead);
 
         assert_eq!(offset, expected_indices[0]);
         assert_eq!(ps.next_indices(look_ahead), expected_indices);

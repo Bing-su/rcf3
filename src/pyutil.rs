@@ -12,7 +12,7 @@ pub(crate) fn to_py_err(e: RcfError) -> PyErr {
         RcfError::DimensionMismatch { expected, got } => PyValueError::new_err(format!(
             "dimension mismatch: expected {expected}, got {got}"
         )),
-        other => PyRuntimeError::new_err(format!("{other:?}")),
+        other => PyRuntimeError::new_err(other.to_string()),
     }
 }
 

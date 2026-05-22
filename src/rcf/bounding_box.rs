@@ -25,6 +25,7 @@ fn excess_outside_box(point: &[f32], min: &[f32], max: &[f32]) -> f32 {
     excess
 }
 
+#[cfg(test)]
 fn excess_outside_box_with_missing(
     point: &[f32],
     min: &[f32],
@@ -52,6 +53,7 @@ fn excess_outside_box_with_missing(
     excess
 }
 
+#[cfg(test)]
 fn active_range_sum_with_missing(min: &[f32], max: &[f32], missing: &[bool]) -> f64 {
     debug_assert_eq!(min.len(), max.len());
     debug_assert_eq!(max.len(), missing.len());
@@ -65,6 +67,7 @@ fn active_range_sum_with_missing(min: &[f32], max: &[f32], missing: &[bool]) -> 
     sum
 }
 
+#[cfg(test)]
 fn componentwise_min_max(a: &[f32], b: &[f32]) -> (Vec<f32>, Vec<f32>) {
     izip!(a, b).map(|(&x, &y)| (x.min(y), x.max(y))).unzip()
 }
@@ -83,16 +86,16 @@ fn merge_bounds_in_place(min: &mut [f32], max: &mut [f32], other_min: &[f32], ot
 /// Axis-aligned bounding box in `dim`-dimensional space.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct BoundingBox {
-    pub min: Vec<f32>,
-    pub max: Vec<f32>,
+pub(super) struct BoundingBox {
+    pub(super) min: Vec<f32>,
+    pub(super) max: Vec<f32>,
     /// Sum of per-dimension ranges; cached for efficiency.
     range_sum: f64,
 }
 
 impl BoundingBox {
     /// Degenerate box containing a single point.
-    pub fn from_point(p: &[f32]) -> Self {
+    pub(super) fn from_point(p: &[f32]) -> Self {
         BoundingBox {
             min: p.to_vec(),
             max: p.to_vec(),
@@ -101,7 +104,8 @@ impl BoundingBox {
     }
 
     /// Smallest box containing both `a` and `b`.
-    pub fn from_two_points(a: &[f32], b: &[f32]) -> Self {
+    #[cfg(test)]
+    pub(super) fn from_two_points(a: &[f32], b: &[f32]) -> Self {
         debug_assert_eq!(a.len(), b.len());
         let (min, max) = componentwise_min_max(a, b);
         let range_sum = range_sum(&min, &max);
@@ -114,7 +118,8 @@ impl BoundingBox {
 
     /// Expand this box to also contain `point`.
     /// Returns `true` if the box expanded.
-    pub fn expand_with_point(&mut self, point: &[f32]) -> bool {
+    #[cfg(test)]
+    fn expand_with_point(&mut self, point: &[f32]) -> bool {
         let old = self.range_sum;
         merge_bounds_in_place(&mut self.min, &mut self.max, point, point);
         self.range_sum = range_sum(&self.min, &self.max);
@@ -122,8 +127,14 @@ impl BoundingBox {
     }
 
     /// Expand this box to also contain all of `other`.
-    pub fn merge(&mut self, other: &BoundingBox) {
+    pub(super) fn merge(&mut self, other: &BoundingBox) {
         merge_bounds_in_place(&mut self.min, &mut self.max, &other.min, &other.max);
+        self.range_sum = range_sum(&self.min, &self.max);
+    }
+
+    /// Expand this box to also contain `point`.
+    pub(super) fn merge_point(&mut self, point: &[f32]) {
+        merge_bounds_in_place(&mut self.min, &mut self.max, point, point);
         self.range_sum = range_sum(&self.min, &self.max);
     }
 
@@ -131,7 +142,7 @@ impl BoundingBox {
     /// be made at some dimension when cutting on the merged (box ∪ point) box.
     ///
     /// Returns 0.0 when `point` is inside the box.
-    pub fn probability_of_cut(&self, point: &[f32]) -> f64 {
+    pub(super) fn probability_of_cut(&self, point: &[f32]) -> f64 {
         let excess = excess_outside_box(point, &self.min, &self.max);
 
         if excess == 0.0 {
@@ -146,7 +157,8 @@ impl BoundingBox {
     /// Probability of cut, ignoring dimensions marked `true` in `missing`.
     ///
     /// `missing` is a per-dimension mask with the same length as `point`.
-    pub fn probability_of_cut_with_missing(&self, point: &[f32], missing: &[bool]) -> f64 {
+    #[cfg(test)]
+    fn probability_of_cut_with_missing(&self, point: &[f32], missing: &[bool]) -> f64 {
         let excess = excess_outside_box_with_missing(point, &self.min, &self.max, missing);
         let active_range = active_range_sum_with_missing(&self.min, &self.max, missing);
         if excess == 0.0 {
@@ -159,13 +171,9 @@ impl BoundingBox {
     }
 
     /// Sum of per-dimension ranges for this box.
-    pub fn range_sum(&self) -> f64 {
+    #[cfg(test)]
+    fn range_sum(&self) -> f64 {
         self.range_sum
-    }
-
-    pub fn merge_with(mut self, other: &BoundingBox) -> Self {
-        self.merge(other);
-        self
     }
 }
 
