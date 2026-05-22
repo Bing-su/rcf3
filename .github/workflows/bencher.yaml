@@ -5,7 +5,7 @@ on:
       - main
     paths:
       - "src/**/*.rs"
-      - ".github/workflows/bencher.yaml"
+  workflow_dispatch:
 
 jobs:
   benchmark:
