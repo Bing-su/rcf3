@@ -68,7 +68,12 @@ pub(super) struct PointStore {
     store: PointMatrix,
     /// Whether each slot is occupied.
     occupied: Vec<bool>,
-    /// Reference count for each slot (how many trees reference it).
+    /// Reference count for each slot.
+    ///
+    /// Counts sampler-slot references, not distinct trees. Duplicate inserts
+    /// can reuse a canonical stored point while adding another sampler entry,
+    /// so one tree may legitimately contribute multiple references to the
+    /// same slot.
     ref_count: Vec<usize>,
     /// Next slot to use when free_list is empty.
     next_free: usize,
@@ -160,8 +165,11 @@ impl PointStore {
 
     /// Store `point` and return its index.
     ///
-    /// The reference count is initialised to 0; callers must call
-    /// [`Self::inc_ref`] for each tree that accepts this point.
+    /// The reference count is initialised to 0. Callers increment it only
+    /// after a sampler entry is finalized for the canonical point index
+    /// referenced by the tree. If duplicate insertion reuses an existing leaf,
+    /// the existing slot is incremented and the unused newly stored slot is
+    /// released.
     #[cfg(test)]
     pub(super) fn add(&mut self, point: &[f32]) -> Result<usize> {
         self.validate_full_point(point)?;
@@ -236,12 +244,16 @@ impl PointStore {
         Ok(idx)
     }
 
-    /// Increment reference count for slot `idx`.
+    /// Increment the sampler-slot reference count for slot `idx`.
+    ///
+    /// This may be called multiple times for the same tree when duplicate
+    /// updates share the same canonical stored point but occupy separate
+    /// sampler entries.
     pub(super) fn inc_ref(&mut self, idx: usize) {
         self.ref_count[idx] += 1;
     }
 
-    /// Decrement reference count; free the slot when it reaches zero.
+    /// Decrement the sampler-slot reference count; free the slot at zero.
     pub(super) fn dec_ref(&mut self, idx: usize) {
         if self.ref_count[idx] > 0 {
             self.ref_count[idx] -= 1;
