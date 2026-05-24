@@ -51,6 +51,7 @@ impl Forest {
         self.apply_accepted_updates(point_idx)
     }
 
+    /// Check that all staged evictions can be applied before committing the update.
     fn validate_staged_updates(&self) -> Result<()> {
         for update in &self.staged_accepted_updates {
             if let Some(evicted_idx) = update.evicted_point {
@@ -60,6 +61,7 @@ impl Forest {
         Ok(())
     }
 
+    /// Validate the update input before sampling decisions consume RNG state.
     fn validate_update_input(&self, base: &[f32]) -> Result<()> {
         if self.config.internal_shingling() {
             if base.len() != self.config.input_dim() {
@@ -74,6 +76,7 @@ impl Forest {
         }
     }
 
+    /// Commit the input into the rolling shingle buffer after preflight checks pass.
     fn prepare_update_input(&mut self, base: &[f32]) -> Result<()> {
         if self.config.internal_shingling() {
             self.point_store.advance_shingle(base)?;
@@ -81,6 +84,7 @@ impl Forest {
         Ok(())
     }
 
+    /// Return whether the logical update count has filled the shingle window.
     fn has_primed_shingle_at(&self, entries_seen: u64) -> bool {
         let shingle_lag = if self.config.internal_shingling() {
             self.config.shingle_size().saturating_sub(1)
@@ -91,6 +95,7 @@ impl Forest {
         entries_seen as usize > shingle_lag
     }
 
+    /// Stage sampler decisions against cloned RNG state before mutating the forest.
     fn collect_accepted_updates_with(
         &mut self,
         rng: &mut Xoshiro256PlusPlus,

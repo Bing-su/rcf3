@@ -46,6 +46,7 @@ impl RcfTree {
         }
     }
 
+    /// Descend to the leaf for `point` without updating the reusable path scratch buffer.
     fn leaf_for_point(&self, point: &[f32]) -> usize {
         let mut cur = self.root;
         loop {
@@ -353,6 +354,7 @@ impl RcfTree {
         Ok(())
     }
 
+    /// Validate a deletion candidate without mutating tree structure or scratch state.
     pub(in crate::rcf) fn validate_delete(
         &self,
         point_idx: usize,

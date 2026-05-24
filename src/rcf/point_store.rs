@@ -207,6 +207,7 @@ impl PointStore {
         Ok(())
     }
 
+    /// Verify that the next slot allocation can succeed without mutating storage.
     pub(super) fn ensure_can_allocate_slot(&self) -> Result<()> {
         if !self.free_list.is_empty() || self.next_free < self.capacity {
             return Ok(());
@@ -214,6 +215,7 @@ impl PointStore {
         checked_grown_capacity(self.capacity).map(|_| ())
     }
 
+    /// Force the next allocation down the growth-overflow path for rollback tests.
     #[cfg(test)]
     pub(super) fn force_next_allocation_to_overflow(&mut self) {
         self.free_list.clear();
