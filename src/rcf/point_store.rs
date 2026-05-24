@@ -382,6 +382,13 @@ impl PointStore {
     pub(super) fn entries_seen(&self) -> u64 {
         self.entries_seen
     }
+
+    #[cfg(test)]
+    pub(super) fn force_next_allocation_to_overflow(&mut self) {
+        self.free_list.clear();
+        self.next_free = usize::MAX;
+        self.capacity = usize::MAX;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -427,6 +434,19 @@ mod tests {
     #[test]
     fn checked_grown_capacity_rejects_overflow() {
         let err = checked_grown_capacity(usize::MAX).unwrap_err();
+
+        assert!(
+            matches!(err, RcfError::Overflow(ref msg) if msg.contains("capacity growth")),
+            "unexpected error variant: {err:?}"
+        );
+    }
+
+    #[test]
+    fn ensure_can_allocate_slot_rejects_growth_overflow() {
+        let mut ps = PointStore::new(2, 1, 1, false);
+        ps.force_next_allocation_to_overflow();
+
+        let err = ps.ensure_can_allocate_slot().unwrap_err();
 
         assert!(
             matches!(err, RcfError::Overflow(ref msg) if msg.contains("capacity growth")),

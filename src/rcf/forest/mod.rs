@@ -482,6 +482,58 @@ mod tests {
     }
 
     #[test]
+    fn update_allocation_overflow_does_not_commit_staged_state() {
+        let mut f = (0..1_000)
+            .find_map(|seed| {
+                let mut candidate = Forest::builder(1)
+                    .shingle_size(2)
+                    .internal_shingling(true)
+                    .num_trees(1)
+                    .capacity(1)
+                    .output_after(0)
+                    .initial_accept_fraction(1.0)
+                    .seed(seed)
+                    .build()
+                    .unwrap();
+                candidate.update(&[1.0]).unwrap();
+                candidate.update(&[2.0]).unwrap();
+
+                let mut probe = candidate.clone();
+                probe.point_store.force_next_allocation_to_overflow();
+                matches!(probe.update(&[3.0]), Err(RcfError::Overflow(_))).then_some(candidate)
+            })
+            .expect("test seed range should include an accepted replacement");
+
+        f.point_store.force_next_allocation_to_overflow();
+        let entries_seen = f.entries_seen;
+        let point_store_entries_seen = f.point_store.entries_seen();
+        let point_store_points = f.point_store.num_points();
+        let shingle = f.point_store.current_shingled().to_vec();
+        let rng = f.rng.clone();
+        let samplers = f.samplers.clone();
+        let trees = f.trees.clone();
+        let accepted_updates = f.accepted_updates.clone();
+
+        let err = f.update(&[3.0]).unwrap_err();
+
+        assert!(
+            matches!(err, RcfError::Overflow(ref msg) if msg.contains("capacity growth")),
+            "unexpected error variant: {err:?}"
+        );
+        assert_eq!(f.entries_seen, entries_seen);
+        assert_eq!(f.point_store.entries_seen(), point_store_entries_seen);
+        assert_eq!(f.point_store.num_points(), point_store_points);
+        assert_eq!(f.point_store.current_shingled(), shingle.as_slice());
+        assert_eq!(format!("{:?}", f.rng), format!("{:?}", rng));
+        assert_eq!(format!("{:?}", f.samplers), format!("{:?}", samplers));
+        assert_eq!(format!("{:?}", f.trees), format!("{:?}", trees));
+        assert_eq!(
+            format!("{:?}", f.accepted_updates),
+            format!("{:?}", accepted_updates)
+        );
+    }
+
+    #[test]
     fn attribution_sums_close_to_score() {
         let mut f = make_forest();
         for i in 0..200 {
