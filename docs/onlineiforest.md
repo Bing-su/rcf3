@@ -9,15 +9,13 @@ preview the current anomaly score for a point without mutating detector state.
 
 ## Configuration
 
-| Parameter          | Type            | Default      | Description                                      |
-| ------------------ | --------------- | ------------ | ------------------------------------------------ |
-| `input_dim`        | `usize` / `int` | **Required** | Number of numerical features in each point       |
-| `num_trees`        | `usize` / `int` | `32`         | Number of trees in the ensemble                  |
-| `window_size`      | `usize` / `int` | `2048`       | Number of recent points retained by the detector |
-| `max_leaf_samples` | `usize` / `int` | `32`         | Base leaf-splitting threshold                    |
-| `seed`             | `u64` / `int`   | random       | Optional seed for deterministic trees            |
-
-`window_size` must be greater than `max_leaf_samples`.
+| Parameter          | Type            | Default      | Description                                      | Constraints                                       |
+| ------------------ | --------------- | ------------ | ------------------------------------------------ | ------------------------------------------------- |
+| `input_dim`        | `usize` / `int` | **Required** | Number of numerical features in each point       | Must be `> 0`                                     |
+| `num_trees`        | `usize` / `int` | `32`         | Number of trees in the ensemble                  | Must be `> 0`                                     |
+| `window_size`      | `usize` / `int` | `2048`       | Number of recent points retained by the detector | Must be `> 0` and greater than `max_leaf_samples` |
+| `max_leaf_samples` | `usize` / `int` | `32`         | Base leaf-splitting threshold                    | Must be `> 0`; must be less than `window_size`    |
+| `seed`             | `u64` / `int`   | random       | Optional seed for deterministic trees            | None                                              |
 
 ## Implementation choices
 

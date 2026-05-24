@@ -6,16 +6,14 @@ with byte counts plus country or endpoint IDs.
 
 ## Configuration
 
-| Parameter         | Type            | Default      | Description                                   |
-| ----------------- | --------------- | ------------ | --------------------------------------------- |
-| `numeric_dim`     | `usize` / `int` | **Required** | Number of numerical features in each record   |
-| `categorical_dim` | `usize` / `int` | **Required** | Number of categorical features in each record |
-| `num_rows`        | `usize` / `int` | `2`          | Number of hash rows                           |
-| `num_buckets`     | `usize` / `int` | `1024`       | Number of buckets per hash row                |
-| `alpha`           | `f64` / `float` | `0.8`        | Temporal decay factor in `(0, 1)`             |
-| `seed`            | `u64` / `int`   | random       | Optional seed for deterministic hashing       |
-
-At least one of `numeric_dim` or `categorical_dim` must be greater than zero.
+| Parameter         | Type            | Default      | Description                                   | Constraints                                                      |
+| ----------------- | --------------- | ------------ | --------------------------------------------- | ---------------------------------------------------------------- |
+| `numeric_dim`     | `usize` / `int` | **Required** | Number of numerical features in each record   | At least one of `numeric_dim` or `categorical_dim` must be `> 0` |
+| `categorical_dim` | `usize` / `int` | **Required** | Number of categorical features in each record | At least one of `numeric_dim` or `categorical_dim` must be `> 0` |
+| `num_rows`        | `usize` / `int` | `2`          | Number of hash rows                           | Must be `> 0`                                                    |
+| `num_buckets`     | `usize` / `int` | `1024`       | Number of buckets per hash row                | Must be `>= 2`                                                   |
+| `alpha`           | `f64` / `float` | `0.8`        | Temporal decay factor                         | Must be finite and in `(0.0, 1.0)`                               |
+| `seed`            | `u64` / `int`   | random       | Optional seed for deterministic hashing       | None                                                             |
 
 ## Implementation choices
 

@@ -4,16 +4,16 @@
 
 ## Configuration
 
-| Parameter                 | Type            | Default      | Description                                                                          |
-| ------------------------- | --------------- | ------------ | ------------------------------------------------------------------------------------ |
-| `input_dim`               | `usize` / `int` | **Required** | Number of base feature dimensions per observation                                    |
-| `shingle_size`            | `usize` / `int` | `1`          | Temporal window size                                                                 |
-| `capacity`                | `usize` / `int` | `256`        | Maximum number of points stored per tree                                             |
-| `num_trees`               | `usize` / `int` | `50`         | Number of trees in the ensemble                                                      |
-| `time_decay`              | `f64` / `float` | `0.0`        | Must be finite and non-negative; `0.0` uses `0.1 / capacity`                         |
-| `output_after`            | `usize` / `int` | `0`          | Minimum updates before non-trivial outputs; `0` uses `1 + capacity / 4`              |
-| `internal_shingling`      | `bool`          | `true`       | Whether the forest manages its rolling shingle buffer internally                     |
-| `initial_accept_fraction` | `f64` / `float` | `0.125`      | Must be finite and in `[0.0, 1.0]`; lower values throttle warm-up sampler acceptance |
+| Parameter                 | Type            | Default      | Description                                                             | Constraints                        |
+| ------------------------- | --------------- | ------------ | ----------------------------------------------------------------------- | ---------------------------------- |
+| `input_dim`               | `usize` / `int` | **Required** | Number of base feature dimensions per observation                       | Must be `> 0`                      |
+| `shingle_size`            | `usize` / `int` | `1`          | Temporal window size                                                    | Must be `> 0`                      |
+| `capacity`                | `usize` / `int` | `256`        | Maximum number of points stored per tree                                | Must be `> 0`                      |
+| `num_trees`               | `usize` / `int` | `50`         | Number of trees in the ensemble                                         | Must be `> 0`                      |
+| `time_decay`              | `f64` / `float` | `0.0`        | Exponential time-decay rate; `0.0` uses `0.1 / capacity`                | Must be finite and `>= 0.0`        |
+| `output_after`            | `usize` / `int` | `0`          | Minimum updates before non-trivial outputs; `0` uses `1 + capacity / 4` | None                               |
+| `internal_shingling`      | `bool`          | `true`       | Whether the forest manages its rolling shingle buffer internally        | None                               |
+| `initial_accept_fraction` | `f64` / `float` | `0.125`      | Warm-up sampler acceptance fraction                                     | Must be finite and in `[0.0, 1.0]` |
 
 ## Rust API
 
@@ -93,6 +93,9 @@ for (i, attr) in attribution.iter().enumerate() {
 - `below`: contribution from cuts below the query value
 
 ### Neighborhood search
+
+`percentile` controls per-tree traversal aggressiveness and must be in `[0, 100]`.
+Lower values visit more branches and usually return more candidates.
 
 ```rust
 let neighbors = forest.near_neighbors(&[1.5, 2.3], 10, 50)?;
@@ -200,6 +203,9 @@ for i, attr in enumerate(attribution):
 ```
 
 ### Neighborhood search
+
+`percentile` controls per-tree traversal aggressiveness and must be in `[0, 100]`.
+Lower values visit more branches and usually return more candidates.
 
 ```python
 neighbors = forest.near_neighbors([1.5, 2.3], top_k=10, percentile=50)
