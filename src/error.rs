@@ -18,8 +18,6 @@ pub enum RcfError {
     Overflow(String),
     #[error("runtime error: {0}")]
     Runtime(String),
-    #[error("operation on empty tree")]
-    EmptyTree,
     #[error("I/O error: {0}")]
     Io(String),
 }

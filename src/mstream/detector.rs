@@ -1,4 +1,6 @@
 #[cfg(all(not(feature = "std"), feature = "serde"))]
+use alloc::format;
+#[cfg(all(not(feature = "std"), feature = "serde"))]
 use alloc::string::{String, ToString};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -351,7 +353,8 @@ impl MStream {
     /// Serialize the detector state to JSON.
     #[cfg(feature = "serde")]
     pub fn to_json(&self) -> Result<String> {
-        serde_json::to_string(self).map_err(|e| RcfError::Io(e.to_string()))
+        serde_json::to_string(self)
+            .map_err(|e| RcfError::Runtime(format!("failed to serialize MStream: {e}")))
     }
 
     /// Deserialize detector state from JSON previously written by

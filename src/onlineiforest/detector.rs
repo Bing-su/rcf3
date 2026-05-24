@@ -1,4 +1,6 @@
 #[cfg(all(not(feature = "std"), feature = "serde"))]
+use alloc::format;
+#[cfg(all(not(feature = "std"), feature = "serde"))]
 use alloc::string::{String, ToString};
 #[cfg(not(feature = "std"))]
 use alloc::{collections::VecDeque, vec::Vec};
@@ -184,7 +186,8 @@ impl OnlineIForest {
     #[cfg(feature = "serde")]
     /// Serialize detector state to JSON.
     pub fn to_json(&self) -> Result<String> {
-        serde_json::to_string(self).map_err(|err| RcfError::Io(err.to_string()))
+        serde_json::to_string(self)
+            .map_err(|err| RcfError::Runtime(format!("failed to serialize OnlineIForest: {err}")))
     }
 
     #[cfg(feature = "serde")]

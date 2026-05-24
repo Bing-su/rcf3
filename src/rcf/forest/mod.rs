@@ -1,4 +1,6 @@
 #[cfg(all(not(feature = "std"), feature = "serde"))]
+use alloc::format;
+#[cfg(all(not(feature = "std"), feature = "serde"))]
 use alloc::string::{String, ToString};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -215,7 +217,8 @@ impl Forest {
     /// Serialize the entire forest state to a JSON string.
     #[cfg(feature = "serde")]
     pub fn to_json(&self) -> Result<String> {
-        serde_json::to_string(self).map_err(|e| RcfError::Io(e.to_string()))
+        serde_json::to_string(self)
+            .map_err(|e| RcfError::Runtime(format!("failed to serialize forest: {e}")))
     }
 
     /// Deserialize a forest from a JSON string previously written by

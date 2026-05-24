@@ -361,7 +361,7 @@ impl RcfTree {
         point_store: &PointStore,
     ) -> Result<()> {
         if self.root == NULL {
-            return Err(RcfError::EmptyTree);
+            return Err(RcfError::Runtime("cannot delete from an empty tree".into()));
         }
 
         let point = point_store.get(point_idx);
