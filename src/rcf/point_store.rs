@@ -207,6 +207,13 @@ impl PointStore {
         Ok(())
     }
 
+    pub(super) fn ensure_can_allocate_slot(&self) -> Result<()> {
+        if !self.free_list.is_empty() || self.next_free < self.capacity {
+            return Ok(());
+        }
+        checked_grown_capacity(self.capacity).map(|_| ())
+    }
+
     fn store_point(&mut self, point: &[f32]) -> Result<usize> {
         let idx = self.allocate_slot()?;
         self.store.row_mut(idx).assign(&ArrayView1::from(point));

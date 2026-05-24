@@ -2,6 +2,7 @@
 use alloc::string::{String, ToString};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
+use core::fmt;
 
 use rand::prelude::*;
 use rand::rngs::Xoshiro256PlusPlus;
@@ -105,7 +106,7 @@ impl From<NeighborResult> for (f64, Vec<f32>, f64) {
 ///     }
 /// }
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Forest {
     config: RcfConfig,
@@ -115,7 +116,22 @@ pub struct Forest {
     entries_seen: u64,
     rng: Xoshiro256PlusPlus,
     #[cfg_attr(feature = "serde", serde(skip, default))]
-    update_scratch: Vec<AcceptedUpdate>,
+    accepted_updates: Vec<AcceptedUpdate>,
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    staged_accepted_updates: Vec<AcceptedUpdate>,
+}
+
+impl fmt::Debug for Forest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Forest")
+            .field("config", &self.config)
+            .field("trees", &self.trees)
+            .field("samplers", &self.samplers)
+            .field("point_store", &self.point_store)
+            .field("entries_seen", &self.entries_seen)
+            .field("rng", &self.rng)
+            .finish()
+    }
 }
 
 impl Forest {
@@ -153,7 +169,8 @@ impl Forest {
             point_store,
             entries_seen: 0,
             rng: Xoshiro256PlusPlus::seed_from_u64(rng.next_u64()),
-            update_scratch: Vec::with_capacity(num_trees),
+            accepted_updates: Vec::with_capacity(num_trees),
+            staged_accepted_updates: Vec::with_capacity(num_trees),
         })
     }
 
@@ -513,10 +530,24 @@ mod tests {
         let json = f.to_json().unwrap();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
 
-        assert!(value.get("update_scratch").is_none());
+        assert!(value.get("accepted_updates").is_none());
+        assert!(value.get("staged_accepted_updates").is_none());
         for tree in value["trees"].as_array().unwrap() {
             assert!(tree.get("path_scratch").is_none());
         }
+    }
+
+    #[test]
+    fn debug_omits_internal_update_buffers() {
+        let mut f = make_forest();
+        for i in 0..100 {
+            f.update(&[i as f32 * 0.01, 0.5]).unwrap();
+        }
+
+        let debug = format!("{f:?}");
+
+        assert!(!debug.contains("accepted_updates"));
+        assert!(!debug.contains("staged_accepted_updates"));
     }
 
     #[test]

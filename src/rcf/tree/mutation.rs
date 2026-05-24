@@ -46,6 +46,24 @@ impl RcfTree {
         }
     }
 
+    fn leaf_for_point(&self, point: &[f32]) -> usize {
+        let mut cur = self.root;
+        loop {
+            match self.arena.get(cur) {
+                Node::Leaf { .. } => return cur,
+                Node::Internal {
+                    left,
+                    right,
+                    cut_dim,
+                    cut_val,
+                    ..
+                } => {
+                    cur = split_children(point[*cut_dim], *cut_val, *left, *right).0;
+                }
+            }
+        }
+    }
+
     /// Parent of `node` given `path` (last element of path is the parent).
     fn parent_of(path: &[PathEntry]) -> usize {
         path.last().map(|entry| entry.parent).unwrap_or(NULL)
@@ -267,9 +285,7 @@ impl RcfTree {
         point_idx: usize,
         point_store: &PointStore,
     ) -> Result<()> {
-        if self.root == NULL {
-            return Err(RcfError::EmptyTree);
-        }
+        self.validate_delete(point_idx, point_store)?;
 
         let point = point_store.get(point_idx);
         let leaf_id = self.path_to_leaf(point);
@@ -279,10 +295,6 @@ impl RcfTree {
             Node::Leaf { mass, .. } => *mass,
             _ => unreachable!(),
         };
-
-        if leaf_mass == 0 {
-            return Err(RcfError::InvalidArgument("leaf mass is already 0".into()));
-        }
 
         self.tree_mass -= 1;
 
@@ -337,6 +349,30 @@ impl RcfTree {
             &self.path_scratch[..path_len - 1],
             point_store,
         );
+
+        Ok(())
+    }
+
+    pub(in crate::rcf) fn validate_delete(
+        &self,
+        point_idx: usize,
+        point_store: &PointStore,
+    ) -> Result<()> {
+        if self.root == NULL {
+            return Err(RcfError::EmptyTree);
+        }
+
+        let point = point_store.get(point_idx);
+        let leaf_id = self.leaf_for_point(point);
+
+        let leaf_mass = match self.arena.get(leaf_id) {
+            Node::Leaf { mass, .. } => *mass,
+            _ => unreachable!(),
+        };
+
+        if leaf_mass == 0 {
+            return Err(RcfError::Runtime("leaf mass is already 0".into()));
+        }
 
         Ok(())
     }

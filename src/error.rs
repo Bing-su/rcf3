@@ -4,6 +4,7 @@ use alloc::string::String;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum RcfError {
     #[error("invalid argument: {0}")]
     InvalidArgument(String),
@@ -15,6 +16,8 @@ pub enum RcfError {
     IndexOutOfBounds(usize),
     #[error("overflow: {0}")]
     Overflow(String),
+    #[error("runtime error: {0}")]
+    Runtime(String),
     #[error("operation on empty tree")]
     EmptyTree,
     #[error("I/O error: {0}")]
