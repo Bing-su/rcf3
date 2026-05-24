@@ -1,7 +1,7 @@
 #[cfg(all(not(feature = "std"), feature = "serde"))]
 use alloc::format;
 #[cfg(all(not(feature = "std"), feature = "serde"))]
-use alloc::string::{String, ToString};
+use alloc::string::String;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
@@ -361,7 +361,8 @@ impl MStream {
     /// [`Self::to_json`].
     #[cfg(feature = "serde")]
     pub fn from_json(json: impl AsRef<[u8]>) -> Result<Self> {
-        serde_json::from_slice(json.as_ref()).map_err(|e| RcfError::Io(e.to_string()))
+        serde_json::from_slice(json.as_ref())
+            .map_err(|e| RcfError::InvalidArgument(format!("invalid MStream JSON: {e}")))
     }
 
     /// Serialize the detector state to a JSON file.
@@ -810,6 +811,16 @@ mod tests {
         assert_eq!(
             restored.config().categorical_dim(),
             d.config().categorical_dim()
+        );
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn from_json_rejects_invalid_json_as_invalid_argument() {
+        let err = MStream::from_json(b"not json").unwrap_err();
+
+        assert!(
+            matches!(err, RcfError::InvalidArgument(msg) if msg.contains("invalid MStream JSON"))
         );
     }
 }

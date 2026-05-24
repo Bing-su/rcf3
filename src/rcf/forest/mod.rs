@@ -1,7 +1,7 @@
 #[cfg(all(not(feature = "std"), feature = "serde"))]
 use alloc::format;
 #[cfg(all(not(feature = "std"), feature = "serde"))]
-use alloc::string::{String, ToString};
+use alloc::string::String;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 use core::fmt;
@@ -225,7 +225,8 @@ impl Forest {
     /// [`Self::to_json`].
     #[cfg(feature = "serde")]
     pub fn from_json(json: impl AsRef<[u8]>) -> Result<Self> {
-        serde_json::from_slice(json.as_ref()).map_err(|e| RcfError::Io(e.to_string()))
+        serde_json::from_slice(json.as_ref())
+            .map_err(|e| RcfError::InvalidArgument(format!("invalid forest JSON: {e}")))
     }
 
     /// Serialize the entire forest state to a JSON file.

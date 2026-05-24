@@ -228,6 +228,14 @@ fn save_load_roundtrip() {
 }
 
 #[test]
+#[cfg(feature = "serde")]
+fn from_json_rejects_invalid_json_as_invalid_argument() {
+    let err = Forest::from_json(b"not json").unwrap_err();
+
+    assert!(matches!(err, RcfError::InvalidArgument(msg) if msg.contains("invalid forest JSON")));
+}
+
+#[test]
 #[cfg(all(feature = "serde", feature = "std"))]
 fn serde_omits_internal_scratch_buffers() {
     let mut f = make_forest();
@@ -365,6 +373,15 @@ fn near_neighbors_sorted_and_bounded(#[case] top_k: usize) {
             "neighbors are not sorted by distance"
         );
     }
+}
+
+#[test]
+fn near_neighbors_rejects_percentile_above_100() {
+    let f = make_forest();
+
+    let err = f.near_neighbors(&[0.1, -0.2], 5, 101).unwrap_err();
+
+    assert!(matches!(err, RcfError::InvalidArgument(msg) if msg.contains("percentile")));
 }
 
 #[rstest]

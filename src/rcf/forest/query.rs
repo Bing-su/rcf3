@@ -85,6 +85,11 @@ impl Forest {
         top_k: usize,
         percentile: usize,
     ) -> Result<Vec<NeighborResult>> {
+        if percentile > 100 {
+            return Err(RcfError::InvalidArgument(
+                "percentile must be in [0, 100]".into(),
+            ));
+        }
         let q = self.prepare_query(query)?;
         let mode = ScoreMode::standard();
         let candidates = self.collect_neighbor_candidates(q.as_ref(), &mode, percentile);

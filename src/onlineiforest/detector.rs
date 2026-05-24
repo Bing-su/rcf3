@@ -1,7 +1,7 @@
 #[cfg(all(not(feature = "std"), feature = "serde"))]
 use alloc::format;
 #[cfg(all(not(feature = "std"), feature = "serde"))]
-use alloc::string::{String, ToString};
+use alloc::string::String;
 #[cfg(not(feature = "std"))]
 use alloc::{collections::VecDeque, vec::Vec};
 #[cfg(feature = "std")]
@@ -193,7 +193,8 @@ impl OnlineIForest {
     #[cfg(feature = "serde")]
     /// Deserialize detector state from JSON previously written by [`Self::to_json`].
     pub fn from_json(json: impl AsRef<[u8]>) -> Result<Self> {
-        serde_json::from_slice(json.as_ref()).map_err(|err| RcfError::Io(err.to_string()))
+        serde_json::from_slice(json.as_ref())
+            .map_err(|err| RcfError::InvalidArgument(format!("invalid OnlineIForest JSON: {err}")))
     }
 
     #[cfg(all(feature = "serde", feature = "std"))]
@@ -413,6 +414,16 @@ mod tests {
             detector.score(&[10.0, 10.0]).unwrap(),
             restored.score(&[10.0, 10.0]).unwrap(),
             epsilon = 1e-12
+        );
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn from_json_rejects_invalid_json_as_invalid_argument() {
+        let err = OnlineIForest::from_json(b"not json").unwrap_err();
+
+        assert!(
+            matches!(err, RcfError::InvalidArgument(msg) if msg.contains("invalid OnlineIForest JSON"))
         );
     }
 

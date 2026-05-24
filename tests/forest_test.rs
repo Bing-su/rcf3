@@ -15,7 +15,7 @@ use rcf3::{Forest, RcfError};
 // ---------------------------------------------------------------------------
 mod public_api_surface {
     use super::*;
-    use rcf3::{Attribution, ForestBuilder, NeighborResult, RcfConfig, rcf};
+    use rcf3::{Attribution, ForestBuilder, NeighborResult, RcfConfig};
 
     #[test]
     fn top_level_facade_exports_expected_user_facing_types() {
@@ -53,27 +53,6 @@ mod public_api_surface {
             distance: 3.0,
         };
         assert_eq!(neighbor.point, vec![1.0, 2.0]);
-    }
-
-    #[test]
-    fn rcf_module_facade_exports_same_user_facing_types() {
-        let config = rcf::RcfConfig::new(1).with_capacity(16);
-        let mut forest = rcf::Forest::from_config_seeded(&config, 11).unwrap();
-        forest.update(&[1.0]).unwrap();
-
-        let attr = rcf::Attribution {
-            below: 0.0,
-            above: 0.0,
-        };
-        let neighbor = rcf::NeighborResult {
-            score: 0.0,
-            point: vec![1.0],
-            distance: 0.0,
-        };
-
-        assert_eq!(forest.entries_seen(), 1);
-        assert_eq!(attr.total(), 0.0);
-        assert_eq!(neighbor.distance, 0.0);
     }
 }
 

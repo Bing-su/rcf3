@@ -6,11 +6,11 @@ extern crate alloc;
 
 pub mod error;
 mod math;
-pub mod mstream;
-pub mod onlineiforest;
+mod mstream;
+mod onlineiforest;
 #[cfg(feature = "python")]
 mod pyutil;
-pub mod rcf;
+mod rcf;
 
 pub use error::{RcfError, Result};
 pub use mstream::{MStream, MStreamBuilder, MStreamConfig, MStreamScore};
