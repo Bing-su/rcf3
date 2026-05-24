@@ -77,8 +77,6 @@ impl Forest {
     fn prepare_update_input(&mut self, base: &[f32]) -> Result<()> {
         if self.config.internal_shingling() {
             self.point_store.advance_shingle(base)?;
-        } else {
-            self.point_store.validate_full_point(base)?;
         }
         Ok(())
     }

@@ -214,6 +214,13 @@ impl PointStore {
         checked_grown_capacity(self.capacity).map(|_| ())
     }
 
+    #[cfg(test)]
+    pub(super) fn force_next_allocation_to_overflow(&mut self) {
+        self.free_list.clear();
+        self.next_free = usize::MAX;
+        self.capacity = usize::MAX;
+    }
+
     fn store_point(&mut self, point: &[f32]) -> Result<usize> {
         let idx = self.allocate_slot()?;
         self.store.row_mut(idx).assign(&ArrayView1::from(point));
@@ -381,13 +388,6 @@ impl PointStore {
     #[cfg(test)]
     pub(super) fn entries_seen(&self) -> u64 {
         self.entries_seen
-    }
-
-    #[cfg(test)]
-    pub(super) fn force_next_allocation_to_overflow(&mut self) {
-        self.free_list.clear();
-        self.next_free = usize::MAX;
-        self.capacity = usize::MAX;
     }
 }
 
