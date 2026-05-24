@@ -4,7 +4,7 @@
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 
-pub mod error;
+mod error;
 mod math;
 mod mstream;
 mod onlineiforest;
