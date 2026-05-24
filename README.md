@@ -57,7 +57,7 @@ Enables use of the Rust standard library. Disable this for `no_std` environments
 
 ```toml
 [dependencies]
-rcf3 = { version = "0.3", default-features = false }
+rcf3 = { version = "0.4", default-features = false }
 ```
 
 ### `serde` (enabled by default)
@@ -66,7 +66,7 @@ Provides JSON serialization and deserialization support for persisted detector s
 
 ```toml
 [dependencies]
-rcf3 = { version = "0.3", features = ["serde", "std"] }
+rcf3 = { version = "0.4", features = ["serde", "std"] }
 ```
 
 ### `python` (optional)
@@ -75,14 +75,14 @@ Builds Python bindings using PyO3, enabling use from Python. Automatically enabl
 
 ```toml
 [dependencies]
-rcf3 = { version = "0.3", features = ["python"] }
+rcf3 = { version = "0.4", features = ["python"] }
 ```
 
 To use just the core algorithm without serialization:
 
 ```toml
 [dependencies]
-rcf3 = { version = "0.3", default-features = false, features = ["std"] }
+rcf3 = { version = "0.4", default-features = false, features = ["std"] }
 ```
 
 ## License
