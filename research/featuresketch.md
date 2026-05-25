@@ -127,6 +127,36 @@ event given its currently observed features.
 
 Call the detector `FeatureSketch`.
 
+### Overview
+
+```mermaid
+flowchart TD
+    A["Sparse feature event<br/>{feature_name: value}"] --> B["Normalize input<br/>combine duplicates<br/>drop zeros<br/>asinh(value)"]
+    B --> C["Feature-name hashing<br/>stable coefficient per<br/>(feature, projection)"]
+    C --> D["Value projection<br/>numeric magnitude signal"]
+    C --> E["Presence projection<br/>observed feature-set signal"]
+    D --> F["Half-space chains<br/>multi-scale projected bins"]
+    E --> F
+    F --> G["Count-min sketches<br/>decayed bin densities"]
+    G --> H["Density per chain"]
+    H --> I["Anomaly score<br/>mean(1 / (epsilon + density))"]
+    I --> J["Return score<br/>higher means more anomalous"]
+    B --> K{"Commit update?"}
+    K -->|score| L["No mutation"]
+    K -->|update / update_and_score| M["Apply lazy decay<br/>then increment sketch bins"]
+```
+
+```mermaid
+flowchart LR
+    A["Feature evolving<br/>new key appears"] --> B["Hash key on demand"]
+    B --> C["Projection shape unchanged"]
+    C --> D["Sketch bins updated"]
+
+    E["Feature shrink<br/>previous key disappears"] --> F["Presence projection changes"]
+    F --> G["Score can rise immediately"]
+    G --> H["Old bins decay over time"]
+```
+
 ### Input normalization
 
 For every event:
