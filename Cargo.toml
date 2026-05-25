@@ -7,11 +7,9 @@ readme = "README.md"
 repository = "https://github.com/Bing-su/rcf3"
 license = "MIT OR Apache-2.0"
 keywords = [
-  "anomaly",
   "anomaly-detection",
-  "machine-learning",
   "mstream",
-  "online-isolation-forest",
+  "online-iforest",
   "random-cut-forest",
 ]
 
