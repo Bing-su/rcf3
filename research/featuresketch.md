@@ -11,8 +11,8 @@ The public shape is deliberately small:
 
 ```text
 detector = Detector()
-score = detector.update_and_score(features)
-preview = detector.score(features)
+score = detector.score(features)
+detector.update(features)
 ```
 
 `features` is a sparse map from feature name to finite numeric value, or an
@@ -139,15 +139,13 @@ flowchart TD
     D --> G["Value ensemble<br/>half-space chains"]
     E --> H["Presence ensemble<br/>half-space chains"]
     F --> H
-    G --> I["Count-min sketches<br/>decayed bin densities<br/>and per-level masses"]
+    G --> I["Projected chain bins"]
     H --> I
-    I --> J["Density ratio per chain level"]
-    J --> K["Compute anomaly score<br/>mean(-log(density ratio))"]
-    K --> L{"Commit update?"}
-    L -->|score| M["No mutation"]
-    L -->|update / update_and_score| N["Apply lazy decay<br/>then increment sketch bins"]
-    M --> O["Return computed score<br/>higher means more anomalous"]
-    N --> O
+    I --> J{"Method"}
+    J -->|score| K["Read sketches<br/>compute anomaly score<br/>no mutation"]
+    J -->|update| L["Apply lazy decay<br/>then increment sketch bins<br/>no scoring reads"]
+    K --> M["Return computed score<br/>higher means more anomalous"]
+    L --> N["Return no score"]
 ```
 
 ```mermaid
@@ -167,10 +165,9 @@ For every event:
 
 1. Accept sparse features as `(name, value)` pairs.
 2. Reject non-finite values.
-3. Combine duplicate feature names by summing their values while preserving the
-   key even if the sum is exactly zero.
-4. Preserve exact zero values as present features.
-5. Apply `asinh(value)` before value projection so negative and large positive values
+3. Combine duplicate feature names by summing their values, preserving the key
+   even if the sum is exactly zero.
+4. Apply `asinh(value)` before value projection so negative and large positive values
    are both supported.
 
 The detector does not require a known feature universe. A dense vector can be
@@ -188,9 +185,10 @@ application creates an explicit feature such as `flag:false -> 1.0`.
 
 ### Projection
 
-Maintain a fixed number of projected dimensions `K`, chosen by internal
-constant. For each feature name `f` and projected dimension `k`, derive a stable
-sparse random coefficient from the detector seed and `(f, k)`:
+Maintain `K_v` value projection dimensions and `K_p` presence projection
+dimensions, chosen by internal constants. For each feature name `f` and
+projected dimension `k`, derive a stable sparse random coefficient from the
+detector seed and `(f, k)`:
 
 ```text
 coef(f, k) in {-sqrt(3), 0, +sqrt(3)}
@@ -237,11 +235,17 @@ FeatureSketch uses two ensembles of half-space chains over the projected
 vectors:
 
 - each chain has fixed depth `D`;
-- each level chooses a projected dimension and bin width from seeded constants;
+- value-chain levels sample dimensions from `value_projection`;
+- presence-chain levels sample dimensions from `presence_vector`, including the
+  appended feature-count dimension;
+- each level chooses its projected dimension and bin width from seeded constants;
 - each level owns a count-min sketch for bin counts;
+- `density_chain_level` is the minimum decayed count across the `R` rows of that
+  level's count-min sketch for the selected bin;
 - scoring uses the highest normalized surprise across levels, which is
   equivalent to the lowest clamped density ratio across levels;
-- each chain level tracks a decayed reference mass for normalization;
+- each chain level tracks a decayed reference mass for normalization, separate
+  from the per-cell sketch counts;
 - each ensemble converts low normalized densities into high anomaly
   contributions and averages those contributions.
 
@@ -263,7 +267,9 @@ where `epsilon` prevents `log(0)` and `epsilon_mass` only prevents division by
 zero. This is not a calibrated probability; it is a volume-normalized surprise
 score. Normalizing by the decayed reference mass of the same chain level keeps
 the score scale more stable across warm streams, traffic bursts, and
-long-running decay than a raw reciprocal density.
+long-running decay than a raw reciprocal density. The upper clamp at `1.0`
+means common or over-dense bins contribute zero surprise, while rare bins
+contribute positive surprise.
 
 The final score is the average of the value-ensemble surprise and the
 presence-ensemble surprise:
@@ -277,12 +283,14 @@ score = mean(value_surprise, presence_surprise)
 For `score(features)`, compute the score against the current reference state
 without mutation.
 
-For `update_and_score(features)`, compute the score first, then update the
-sketches, then return the computed score. This avoids teaching the detector an
-event before judging whether it is anomalous while still committing the event
-before the call returns.
+For `update(features)`, perform only the update. It still computes projections
+and chain-level bin assignments because the sketch update locations are defined
+in projected space, but it skips the scoring reads and anomaly-score reduction.
 
-For `update(features)`, perform only the update.
+When a caller needs both operations for the same event, call `score(features)`
+before `update(features)`. Scoring after update is also valid if the desired
+meaning is "how anomalous is this event after it has been incorporated," but
+the default online-detection pattern is score-before-update.
 
 ### Adaptation and shrink handling
 
@@ -291,6 +299,8 @@ exposing a window boundary in the public API:
 
 - every update increments an internal event counter;
 - each sketch cell stores `(count, last_seen_epoch)`;
+- each chain level stores `(reference_mass, last_seen_epoch)` for the same lazy
+  decay schedule used by sketch cells;
 - reading or writing a cell applies lazy decay based on elapsed events;
 - old features and old bins naturally lose influence without explicit deletion.
 
@@ -325,11 +335,91 @@ in the first public version:
 | Sketch rows                    |                  2 | Same practical shape as current `MStream` defaults                |
 | Sketch buckets                 |               2048 | More room than `MStream` because projected bins are more varied   |
 | Decay half-life                |        2048 events | Tracks recent behavior while preserving a useful baseline         |
+| Epsilon                        |              1e-12 | Prevents `log(0)` in density-ratio scoring                        |
+| Epsilon mass                   |              1e-12 | Prevents division by zero before enough mass has accumulated      |
 | Seed                           | fixed library seed | Deterministic behavior without a public option                    |
 
 These are implementation constants, not public configuration. Test-only
 constructors may inject a seed internally, but the public detector should not
 expose tuning knobs in the first version.
+
+## Complexity
+
+Let:
+
+- `m` be the number of present feature names in the current event, including
+  zero-valued present features;
+- `K_v` be the number of value projection dimensions;
+- `K_p` be the number of presence projection dimensions;
+- `C` be chains per ensemble;
+- `D` be chain depth;
+- `R` be sketch rows;
+- `B` be sketch buckets.
+
+FeatureSketch does not store the historical feature universe, so long-run memory
+does not grow with the number of distinct feature names ever observed.
+
+### Time per event
+
+Input normalization is `O(m)`, assuming feature names can be hashed in time
+proportional to their byte length. Projection computes one value coefficient and
+one presence coefficient for each present feature and projected dimension:
+
+```text
+O(m * (K_v + K_p))
+```
+
+Scoring reads sketch cells for every chain level in both ensembles. With
+count-min sketches, each level reads `R` cells and uses the minimum decayed count
+as that level's density estimate:
+
+```text
+O(2 * C * D * R)
+```
+
+Committed updates reuse the projected chain bins, write the same number of
+sketch cells, and update the same per-level reference masses:
+
+```text
+O(2 * C * D * R)
+```
+
+Therefore:
+
+```text
+score(features):            O(m * (K_v + K_p) + 2 * C * D * R)
+update(features):           O(m * (K_v + K_p) + 2 * C * D * R)
+```
+
+Calling `score(features)` followed by `update(features)` performs both the
+scoring reads and committed-update writes, so it costs
+`O(m * (K_v + K_p) + 4 * C * D * R)` in a straightforward implementation. With
+the fixed defaults, the sketch part is constant per event. Runtime is linear in
+the number of present features in the event and independent of the number of
+feature names seen historically.
+
+### Space
+
+The persistent sketch storage is:
+
+```text
+O(2 * C * D * R * B)
+```
+
+The factor `2` is for the value and presence ensembles. Per-level reference
+masses add `O(2 * C * D)` state, which is dominated by sketch cells.
+
+Per-event temporary storage materializes the normalized event, projection
+vectors, and chain-level bin assignments:
+
+```text
+O(K_v + K_p + m + 2 * C * D)
+```
+
+where `m` covers the normalized event map when duplicate feature names must be
+combined. An implementation can recompute bin assignments instead of storing
+them, reducing temporary storage to `O(K_v + K_p + m)` at the cost of extra
+hash/binning work.
 
 ## API Sketch
 
@@ -340,11 +430,13 @@ use rcf3::FeatureSketch;
 
 let mut detector = FeatureSketch::new();
 
-let score = detector.update_and_score([
+let event = [
     ("endpoint:/login", 1.0),
     ("status:401", 1.0),
     ("bytes", 812.0),
-])?;
+];
+let score = detector.score(event)?;
+detector.update(event)?;
 
 let preview = detector.score([
     ("endpoint:/admin", 1.0),
@@ -359,11 +451,13 @@ Python:
 from rcf3 import FeatureSketch
 
 detector = FeatureSketch()
-score = detector.update_and_score({
+event = {
     "endpoint:/login": 1.0,
     "status:401": 1.0,
     "bytes": 812.0,
-})
+}
+score = detector.score(event)
+detector.update(event)
 ```
 
 The categorical/numeric split is intentionally absent. Categorical features are
@@ -395,9 +489,8 @@ Minimum regression scenarios:
    remains permanently anomalous.
 4. Sparse high cardinality: stream many unique feature names and assert memory
    remains bounded by sketch sizes.
-5. Preview parity: from the same starting state, `score(x)` should return the
-   same score as `update_and_score(x)`, and only `update_and_score(x)` should
-   mutate detector state.
+5. Score purity: `score(x)` should not mutate detector state; scoring the same
+   event twice from the same state should return the same value.
 6. Duplicate names: duplicate feature entries should match a pre-combined map.
 7. Zero and absence: a feature whose combined value is exactly zero should still
    affect the presence projection and should not match omitting that feature from
