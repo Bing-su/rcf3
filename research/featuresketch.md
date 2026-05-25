@@ -131,7 +131,7 @@ and bounded sketches hold the evolving density model.
 
 ```mermaid
 flowchart TD
-    A["Sparse feature event<br/>{feature_name: value}"] --> B["Normalize input<br/>combine duplicates<br/>drop zeros<br/>asinh(value)"]
+    A["Sparse feature event<br/>{feature_name: value}"] --> B["Normalize input<br/>combine duplicates<br/>asinh(value)"]
     B --> C["Feature-name hashing<br/>stable coefficient per<br/>(feature, projection)"]
     C --> D["Value projection<br/>numeric magnitude signal"]
     C --> E["Presence projection<br/>observed feature-set signal"]
@@ -139,14 +139,15 @@ flowchart TD
     D --> G["Value ensemble<br/>half-space chains"]
     E --> H["Presence ensemble<br/>half-space chains"]
     F --> H
-    G --> I["Count-min sketches<br/>decayed bin densities"]
+    G --> I["Count-min sketches<br/>decayed bin densities<br/>and per-level masses"]
     H --> I
-    I --> J["Density ratio per chain"]
-    J --> K["Anomaly score<br/>mean(-log(density ratio))"]
-    K --> L["Return score<br/>higher means more anomalous"]
-    B --> M{"Commit update?"}
-    M -->|score| N["No mutation"]
-    M -->|update / update_and_score| O["Apply lazy decay<br/>then increment sketch bins"]
+    I --> J["Density ratio per chain level"]
+    J --> K["Compute anomaly score<br/>mean(-log(density ratio))"]
+    K --> L{"Commit update?"}
+    L -->|score| M["No mutation"]
+    L -->|update / update_and_score| N["Apply lazy decay<br/>then increment sketch bins"]
+    M --> O["Return computed score<br/>higher means more anomalous"]
+    N --> O
 ```
 
 ```mermaid
@@ -166,14 +167,24 @@ For every event:
 
 1. Accept sparse features as `(name, value)` pairs.
 2. Reject non-finite values.
-3. Combine duplicate feature names by summing their values.
-4. Drop exact zero values after combination.
-5. Apply `asinh(value)` before projection so negative and large positive values
+3. Combine duplicate feature names by summing their values while preserving the
+   key even if the sum is exactly zero.
+4. Preserve exact zero values as present features.
+5. Apply `asinh(value)` before value projection so negative and large positive values
    are both supported.
 
 The detector does not require a known feature universe. A dense vector can be
 accepted by converting each index to a stable string key internally, but the
 core representation should be sparse.
+
+Absence is meaningful. A missing feature means the key is not part of the
+current event and contributes to the presence signal by not appearing. A feature
+whose combined value is exactly zero is still present: it contributes to the
+presence projection, but contributes `asinh(0.0) = 0.0` to the value projection.
+Categorical values should therefore be encoded as explicit one-hot feature names
+only when the category is present, for example `status:401 -> 1.0`; boolean
+false and missing categories should both omit the corresponding key unless the
+application creates an explicit feature such as `flag:false -> 1.0`.
 
 ### Projection
 
@@ -202,10 +213,16 @@ feature_count_signal = log1p(number of observed feature names)
 ```
 
 Use separate half-space chain ensembles for the value projection and the
-presence projection plus feature-count signal. The value ensemble detects
-unusual feature magnitudes. The presence ensemble detects unusual feature sets,
-including feature shrink where a previously common key disappears from an
-event.
+presence vector. The presence vector is the presence projection with the
+feature-count signal appended as one extra dimension:
+
+```text
+presence_vector = concat(presence_projection, [feature_count_signal])
+```
+
+The value ensemble detects unusual feature magnitudes. The presence ensemble
+detects unusual feature sets, including feature shrink where a previously common
+key disappears from an event.
 
 The presence channel is the main adaptation beyond xStream. Without it, an
 event that loses a key whose numeric value was usually small can look too close
@@ -222,8 +239,9 @@ vectors:
 - each chain has fixed depth `D`;
 - each level chooses a projected dimension and bin width from seeded constants;
 - each level owns a count-min sketch for bin counts;
-- scoring uses the minimum extrapolated density across levels;
-- each chain tracks a decayed reference mass for normalization;
+- scoring uses the highest normalized surprise across levels, which is
+  equivalent to the lowest clamped density ratio across levels;
+- each chain level tracks a decayed reference mass for normalization;
 - each ensemble converts low normalized densities into high anomaly
   contributions and averages those contributions.
 
@@ -232,18 +250,20 @@ xStream-style density is lower for anomalies, so FeatureSketch exposes a
 surprise score:
 
 ```text
-density_ratio_chain = clamp(
-    density_chain / max(reference_mass_chain, 1),
+density_ratio_chain_level = clamp(
+    density_chain_level / max(reference_mass_chain_level, epsilon_mass),
     epsilon,
     1.0,
 )
-score = mean(-log(density_ratio_chain))
+chain_surprise = max(-log(density_ratio_chain_level)) across chain levels
+ensemble_surprise = mean(chain_surprise) across chains
 ```
 
-where `epsilon` is an internal constant that prevents `log(0)`. This is not a
-calibrated probability; it is a volume-normalized surprise score. Normalizing by
-decayed reference mass keeps the score scale more stable across warm streams,
-traffic bursts, and long-running decay than a raw reciprocal density.
+where `epsilon` prevents `log(0)` and `epsilon_mass` only prevents division by
+zero. This is not a calibrated probability; it is a volume-normalized surprise
+score. Normalizing by the decayed reference mass of the same chain level keeps
+the score scale more stable across warm streams, traffic bursts, and
+long-running decay than a raw reciprocal density.
 
 The final score is the average of the value-ensemble surprise and the
 presence-ensemble surprise:
@@ -257,10 +277,10 @@ score = mean(value_surprise, presence_surprise)
 For `score(features)`, compute the score against the current reference state
 without mutation.
 
-For `update_and_score(features)`, score first, then update. This avoids teaching
-the detector an event before judging whether it is anomalous. It also matches
-common online anomaly-detection usage and makes first-seen feature spikes easier
-to observe.
+For `update_and_score(features)`, compute the score first, then update the
+sketches, then return the computed score. This avoids teaching the detector an
+event before judging whether it is anomalous while still committing the event
+before the call returns.
 
 For `update(features)`, perform only the update.
 
@@ -281,8 +301,10 @@ set changes even if values are otherwise normal.
 
 FeatureSketch intentionally does not special-case cold start. Early scores are
 unstable because the density sketches have not yet accumulated a useful
-reference distribution. Production pipelines can ignore or down-rank the first
-internal half-life of scores when startup behavior matters.
+reference distribution. As operational guidance, production pipelines can ignore
+or down-rank roughly the first internal half-life of scores when startup
+behavior matters. This is not a readiness invariant; it is a simple default
+warmup policy.
 
 The detector should not maintain a dense registry of all feature names. A small
 optional diagnostic sketch for feature frequencies is acceptable, but the core
@@ -346,7 +368,9 @@ score = detector.update_and_score({
 
 The categorical/numeric split is intentionally absent. Categorical features are
 represented by one-hot style feature names with value `1.0`; numeric features
-use their natural finite values.
+use their natural finite values. One-hot encoders should omit inactive
+categories rather than emitting inactive keys with value `0.0`, because a
+zero-valued key is still treated as present.
 
 ## Remaining Design Decisions
 
@@ -359,10 +383,14 @@ use their natural finite values.
 
 Minimum regression scenarios:
 
-1. Feature growth: warm on `{a, b}`, then score `{a, b, new_feature}` and assert
-   it scores higher than a normal `{a, b}` event before adaptation.
-2. Feature shrink: warm on `{a, b, c}`, then score `{a, b}` and assert it scores
-   higher than a normal `{a, b, c}` event.
+1. Feature growth: using a deterministic internal seed, warm for at least one
+   internal half-life on `{a, b}`, collect a small baseline of normal `{a, b}`
+   scores, then assert `{a, b, new_feature}` scores above the baseline median
+   before adaptation.
+2. Feature shrink: using a deterministic internal seed, warm for at least one
+   internal half-life on `{a, b, c}`, collect a small baseline of normal
+   `{a, b, c}` scores, then assert `{a, b}` scores above the baseline median
+   before adaptation.
 3. Shrink adaptation: after many `{a, b}` updates, assert `{a, b}` no longer
    remains permanently anomalous.
 4. Sparse high cardinality: stream many unique feature names and assert memory
@@ -371,7 +399,10 @@ Minimum regression scenarios:
    same score as `update_and_score(x)`, and only `update_and_score(x)` should
    mutate detector state.
 6. Duplicate names: duplicate feature entries should match a pre-combined map.
-7. Signed values: positive and negative finite values are accepted; NaN and
+7. Zero and absence: a feature whose combined value is exactly zero should still
+   affect the presence projection and should not match omitting that feature from
+   the same event.
+8. Signed values: positive and negative finite values are accepted; NaN and
    infinity are rejected.
 
 ## Conclusion
