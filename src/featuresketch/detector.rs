@@ -188,6 +188,10 @@ impl FeatureSketch {
             .current_epoch
             .checked_add(1)
             .ok_or_else(|| RcfError::Overflow("FeatureSketch epoch overflow".into()))?;
+        let next_entries_seen = self
+            .entries_seen
+            .checked_add(1)
+            .ok_or_else(|| RcfError::Overflow("FeatureSketch entries_seen overflow".into()))?;
         self.value_sketch.update(
             &self.value_layout,
             &projected.value,
@@ -201,10 +205,7 @@ impl FeatureSketch {
             &self.config,
         );
         self.current_epoch = next_epoch;
-        self.entries_seen = self
-            .entries_seen
-            .checked_add(1)
-            .ok_or_else(|| RcfError::Overflow("FeatureSketch entries_seen overflow".into()))?;
+        self.entries_seen = next_entries_seen;
         Ok(())
     }
 
@@ -400,6 +401,24 @@ mod tests {
         let after = detector.score([("a", 1.0)]).unwrap();
         assert_eq!(detector.entries_seen(), 1);
         assert!(after < before);
+    }
+
+    #[test]
+    fn entries_seen_overflow_does_not_mutate_state() {
+        let mut detector = tiny_detector(18);
+        detector.update([("a", 1.0)]).unwrap();
+        detector.entries_seen = u64::MAX;
+
+        let epoch_before = detector.current_epoch;
+        let score_before = detector.score([("a", 1.0)]).unwrap();
+        assert!(matches!(
+            detector.update([("a", 1.0)]),
+            Err(RcfError::Overflow(_))
+        ));
+
+        assert_eq!(detector.current_epoch, epoch_before);
+        assert_eq!(detector.entries_seen, u64::MAX);
+        assert_eq!(detector.score([("a", 1.0)]).unwrap(), score_before);
     }
 
     #[test]
