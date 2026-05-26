@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{RcfError, Result};
 
+const MAX_CHAIN_DEPTH_FOR_POSITIVE_WIDTH: usize = 1024;
+
 /// Configuration for a [`FeatureSketch`](super::FeatureSketch) detector.
 ///
 /// Values are validated when a detector is built. Use the `with_*` methods to
@@ -115,6 +117,11 @@ impl FeatureSketchConfig {
         if self.chain_depth == 0 {
             return Err(RcfError::InvalidArgument("chain_depth must be > 0".into()));
         }
+        if self.chain_depth > MAX_CHAIN_DEPTH_FOR_POSITIVE_WIDTH {
+            return Err(RcfError::InvalidArgument(
+                "chain_depth is too large to keep chain bin widths positive".into(),
+            ));
+        }
         if self.sketch_rows == 0 {
             return Err(RcfError::InvalidArgument("sketch_rows must be > 0".into()));
         }
@@ -128,6 +135,26 @@ impl FeatureSketchConfig {
                 "decay_half_life must be > 0".into(),
             ));
         }
+        self.presence_projection_dims
+            .checked_add(1)
+            .ok_or_else(|| {
+                RcfError::InvalidArgument(
+                    "presence_projection_dims plus the feature-count signal must fit in usize"
+                        .into(),
+                )
+            })?;
+        self.chains_per_ensemble
+            .checked_mul(self.chain_depth)
+            .ok_or_else(|| {
+                RcfError::InvalidArgument(
+                    "chains_per_ensemble * chain_depth must fit in usize".into(),
+                )
+            })?;
+        self.sketch_rows
+            .checked_mul(self.sketch_buckets)
+            .ok_or_else(|| {
+                RcfError::InvalidArgument("sketch_rows * sketch_buckets must fit in usize".into())
+            })?;
         Ok(())
     }
 }
@@ -163,6 +190,7 @@ mod tests {
     #[case(FeatureSketchConfig::new().with_presence_projection_dims(1))]
     #[case(FeatureSketchConfig::new().with_chains_per_ensemble(1))]
     #[case(FeatureSketchConfig::new().with_chain_depth(1))]
+    #[case(FeatureSketchConfig::new().with_chain_depth(MAX_CHAIN_DEPTH_FOR_POSITIVE_WIDTH))]
     #[case(FeatureSketchConfig::new().with_sketch_rows(1))]
     #[case(FeatureSketchConfig::new().with_sketch_buckets(2))]
     #[case(FeatureSketchConfig::new().with_decay_half_life(1))]
@@ -178,7 +206,32 @@ mod tests {
     #[case::rows(FeatureSketchConfig::new().with_sketch_rows(0))]
     #[case::buckets(FeatureSketchConfig::new().with_sketch_buckets(1))]
     #[case::half_life(FeatureSketchConfig::new().with_decay_half_life(0))]
+    #[case::too_deep(
+        FeatureSketchConfig::new()
+            .with_chain_depth(MAX_CHAIN_DEPTH_FOR_POSITIVE_WIDTH + 1)
+    )]
     fn rejects_invalid_values(#[case] config: FeatureSketchConfig) {
+        assert!(matches!(
+            config.validate(),
+            Err(RcfError::InvalidArgument(_))
+        ));
+    }
+
+    #[rstest]
+    #[case::presence_feature_count_dimension(
+        FeatureSketchConfig::new().with_presence_projection_dims(usize::MAX)
+    )]
+    #[case::chain_layout_size(
+        FeatureSketchConfig::new()
+            .with_chains_per_ensemble(usize::MAX)
+            .with_chain_depth(2)
+    )]
+    #[case::sketch_cell_count(
+        FeatureSketchConfig::new()
+            .with_sketch_rows(usize::MAX)
+            .with_sketch_buckets(2)
+    )]
+    fn rejects_overflowing_values(#[case] config: FeatureSketchConfig) {
         assert!(matches!(
             config.validate(),
             Err(RcfError::InvalidArgument(_))
