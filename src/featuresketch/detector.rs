@@ -170,7 +170,7 @@ impl FeatureSketch {
     /// Preview the anomaly score for an event without mutating detector state.
     pub fn score<I, N>(&self, features: I) -> Result<f64>
     where
-        I: IntoIterator<Item = (N, f32)>,
+        I: IntoIterator<Item = (N, f64)>,
         N: AsRef<str>,
     {
         let projected = self.project_features(features)?;
@@ -180,7 +180,7 @@ impl FeatureSketch {
     /// Ingest an event without returning its score.
     pub fn update<I, N>(&mut self, features: I) -> Result<()>
     where
-        I: IntoIterator<Item = (N, f32)>,
+        I: IntoIterator<Item = (N, f64)>,
         N: AsRef<str>,
     {
         let projected = self.project_features(features)?;
@@ -246,7 +246,7 @@ impl FeatureSketch {
 
     fn project_features<I, N>(&self, features: I) -> Result<ProjectedEvent>
     where
-        I: IntoIterator<Item = (N, f32)>,
+        I: IntoIterator<Item = (N, f64)>,
         N: AsRef<str>,
     {
         let normalized = normalize(features)?;
@@ -336,7 +336,7 @@ mod tests {
         }
 
         let present = detector.score([("a", 0.0)]).unwrap();
-        let absent = detector.score([] as [(&str, f32); 0]).unwrap();
+        let absent = detector.score([] as [(&str, f64); 0]).unwrap();
         assert_ne!(present, absent);
     }
 
@@ -345,15 +345,15 @@ mod tests {
         let mut left = tiny_detector(13);
         let mut right = tiny_detector(13);
         assert_eq!(
-            left.score([] as [(&str, f32); 0]).unwrap(),
-            right.score([] as [(&str, f32); 0]).unwrap()
+            left.score([] as [(&str, f64); 0]).unwrap(),
+            right.score([] as [(&str, f64); 0]).unwrap()
         );
-        left.update([] as [(&str, f32); 0]).unwrap();
-        right.update([] as [(&str, f32); 0]).unwrap();
+        left.update([] as [(&str, f64); 0]).unwrap();
+        right.update([] as [(&str, f64); 0]).unwrap();
         assert_eq!(left.entries_seen(), 1);
         assert_eq!(
-            left.score([] as [(&str, f32); 0]).unwrap(),
-            right.score([] as [(&str, f32); 0]).unwrap()
+            left.score([] as [(&str, f64); 0]).unwrap(),
+            right.score([] as [(&str, f64); 0]).unwrap()
         );
     }
 
@@ -363,11 +363,11 @@ mod tests {
         detector.update([("neg", -10.0), ("pos", 10.0)]).unwrap();
         assert!(detector.score([("neg", -1.0)]).unwrap().is_finite());
         assert!(matches!(
-            detector.update([("bad", f32::NAN)]),
+            detector.update([("bad", f64::NAN)]),
             Err(RcfError::InvalidArgument(_))
         ));
         assert!(matches!(
-            detector.update([("bad", f32::MAX), ("bad", f32::MAX)]),
+            detector.update([("bad", f64::MAX), ("bad", f64::MAX)]),
             Err(RcfError::InvalidArgument(_))
         ));
     }

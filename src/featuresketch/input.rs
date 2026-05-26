@@ -14,10 +14,10 @@ pub(crate) struct NormalizedFeature {
 
 pub(crate) fn normalize<I, N>(features: I) -> Result<Vec<NormalizedFeature>>
 where
-    I: IntoIterator<Item = (N, f32)>,
+    I: IntoIterator<Item = (N, f64)>,
     N: AsRef<str>,
 {
-    let mut combined = BTreeMap::<String, f32>::new();
+    let mut combined = BTreeMap::<String, f64>::new();
     for (name, value) in features {
         if !value.is_finite() {
             return Err(RcfError::InvalidArgument(
@@ -37,7 +37,7 @@ where
         .into_iter()
         .map(|(name, value)| NormalizedFeature {
             name,
-            value: math::asinh(f64::from(value)),
+            value: math::asinh(value),
         })
         .collect())
 }
@@ -67,7 +67,7 @@ mod tests {
     #[test]
     fn rejects_non_finite_values() {
         assert!(matches!(
-            normalize([("a", f32::NAN)]),
+            normalize([("a", f64::NAN)]),
             Err(RcfError::InvalidArgument(_))
         ));
     }
