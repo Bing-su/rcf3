@@ -56,7 +56,7 @@ impl ChainLayout {
                 };
                 let scale = math::powf(2.0, level as f64);
                 let width = base_width / scale;
-                let offset = unit_f64(rng.next_u64()) * width;
+                let offset = rng.random_range(0.0..width);
                 levels.push(ChainLevel {
                     dimension,
                     width,
@@ -88,11 +88,6 @@ impl ChainLevel {
     pub(crate) fn bin(&self, vector: &[f64]) -> i64 {
         math::floor((vector[self.dimension] + self.offset) / self.width) as i64
     }
-}
-
-fn unit_f64(value: u64) -> f64 {
-    const DENOM: f64 = (1u64 << 53) as f64;
-    ((value >> 11) as f64) / DENOM
 }
 
 #[cfg(test)]
