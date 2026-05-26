@@ -334,9 +334,10 @@ meaning is "how anomalous is this event after it has been incorporated," but
 the default online-detection pattern is score-before-update.
 
 Calling `score(features)` and then `update(features)` through the public API
-computes projection and chain binning twice. This keeps the API small and makes
-`score` purely non-mutating; callers that need fused scoring and updating can
-add a wrapper later if profiling shows the duplicated projection cost matters.
+computes projection and chain binning twice. Callers that need the default
+score-before-update workflow without duplicated projection can use
+`update_and_score(features)`, which scores against the current state and then
+commits the same projected event.
 
 ### Adaptation and shrink handling
 
@@ -457,6 +458,7 @@ Including duplicate-combination cost, the method costs are:
 ```text
 score(features):            O(n + m * (K_v + K_p) + 2 * C * D * R)
 update(features):           O(n + m * (K_v + K_p) + 2 * C * D * R)
+update_and_score(features): O(n + m * (K_v + K_p) + 4 * C * D * R)
 ```
 
 Calling `score(features)` followed by `update(features)` through the public API

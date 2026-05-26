@@ -184,6 +184,25 @@ impl FeatureSketch {
         N: AsRef<str>,
     {
         let projected = self.project_features(features)?;
+        let (next_epoch, next_entries_seen) = self.next_counters()?;
+        self.update_projected(&projected, next_epoch, next_entries_seen);
+        Ok(())
+    }
+
+    /// Return the current anomaly score for an event, then ingest it.
+    pub fn update_and_score<I, N>(&mut self, features: I) -> Result<f64>
+    where
+        I: IntoIterator<Item = (N, f64)>,
+        N: AsRef<str>,
+    {
+        let projected = self.project_features(features)?;
+        let (next_epoch, next_entries_seen) = self.next_counters()?;
+        let score = self.score_projected(&projected);
+        self.update_projected(&projected, next_epoch, next_entries_seen);
+        Ok(score)
+    }
+
+    fn next_counters(&self) -> Result<(u64, u64)> {
         let next_epoch = self
             .current_epoch
             .checked_add(1)
@@ -192,6 +211,15 @@ impl FeatureSketch {
             .entries_seen
             .checked_add(1)
             .ok_or_else(|| RcfError::Overflow("FeatureSketch entries_seen overflow".into()))?;
+        Ok((next_epoch, next_entries_seen))
+    }
+
+    fn update_projected(
+        &mut self,
+        projected: &ProjectedEvent,
+        next_epoch: u64,
+        next_entries_seen: u64,
+    ) {
         self.value_sketch.update(
             &self.value_layout,
             &projected.value,
@@ -206,7 +234,6 @@ impl FeatureSketch {
         );
         self.current_epoch = next_epoch;
         self.entries_seen = next_entries_seen;
-        Ok(())
     }
 
     /// Serialize detector state to JSON.
@@ -408,6 +435,28 @@ mod tests {
     }
 
     #[test]
+    fn update_and_score_matches_score_before_update() {
+        let mut split = tiny_detector(23);
+        let mut fused = tiny_detector(23);
+        for _ in 0..80 {
+            split.update([("a", 1.0), ("b", 2.0)]).unwrap();
+            fused.update([("a", 1.0), ("b", 2.0)]).unwrap();
+        }
+
+        let split_score = split.score([("a", 2.0), ("c", -1.0)]).unwrap();
+        split.update([("a", 2.0), ("c", -1.0)]).unwrap();
+        let fused_score = fused.update_and_score([("a", 2.0), ("c", -1.0)]).unwrap();
+
+        assert_abs_diff_eq!(fused_score, split_score, epsilon = 1.0e-12);
+        assert_eq!(fused.entries_seen(), split.entries_seen());
+        assert_abs_diff_eq!(
+            fused.score([("future", 3.0)]).unwrap(),
+            split.score([("future", 3.0)]).unwrap(),
+            epsilon = 1.0e-12
+        );
+    }
+
+    #[test]
     fn entries_seen_overflow_does_not_mutate_state() {
         let mut detector = tiny_detector(18);
         detector.update([("a", 1.0)]).unwrap();
@@ -420,6 +469,17 @@ mod tests {
             Err(RcfError::Overflow(_))
         ));
 
+        assert_eq!(detector.current_epoch, epoch_before);
+        assert_eq!(detector.entries_seen, u64::MAX);
+        assert_abs_diff_eq!(
+            detector.score([("a", 1.0)]).unwrap(),
+            score_before,
+            epsilon = 1.0e-12
+        );
+        assert!(matches!(
+            detector.update_and_score([("a", 1.0)]),
+            Err(RcfError::Overflow(_))
+        ));
         assert_eq!(detector.current_epoch, epoch_before);
         assert_eq!(detector.entries_seen, u64::MAX);
         assert_abs_diff_eq!(
