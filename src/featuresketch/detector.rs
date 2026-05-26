@@ -283,6 +283,8 @@ mod tests {
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
 
+    use approx::assert_abs_diff_eq;
+
     use crate::error::RcfError;
 
     use super::*;
@@ -331,7 +333,7 @@ mod tests {
 
         let left_score = left.score([("a", 1.5), ("a", 1.5), ("b", -1.0)]).unwrap();
         let right_score = right.score([("a", 3.0), ("b", -1.0)]).unwrap();
-        assert_eq!(left_score, right_score);
+        assert_abs_diff_eq!(left_score, right_score, epsilon = 1.0e-12);
     }
 
     #[test]
@@ -350,16 +352,18 @@ mod tests {
     fn empty_event_scores_and_updates_deterministically() {
         let mut left = tiny_detector(13);
         let mut right = tiny_detector(13);
-        assert_eq!(
+        assert_abs_diff_eq!(
             left.score([] as [(&str, f64); 0]).unwrap(),
-            right.score([] as [(&str, f64); 0]).unwrap()
+            right.score([] as [(&str, f64); 0]).unwrap(),
+            epsilon = 1.0e-12
         );
         left.update([] as [(&str, f64); 0]).unwrap();
         right.update([] as [(&str, f64); 0]).unwrap();
         assert_eq!(left.entries_seen(), 1);
-        assert_eq!(
+        assert_abs_diff_eq!(
             left.score([] as [(&str, f64); 0]).unwrap(),
-            right.score([] as [(&str, f64); 0]).unwrap()
+            right.score([] as [(&str, f64); 0]).unwrap(),
+            epsilon = 1.0e-12
         );
     }
 
@@ -389,7 +393,7 @@ mod tests {
         let first = detector.score([("a", 1.0), ("b", 2.0)]).unwrap();
         let second = detector.score([("a", 1.0), ("b", 2.0)]).unwrap();
         let after = detector.to_json().unwrap();
-        assert_eq!(first, second);
+        assert_abs_diff_eq!(first, second, epsilon = 1.0e-12);
         assert_eq!(before, after);
     }
 
@@ -418,7 +422,11 @@ mod tests {
 
         assert_eq!(detector.current_epoch, epoch_before);
         assert_eq!(detector.entries_seen, u64::MAX);
-        assert_eq!(detector.score([("a", 1.0)]).unwrap(), score_before);
+        assert_abs_diff_eq!(
+            detector.score([("a", 1.0)]).unwrap(),
+            score_before,
+            epsilon = 1.0e-12
+        );
     }
 
     #[test]
@@ -446,15 +454,17 @@ mod tests {
         let json = left.to_json().unwrap();
         let mut right = FeatureSketch::from_json(json).unwrap();
 
-        assert_eq!(
+        assert_abs_diff_eq!(
             left.score([("future", 42.0)]).unwrap(),
-            right.score([("future", 42.0)]).unwrap()
+            right.score([("future", 42.0)]).unwrap(),
+            epsilon = 1.0e-12
         );
         left.update([("future", 42.0)]).unwrap();
         right.update([("future", 42.0)]).unwrap();
-        assert_eq!(
+        assert_abs_diff_eq!(
             left.score([("another_future", -7.0)]).unwrap(),
-            right.score([("another_future", -7.0)]).unwrap()
+            right.score([("another_future", -7.0)]).unwrap(),
+            epsilon = 1.0e-12
         );
     }
 

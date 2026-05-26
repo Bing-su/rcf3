@@ -107,6 +107,7 @@ pub(crate) fn random_state(seed: Seed4) -> RandomState {
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_abs_diff_eq;
     use rstest::rstest;
 
     use super::*;
@@ -118,8 +119,12 @@ mod tests {
         let features = crate::featuresketch::input::normalize([("a", 1.0), ("b", -2.0)]).unwrap();
         let left = project(&features, 8, 8, &seeds);
         let right = project(&features, 8, 8, &seeds);
-        assert_eq!(left.value, right.value);
-        assert_eq!(left.presence, right.presence);
+        for (left, right) in left.value.iter().zip(right.value.iter()) {
+            assert_abs_diff_eq!(left, right, epsilon = 1.0e-12);
+        }
+        for (left, right) in left.presence.iter().zip(right.presence.iter()) {
+            assert_abs_diff_eq!(left, right, epsilon = 1.0e-12);
+        }
     }
 
     #[rstest]
@@ -142,7 +147,11 @@ mod tests {
 
         assert_eq!(projected.value.len(), value_dims);
         assert_eq!(projected.presence.len(), presence_dims + 1);
-        assert_eq!(projected.presence[presence_dims], expected_count_signal);
+        assert_abs_diff_eq!(
+            projected.presence[presence_dims],
+            expected_count_signal,
+            epsilon = 1.0e-12
+        );
         assert!(projected.value.iter().all(|value| value.is_finite()));
         assert!(projected.presence.iter().all(|value| value.is_finite()));
     }

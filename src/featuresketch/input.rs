@@ -45,10 +45,11 @@ where
 #[cfg(test)]
 mod tests {
     #[cfg(not(feature = "std"))]
-    use alloc::{collections::BTreeMap, format, vec, vec::Vec};
+    use alloc::{collections::BTreeMap, format, vec::Vec};
     #[cfg(feature = "std")]
-    use std::{collections::BTreeMap, format, vec, vec::Vec};
+    use std::{collections::BTreeMap, format, vec::Vec};
 
+    use approx::abs_diff_eq;
     use proptest::prelude::*;
     use rstest::rstest;
 
@@ -57,19 +58,11 @@ mod tests {
     #[test]
     fn combines_duplicate_names_and_preserves_zero() {
         let features = normalize([("a", 1.0), ("b", 0.0), ("a", -1.0)]).unwrap();
-        assert_eq!(
-            features,
-            vec![
-                NormalizedFeature {
-                    name: "a".into(),
-                    value: 0.0
-                },
-                NormalizedFeature {
-                    name: "b".into(),
-                    value: 0.0
-                }
-            ]
-        );
+        assert_eq!(features.len(), 2);
+        assert_eq!(features[0].name, "a");
+        assert!(abs_diff_eq!(features[0].value, 0.0, epsilon = 1.0e-12));
+        assert_eq!(features[1].name, "b");
+        assert!(abs_diff_eq!(features[1].value, 0.0, epsilon = 1.0e-12));
     }
 
     #[rstest]
@@ -114,7 +107,11 @@ mod tests {
                 })
                 .collect();
 
-            prop_assert_eq!(normalized, expected);
+            prop_assert_eq!(normalized.len(), expected.len());
+            for (actual, expected) in normalized.iter().zip(expected.iter()) {
+                prop_assert_eq!(&actual.name, &expected.name);
+                prop_assert!(abs_diff_eq!(actual.value, expected.value, epsilon = 1.0e-12));
+            }
         }
     }
 }

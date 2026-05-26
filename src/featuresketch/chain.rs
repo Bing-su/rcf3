@@ -92,6 +92,7 @@ impl ChainLevel {
 
 #[cfg(test)]
 mod tests {
+    use approx::abs_diff_eq;
     use proptest::prelude::*;
 
     use super::*;
@@ -133,8 +134,12 @@ mod tests {
                 prop_assert!(level.width > 0.0);
                 prop_assert!(level.offset >= 0.0);
                 prop_assert!(level.offset < level.width);
-                prop_assert!((level.width - expected_width).abs() < 1.0e-12);
-                prop_assert!((level.bin_volume_ratio - (level.width / base_width)).abs() < 1.0e-12);
+                prop_assert!(abs_diff_eq!(level.width, expected_width, epsilon = 1.0e-12));
+                prop_assert!(abs_diff_eq!(
+                    level.bin_volume_ratio,
+                    level.width / base_width,
+                    epsilon = 1.0e-12
+                ));
             }
         }
     }
