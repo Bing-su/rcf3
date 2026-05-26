@@ -277,6 +277,11 @@ impl FeatureSketch {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(all(not(feature = "std"), feature = "serde"))]
+    use alloc::format;
+    #[cfg(not(feature = "std"))]
+    use alloc::vec::Vec;
+
     use crate::error::RcfError;
 
     use super::*;
@@ -373,6 +378,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn score_is_pure() {
         let mut detector = tiny_detector(15);
         for _ in 0..80 {
@@ -397,6 +403,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn score_after_unrelated_updates_applies_decay_without_mutation() {
         let mut detector = tiny_detector(17);
         detector.update([("a", 1.0)]).unwrap();
@@ -411,6 +418,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn serde_roundtrip_preserves_future_scores_and_updates() {
         let mut left = tiny_detector(19);
         for _ in 0..60 {
@@ -474,6 +482,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn high_cardinality_stream_does_not_serialize_feature_names() {
         let mut detector = tiny_detector(22);
         for i in 0..200 {

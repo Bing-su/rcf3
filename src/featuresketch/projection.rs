@@ -107,6 +107,8 @@ pub(crate) fn random_state(seed: Seed4) -> RandomState {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     #[test]
@@ -118,5 +120,30 @@ mod tests {
         let right = project(&features, 8, 8, &seeds);
         assert_eq!(left.value, right.value);
         assert_eq!(left.presence, right.presence);
+    }
+
+    #[rstest]
+    #[case::empty(Vec::new(), 4, 3, 0.0)]
+    #[case::two_features(
+        crate::featuresketch::input::normalize([("a", 1.0), ("b", -2.0)]).unwrap(),
+        8,
+        5,
+        math::ln(3.0)
+    )]
+    fn projection_shape_and_feature_count_signal(
+        #[case] features: Vec<NormalizedFeature>,
+        #[case] value_dims: usize,
+        #[case] presence_dims: usize,
+        #[case] expected_count_signal: f64,
+    ) {
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(19);
+        let seeds = ProjectionSeeds::new(&mut rng);
+        let projected = project(&features, value_dims, presence_dims, &seeds);
+
+        assert_eq!(projected.value.len(), value_dims);
+        assert_eq!(projected.presence.len(), presence_dims + 1);
+        assert_eq!(projected.presence[presence_dims], expected_count_signal);
+        assert!(projected.value.iter().all(|value| value.is_finite()));
+        assert!(projected.presence.iter().all(|value| value.is_finite()));
     }
 }

@@ -159,6 +159,18 @@ mod tests {
     }
 
     #[rstest]
+    #[case(FeatureSketchConfig::new().with_value_projection_dims(1))]
+    #[case(FeatureSketchConfig::new().with_presence_projection_dims(1))]
+    #[case(FeatureSketchConfig::new().with_chains_per_ensemble(1))]
+    #[case(FeatureSketchConfig::new().with_chain_depth(1))]
+    #[case(FeatureSketchConfig::new().with_sketch_rows(1))]
+    #[case(FeatureSketchConfig::new().with_sketch_buckets(2))]
+    #[case(FeatureSketchConfig::new().with_decay_half_life(1))]
+    fn accepts_minimum_valid_boundaries(#[case] config: FeatureSketchConfig) {
+        config.validate().unwrap();
+    }
+
+    #[rstest]
     #[case::value_dims(FeatureSketchConfig::new().with_value_projection_dims(0))]
     #[case::presence_dims(FeatureSketchConfig::new().with_presence_projection_dims(0))]
     #[case::chains(FeatureSketchConfig::new().with_chains_per_ensemble(0))]

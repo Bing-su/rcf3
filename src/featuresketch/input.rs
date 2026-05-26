@@ -44,6 +44,14 @@ where
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(feature = "std"))]
+    use alloc::{collections::BTreeMap, format, vec, vec::Vec};
+    #[cfg(feature = "std")]
+    use std::{collections::BTreeMap, format, vec, vec::Vec};
+
+    use proptest::prelude::*;
+    use rstest::rstest;
+
     use super::*;
 
     #[test]
@@ -64,11 +72,49 @@ mod tests {
         );
     }
 
-    #[test]
-    fn rejects_non_finite_values() {
+    #[rstest]
+    #[case(f64::NAN)]
+    #[case(f64::INFINITY)]
+    #[case(f64::NEG_INFINITY)]
+    fn rejects_non_finite_values(#[case] value: f64) {
         assert!(matches!(
-            normalize([("a", f64::NAN)]),
+            normalize([("a", value)]),
             Err(RcfError::InvalidArgument(_))
         ));
+    }
+
+    #[test]
+    fn rejects_non_finite_duplicate_sum() {
+        assert!(matches!(
+            normalize([("a", f64::MAX), ("a", f64::MAX)]),
+            Err(RcfError::InvalidArgument(_))
+        ));
+    }
+
+    proptest! {
+        #[test]
+        fn normalize_matches_grouped_asinh_sum(
+            entries in prop::collection::vec((0usize..6, -1.0e6f64..1.0e6f64), 0..40)
+        ) {
+            let input: Vec<(String, f64)> = entries
+                .iter()
+                .map(|(key, value)| (format!("feature:{key}"), *value))
+                .collect();
+            let normalized = normalize(input).unwrap();
+
+            let mut expected = BTreeMap::<String, f64>::new();
+            for (key, value) in entries {
+                *expected.entry(format!("feature:{key}")).or_insert(0.0) += value;
+            }
+            let expected: Vec<_> = expected
+                .into_iter()
+                .map(|(name, value)| NormalizedFeature {
+                    name,
+                    value: math::asinh(value),
+                })
+                .collect();
+
+            prop_assert_eq!(normalized, expected);
+        }
     }
 }

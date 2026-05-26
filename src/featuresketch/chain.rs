@@ -94,3 +94,53 @@ fn unit_f64(value: u64) -> f64 {
     const DENOM: f64 = (1u64 << 53) as f64;
     ((value >> 11) as f64) / DENOM
 }
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn generated_layout_obeys_chain_invariants(
+            seed: u64,
+            chains in 1usize..8,
+            depth in 1usize..8,
+            projection_dims in 1usize..16,
+            include_feature_count: bool,
+        ) {
+            let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
+            let layout = ChainLayout::new(
+                chains,
+                depth,
+                projection_dims,
+                include_feature_count,
+                &mut rng,
+            );
+            let dims = projection_dims + usize::from(include_feature_count);
+
+            prop_assert_eq!(layout.len(), chains * depth);
+            prop_assert_eq!(layout.chain_depth(), depth);
+
+            for (index, level) in layout.levels().iter().enumerate() {
+                let depth_level = index % depth;
+                let is_feature_count = include_feature_count && level.dimension == projection_dims;
+                let base_width = if is_feature_count {
+                    FEATURE_COUNT_BASE_BIN_WIDTH
+                } else {
+                    PROJECTION_BASE_BIN_WIDTH
+                };
+                let expected_width = base_width / math::powf(2.0, depth_level as f64);
+
+                prop_assert!(level.dimension < dims);
+                prop_assert!(level.width.is_finite());
+                prop_assert!(level.width > 0.0);
+                prop_assert!(level.offset >= 0.0);
+                prop_assert!(level.offset < level.width);
+                prop_assert!((level.width - expected_width).abs() < 1.0e-12);
+                prop_assert!((level.bin_volume_ratio - (level.width / base_width)).abs() < 1.0e-12);
+            }
+        }
+    }
+}
