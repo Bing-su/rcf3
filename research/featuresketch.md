@@ -598,3 +598,7 @@ schema-evolving streams than adapting `Forest`, `OnlineIForest`, or `MStream`:
 those detectors require fixed dimensions or separate feature categories, while
 FeatureSketch lets the schema grow and shrink without a public schema or tuning
 surface.
+
+---
+
+Reviewed and signed by Codex.
