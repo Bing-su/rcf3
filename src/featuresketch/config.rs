@@ -155,6 +155,16 @@ impl FeatureSketchConfig {
             .ok_or_else(|| {
                 RcfError::InvalidArgument("sketch_rows * sketch_buckets must fit in usize".into())
             })?;
+        self.chains_per_ensemble
+            .checked_mul(self.chain_depth)
+            .and_then(|value| value.checked_mul(self.sketch_rows))
+            .and_then(|value| value.checked_mul(self.sketch_buckets))
+            .and_then(|value| value.checked_mul(2))
+            .ok_or_else(|| {
+                RcfError::InvalidArgument(
+                    "total FeatureSketch sketch cells must fit in usize".into(),
+                )
+            })?;
         Ok(())
     }
 }
@@ -229,6 +239,13 @@ mod tests {
     #[case::sketch_cell_count(
         FeatureSketchConfig::new()
             .with_sketch_rows(usize::MAX)
+            .with_sketch_buckets(2)
+    )]
+    #[case::total_sketch_cells(
+        FeatureSketchConfig::new()
+            .with_chains_per_ensemble(usize::MAX / 8 + 1)
+            .with_chain_depth(2)
+            .with_sketch_rows(2)
             .with_sketch_buckets(2)
     )]
     fn rejects_overflowing_values(#[case] config: FeatureSketchConfig) {
