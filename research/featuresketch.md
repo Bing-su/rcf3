@@ -5,20 +5,20 @@
 FeatureSketch is an online anomaly detector for streams whose schema is not
 fixed. Each event is represented only by its currently observed features. New
 feature names may appear at any time, and previously common feature names may
-stop appearing. The public API keeps algorithm parameters internal.
+stop appearing.
 
-The public shape is deliberately small:
+FeatureSketch exposes a compact builder/config surface. The public event shape
+remains deliberately small:
 
 ```text
-detector = FeatureSketch()
+detector = FeatureSketch::builder().build()
 score = detector.score(features)
 detector.update(features)
 ```
 
-`features` is a sparse map from feature name to finite numeric value, or an
-equivalent sequence of `(feature, value)` pairs. The detector does not require
-row ids, labels, timestamps, a declared schema, categorical/numeric partitions,
-or tuning parameters.
+`features` is a sparse sequence of `(feature, value)` pairs. Feature names are
+strings, and values are finite `f64` inputs. The detector does not require row
+ids, labels, timestamps, a declared schema, or categorical/numeric partitions.
 
 ## Literature
 
@@ -115,7 +115,8 @@ shrinking schemas. The resulting detector supports:
 - feature shrink: missing keys do not cause dimension errors, and stale
   historical density fades out;
 - feature-only input: no `id`, timestamp, label, or schema;
-- fixed public behavior: sketch, projection, and decay constants stay internal.
+- bounded state: no feature-name registry grows with the historical feature
+  universe.
 
 This is a practical detector design rather than a paper-faithful xStream port.
 The original xStream setting is more general because it maintains scores for
@@ -190,11 +191,11 @@ application creates an explicit feature such as `flag:false -> 1.0`.
 
 ### Projection
 
-Maintain `K_v` value projection dimensions and `K_p` presence projection
-dimensions, chosen by internal constants. For each distinct feature name, compute
-a stable feature-name hash once for the event. For each projection channel,
-feature name `f`, and projected dimension `k`, derive a stable sparse random
-coefficient from the detector seed and `(channel, hash(f), k)`:
+Maintain configurable `K_v` value projection dimensions and `K_p` presence
+projection dimensions. For each distinct feature name, compute a stable
+feature-name hash once for the event. For each projection channel, feature name
+`f`, and projected dimension `k`, derive a stable sparse random coefficient from
+the detector seed and `(channel, hash(f), k)`:
 
 ```text
 coef(channel, hash(f), k) in {-sqrt(3), 0, +sqrt(3)}
@@ -376,31 +377,37 @@ Implementation-internal diagnostics, if added later, must remain sketch-based
 and must not add public configuration or memory growth proportional to the
 number of feature names ever seen.
 
-## Fixed Internal Defaults
+## Public Configuration and Internal Constants
 
-These values are fixed implementation constants rather than builder parameters
-in the first public version:
+FeatureSketch exposes the parameters that are meaningful as runtime, accuracy,
+memory, or adaptation tradeoffs:
 
-| Internal constant              |    Suggested value | Reason                                                            |
-| ------------------------------ | -----------------: | ----------------------------------------------------------------- |
-| Value projection dimensions    |                 32 | Enough for sparse random projection while keeping update cost low |
-| Presence projection dimensions |                 32 | Keeps schema-change detection independent from value magnitudes   |
-| Chains per ensemble            |                 16 | Ensemble stability without large memory                           |
-| Chain depth                    |                  8 | Multi-scale bins without excessive sketch reads                   |
-| Projection base bin width      |                4.0 | Base width for value and presence projection dimensions           |
-| Feature-count base bin width   |                2.0 | Base width for the appended `log1p(count)` dimension              |
-| Sketch rows                    |                  2 | Same practical shape as current `MStream` defaults                |
-| Sketch buckets                 |               2048 | More room than `MStream` because projected bins are more varied   |
-| Decay half-life                |        2048 events | Tracks recent behavior while preserving a useful baseline         |
-| Epsilon                        |              1e-12 | Prevents `log(0)` in density-ratio scoring                        |
-| Epsilon mass                   |              1e-12 | Prevents division by zero before enough mass has accumulated      |
-| Seed                           | fixed library seed | Deterministic behavior without a public option                    |
+| Public config                  | Default value | Meaning                                                      |
+| ------------------------------ | ------------: | ------------------------------------------------------------ |
+| Value projection dimensions    |            32 | Sparse random projection capacity for feature magnitudes     |
+| Presence projection dimensions |            32 | Independent projection capacity for observed feature sets    |
+| Chains per ensemble            |            16 | Ensemble stability versus sketch read/write cost             |
+| Chain depth                    |             8 | Multi-scale density resolution versus sketch read/write cost |
+| Sketch rows                    |             2 | Count-min collision robustness versus memory and CPU         |
+| Sketch buckets                 |          2048 | Count-min bucket capacity versus memory                      |
+| Decay half-life                |   2048 events | Adaptation speed for non-stationary streams                  |
+| Seed                           |       builder | Optional deterministic layout/projection/sketch seed         |
 
-These are implementation constants, not public configuration. Test-only
-constructors may inject a seed internally, but the public detector should not
-expose tuning knobs in the first version. The fixed library seed is expanded
-internally into separate seed material for projection coefficients, chain
-layout, and count-min bucket hashing.
+The following values are intentionally fixed internal constants because they
+are numerical or scale choices rather than useful application-level tuning
+knobs:
+
+| Internal constant            | Value | Reason                                                   |
+| ---------------------------- | ----: | -------------------------------------------------------- |
+| Projection base bin width    |   4.0 | Base width for value and presence projection dimensions  |
+| Feature-count base bin width |   2.0 | Base width for the appended `log1p(count)` dimension     |
+| Epsilon                      | 1e-12 | Prevents `log(0)` in density-ratio scoring               |
+| Epsilon mass                 | 1e-12 | Prevents division by zero before enough mass accumulates |
+
+The configured seed is expanded internally into separate seed material for
+projection coefficients, chain layout, and count-min bucket hashing. Serialized
+state stores the generated layout and seed material, not just the original
+seed.
 
 ## Complexity
 
@@ -496,7 +503,16 @@ Rust:
 ```rust
 use rcf3::FeatureSketch;
 
-let mut detector = FeatureSketch::new();
+let mut detector = FeatureSketch::builder()
+    .value_projection_dims(32)
+    .presence_projection_dims(32)
+    .chains_per_ensemble(16)
+    .chain_depth(8)
+    .sketch_rows(2)
+    .sketch_buckets(2048)
+    .decay_half_life(2048)
+    .seed(42)
+    .build()?;
 
 let event = [
     ("endpoint:/login", 1.0),
@@ -518,7 +534,16 @@ Python:
 ```python
 from rcf3 import FeatureSketch
 
-detector = FeatureSketch()
+detector = FeatureSketch(
+    value_projection_dims=32,
+    presence_projection_dims=32,
+    chains_per_ensemble=16,
+    chain_depth=8,
+    sketch_rows=2,
+    sketch_buckets=2048,
+    decay_half_life=2048,
+    seed=42,
+)
 event = {
     "endpoint:/login": 1.0,
     "status:401": 1.0,
@@ -548,7 +573,7 @@ must still be stored because future unseen feature names need reproducible
 - chain dimensions, bin widths, bin offsets, and bin-volume ratios;
 - count-min row hash seed material;
 - sketch row and bucket counts;
-- decay half-life, current event counter, and epsilon constants;
+- decay half-life and current event counter;
 - sketch cell counts and epochs;
 - chain-level reference masses and epochs.
 
