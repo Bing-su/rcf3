@@ -16,6 +16,27 @@ pub(crate) enum DimensionFamily {
     FeatureCount,
 }
 
+impl DimensionFamily {
+    fn from_dimension(
+        dimension: usize,
+        projection_dims: usize,
+        include_feature_count: bool,
+    ) -> Self {
+        if dimension == projection_dims && include_feature_count {
+            Self::FeatureCount
+        } else {
+            Self::Projection
+        }
+    }
+
+    fn base_bin_width(self) -> f64 {
+        match self {
+            Self::Projection => PROJECTION_BASE_BIN_WIDTH,
+            Self::FeatureCount => FEATURE_COUNT_BASE_BIN_WIDTH,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub(crate) struct ChainLevel {
@@ -45,15 +66,12 @@ impl ChainLayout {
         for _ in 0..chains {
             for level in 0..depth {
                 let dimension = (rng.next_u64() % dims as u64) as usize;
-                let family = if dimension == projection_dims && include_feature_count {
-                    DimensionFamily::FeatureCount
-                } else {
-                    DimensionFamily::Projection
-                };
-                let base_width = match family {
-                    DimensionFamily::Projection => PROJECTION_BASE_BIN_WIDTH,
-                    DimensionFamily::FeatureCount => FEATURE_COUNT_BASE_BIN_WIDTH,
-                };
+                let base_width = DimensionFamily::from_dimension(
+                    dimension,
+                    projection_dims,
+                    include_feature_count,
+                )
+                .base_bin_width();
                 let scale = math::powf(2.0, level as f64);
                 let width = base_width / scale;
                 let offset = rng.random_range(0.0..width);

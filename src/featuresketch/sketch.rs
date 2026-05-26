@@ -12,7 +12,7 @@ use super::projection::{Seed4, random_state};
 const EPSILON: f64 = 1e-12;
 const EPSILON_MASS: f64 = 1e-12;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub(crate) struct DecayedValue {
     value: f64,
@@ -20,13 +20,6 @@ pub(crate) struct DecayedValue {
 }
 
 impl DecayedValue {
-    fn zero() -> Self {
-        Self {
-            value: 0.0,
-            epoch: 0,
-        }
-    }
-
     fn decayed(&self, target_epoch: u64, half_life: u64) -> f64 {
         self.value * decay_factor(target_epoch.saturating_sub(self.epoch), half_life)
     }
@@ -65,7 +58,7 @@ impl LevelSketch {
             rows,
             buckets,
             row_hash_seeds: RowHashSeeds::new(rows, rng),
-            cells: vec![DecayedValue::zero(); rows * buckets],
+            cells: vec![DecayedValue::default(); rows * buckets],
         }
     }
 
@@ -111,7 +104,7 @@ impl EnsembleSketch {
             levels: (0..levels)
                 .map(|_| LevelSketch::new(config.sketch_rows(), config.sketch_buckets(), rng))
                 .collect(),
-            reference_masses: vec![DecayedValue::zero(); levels],
+            reference_masses: vec![DecayedValue::default(); levels],
         }
     }
 

@@ -108,21 +108,23 @@ pub(crate) fn random_state(seed: Seed4) -> RandomState {
 #[cfg(test)]
 mod tests {
     use approx::assert_abs_diff_eq;
+    use itertools::izip;
     use rstest::rstest;
 
     use super::*;
+    use crate::featuresketch::input::normalize;
 
     #[test]
     fn projection_is_deterministic() {
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(7);
         let seeds = ProjectionSeeds::new(&mut rng);
-        let features = crate::featuresketch::input::normalize([("a", 1.0), ("b", -2.0)]).unwrap();
+        let features = normalize([("a", 1.0), ("b", -2.0)]).unwrap();
         let left = project(&features, 8, 8, &seeds);
         let right = project(&features, 8, 8, &seeds);
-        for (left, right) in left.value.iter().zip(right.value.iter()) {
+        for (left, right) in izip!(left.value, right.value) {
             assert_abs_diff_eq!(left, right, epsilon = 1.0e-12);
         }
-        for (left, right) in left.presence.iter().zip(right.presence.iter()) {
+        for (left, right) in izip!(left.presence, right.presence) {
             assert_abs_diff_eq!(left, right, epsilon = 1.0e-12);
         }
     }
@@ -130,7 +132,7 @@ mod tests {
     #[rstest]
     #[case::empty(Vec::new(), 4, 3, 0.0)]
     #[case::two_features(
-        crate::featuresketch::input::normalize([("a", 1.0), ("b", -2.0)]).unwrap(),
+        normalize([("a", 1.0), ("b", -2.0)]).unwrap(),
         8,
         5,
         math::ln(3.0)

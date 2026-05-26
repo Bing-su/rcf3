@@ -1,7 +1,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::{collections::BTreeMap, string::String, vec::Vec};
 #[cfg(feature = "std")]
-use std::{collections::BTreeMap, string::String};
+use std::collections::BTreeMap;
 
 use crate::error::{RcfError, Result};
 use crate::math;
