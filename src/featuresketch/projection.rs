@@ -15,8 +15,8 @@ const SQRT_3: f64 = 1.732050807568877293527446341505872367_f64;
 pub(crate) struct ProjectionSeeds {
     value: Seed4,
     presence: Seed4,
-    feature_hi: Seed4,
     feature_lo: Seed4,
+    feature_hi: Seed4,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -33,8 +33,8 @@ impl ProjectionSeeds {
         Self {
             value: Seed4::from_rng(rng),
             presence: Seed4::from_rng(rng),
-            feature_hi: Seed4::from_rng(rng),
             feature_lo: Seed4::from_rng(rng),
+            feature_hi: Seed4::from_rng(rng),
         }
     }
 }
@@ -52,8 +52,8 @@ impl Seed4 {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct FeatureHash {
-    hi: u64,
     lo: u64,
+    hi: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -87,14 +87,14 @@ pub(crate) fn project(
 
 fn feature_hash(name: &str, seeds: &ProjectionSeeds) -> FeatureHash {
     FeatureHash {
-        hi: random_state(seeds.feature_hi).hash_one(name),
         lo: random_state(seeds.feature_lo).hash_one(name),
+        hi: random_state(seeds.feature_hi).hash_one(name),
     }
 }
 
 fn coefficient(seed: Seed4, feature: FeatureHash, dim: usize) -> f64 {
     let state = random_state(seed);
-    match state.hash_one((feature.hi, feature.lo, dim as u64)) % 6 {
+    match state.hash_one((feature.lo, feature.hi, dim as u64)) % 6 {
         0 => SQRT_3,
         1 => -SQRT_3,
         _ => 0.0,
