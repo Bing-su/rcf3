@@ -80,7 +80,7 @@ pub(crate) fn project(
             *projected += coefficient(seeds.presence, hash, dim);
         }
     }
-    presence[presence_dims] = math::ln(1.0 + features.len() as f64);
+    presence[presence_dims] = math::ln_1p(features.len() as f64);
 
     ProjectedEvent { value, presence }
 }

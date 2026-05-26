@@ -19,6 +19,16 @@ pub(crate) fn log2(x: f64) -> f64 {
 }
 
 #[cfg(feature = "std")]
+pub(crate) fn ln_1p(x: f64) -> f64 {
+    x.ln_1p()
+}
+
+#[cfg(not(feature = "std"))]
+pub(crate) fn ln_1p(x: f64) -> f64 {
+    libm::log1p(x)
+}
+
+#[cfg(feature = "std")]
 pub(crate) fn powf(x: f64, n: f64) -> f64 {
     x.powf(n)
 }
