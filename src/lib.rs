@@ -5,6 +5,7 @@
 extern crate alloc;
 
 mod error;
+mod featuresketch;
 mod math;
 mod mstream;
 mod onlineiforest;
@@ -13,6 +14,7 @@ mod pyutil;
 mod rcf;
 
 pub use error::{RcfError, Result};
+pub use featuresketch::{FeatureSketch, FeatureSketchBuilder, FeatureSketchConfig};
 pub use mstream::{MStream, MStreamBuilder, MStreamConfig, MStreamScore};
 pub use onlineiforest::{OnlineIForest, OnlineIForestBuilder, OnlineIForestConfig};
 pub use rcf::{Attribution, Forest, ForestBuilder, NeighborResult, RcfConfig};
