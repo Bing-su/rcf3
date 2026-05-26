@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use ndarray::{Array2, ArrayView1, Axis};
-use rcf3::{Forest, MStream, OnlineIForest};
+use rcf3::{FeatureSketch, Forest, MStream, OnlineIForest};
 
 const DIM: usize = 8;
 const EVENTS: usize = 2_000;
@@ -16,9 +16,25 @@ struct MStreamScenario {
     buckets: usize,
 }
 
+#[derive(Clone, Copy)]
+struct FeatureSketchScenario {
+    label: &'static str,
+    value_projection_dims: usize,
+    presence_projection_dims: usize,
+    chains_per_ensemble: usize,
+    chain_depth: usize,
+    sketch_rows: usize,
+    sketch_buckets: usize,
+    decay_half_life: u64,
+}
+
 struct StreamData {
     numeric: Array2<f32>,
     categorical: Array2<i64>,
+}
+
+struct FeatureStreamData {
+    events: Vec<Vec<(String, f64)>>,
 }
 
 impl StreamData {
@@ -51,6 +67,20 @@ impl StreamData {
     }
 }
 
+impl FeatureStreamData {
+    fn new(len: usize) -> Self {
+        Self {
+            events: (0..len).map(feature_event).collect(),
+        }
+    }
+
+    fn for_each_event(&self, mut visit: impl FnMut(&[(String, f64)])) {
+        for event in &self.events {
+            visit(event);
+        }
+    }
+}
+
 fn numeric_stream(len: usize) -> Array2<f32> {
     Array2::from_shape_fn((len, DIM), |(event_idx, feature_idx)| {
         let x = event_idx as f32 * 0.01 + feature_idx as f32 * 0.1;
@@ -62,6 +92,41 @@ fn categorical_stream(len: usize, categorical_dim: usize) -> Array2<i64> {
     Array2::from_shape_fn((len, categorical_dim), |(event_idx, feature_idx)| {
         ((event_idx / (feature_idx + 1)) % 17) as i64
     })
+}
+
+fn feature_event(event_idx: usize) -> Vec<(String, f64)> {
+    let endpoint = match event_idx % 4 {
+        0 => "login",
+        1 => "checkout",
+        2 => "account",
+        _ => "search",
+    };
+    let method = if event_idx % 5 == 0 { "POST" } else { "GET" };
+    let status = if event_idx % 97 == 0 { 500 } else { 200 };
+    let latency = 45.0 + ((event_idx as f64) * 0.013).sin() * 8.0;
+    let bytes_out = 2.0 + ((event_idx as f64) * 0.007).cos();
+
+    let mut features = vec![
+        (format!("endpoint:{endpoint}"), 1.0),
+        (format!("method:{method}"), 1.0),
+        (format!("status:{status}"), 1.0),
+        ("service:payments-api".to_string(), 1.0),
+        ("auth:authenticated".to_string(), 1.0),
+        ("device:known".to_string(), 1.0),
+        ("mfa:present".to_string(), 1.0),
+        ("latency_ms".to_string(), latency),
+        ("bytes_out_kib".to_string(), bytes_out),
+        ("failed_auths".to_string(), 0.0),
+    ];
+
+    if event_idx % 37 == 0 {
+        features.push((format!("partner:{}", event_idx % 11), 1.0));
+    }
+    if event_idx % 211 == 0 {
+        features.push(("header:x-forwarded-admin".to_string(), 1.0));
+    }
+
+    features
 }
 
 fn row_slice<'a>(row: &'a ArrayView1<'a, f32>) -> &'a [f32] {
@@ -102,6 +167,31 @@ fn build_ready_onlineiforest(warmup: &StreamData) -> OnlineIForest {
     detector
 }
 
+fn build_ready_featuresketch(
+    warmup: &FeatureStreamData,
+    scenario: FeatureSketchScenario,
+) -> FeatureSketch {
+    let mut detector = FeatureSketch::builder()
+        .value_projection_dims(scenario.value_projection_dims)
+        .presence_projection_dims(scenario.presence_projection_dims)
+        .chains_per_ensemble(scenario.chains_per_ensemble)
+        .chain_depth(scenario.chain_depth)
+        .sketch_rows(scenario.sketch_rows)
+        .sketch_buckets(scenario.sketch_buckets)
+        .decay_half_life(scenario.decay_half_life)
+        .seed(42)
+        .build()
+        .unwrap();
+
+    warmup.for_each_event(|event| {
+        detector
+            .update(event.iter().map(|(name, value)| (name.as_str(), *value)))
+            .unwrap();
+    });
+
+    detector
+}
+
 fn build_ready_mstream(warmup: &StreamData, scenario: MStreamScenario) -> MStream {
     let mut detector = MStream::builder(DIM, scenario.categorical_dim)
         .seed(42)
@@ -137,6 +227,14 @@ fn run_onlineiforest_score_then_update(detector: &mut OnlineIForest, events: &St
     events.for_each_numeric_row(|point| {
         let _ = detector.score(point).unwrap();
         detector.update(point).unwrap();
+    });
+}
+
+fn run_featuresketch_update_and_score(detector: &mut FeatureSketch, events: &FeatureStreamData) {
+    events.for_each_event(|event| {
+        let _ = detector
+            .update_and_score(event.iter().map(|(name, value)| (name.as_str(), *value)))
+            .unwrap();
     });
 }
 
@@ -237,9 +335,58 @@ fn bench_mstream_stream_step(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_featuresketch_stream_step(c: &mut Criterion) {
+    let scenarios = [
+        FeatureSketchScenario {
+            label: "api_sparse_v16_p16_c12_d6_r2_b512",
+            value_projection_dims: 16,
+            presence_projection_dims: 16,
+            chains_per_ensemble: 12,
+            chain_depth: 6,
+            sketch_rows: 2,
+            sketch_buckets: 512,
+            decay_half_life: 512,
+        },
+        FeatureSketchScenario {
+            label: "api_sparse_v32_p32_c16_d8_r2_b2048",
+            value_projection_dims: 32,
+            presence_projection_dims: 32,
+            chains_per_ensemble: 16,
+            chain_depth: 8,
+            sketch_rows: 2,
+            sketch_buckets: 2048,
+            decay_half_life: 2048,
+        },
+    ];
+
+    let warmup = FeatureStreamData::new(WARMUP_EVENTS);
+    let events = FeatureStreamData::new(EVENTS);
+
+    let mut group = c.benchmark_group("featuresketch_stream_step");
+    group.throughput(Throughput::Elements(EVENTS as u64));
+
+    for scenario in scenarios {
+        let featuresketch = build_ready_featuresketch(&warmup, scenario);
+
+        group.bench_with_input(
+            BenchmarkId::new("update_and_score", scenario.label),
+            &events,
+            |b, events| {
+                b.iter_batched(
+                    || featuresketch.clone(),
+                    |mut detector| run_featuresketch_update_and_score(&mut detector, events),
+                    BatchSize::SmallInput,
+                );
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     name = benches;
     config = Criterion::default().measurement_time(Duration::from_secs(10));
-    targets = bench_numeric_stream_step, bench_mstream_stream_step
+    targets = bench_numeric_stream_step, bench_mstream_stream_step, bench_featuresketch_stream_step
 );
 criterion_main!(benches);
