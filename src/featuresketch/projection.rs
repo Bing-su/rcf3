@@ -62,6 +62,24 @@ pub(crate) struct ProjectedEvent {
     pub(crate) presence: Vec<f64>,
 }
 
+struct ProjectionHashers {
+    value: RandomState,
+    presence: RandomState,
+    feature_lo: RandomState,
+    feature_hi: RandomState,
+}
+
+impl ProjectionHashers {
+    fn new(seeds: &ProjectionSeeds) -> Self {
+        Self {
+            value: random_state(seeds.value),
+            presence: random_state(seeds.presence),
+            feature_lo: random_state(seeds.feature_lo),
+            feature_hi: random_state(seeds.feature_hi),
+        }
+    }
+}
+
 pub(crate) fn project(
     features: &[NormalizedFeature],
     value_dims: usize,
@@ -70,14 +88,15 @@ pub(crate) fn project(
 ) -> ProjectedEvent {
     let mut value = vec![0.0; value_dims];
     let mut presence = vec![0.0; presence_dims + 1];
+    let hashers = ProjectionHashers::new(seeds);
 
     for feature in features {
-        let hash = feature_hash(&feature.name, seeds);
+        let hash = feature_hash(&feature.name, &hashers);
         for (dim, projected) in value.iter_mut().enumerate() {
-            *projected += feature.value * coefficient(seeds.value, hash, dim);
+            *projected += feature.value * coefficient(&hashers.value, hash, dim);
         }
         for (dim, projected) in presence.iter_mut().take(presence_dims).enumerate() {
-            *projected += coefficient(seeds.presence, hash, dim);
+            *projected += coefficient(&hashers.presence, hash, dim);
         }
     }
     presence[presence_dims] = math::ln_1p(features.len() as f64);
@@ -85,15 +104,14 @@ pub(crate) fn project(
     ProjectedEvent { value, presence }
 }
 
-fn feature_hash(name: &str, seeds: &ProjectionSeeds) -> FeatureHash {
+fn feature_hash(name: &str, hashers: &ProjectionHashers) -> FeatureHash {
     FeatureHash {
-        lo: random_state(seeds.feature_lo).hash_one(name),
-        hi: random_state(seeds.feature_hi).hash_one(name),
+        lo: hashers.feature_lo.hash_one(name),
+        hi: hashers.feature_hi.hash_one(name),
     }
 }
 
-fn coefficient(seed: Seed4, feature: FeatureHash, dim: usize) -> f64 {
-    let state = random_state(seed);
+fn coefficient(state: &RandomState, feature: FeatureHash, dim: usize) -> f64 {
     match state.hash_one((feature.lo, feature.hi, dim as u64)) % 6 {
         0 => SQRT_3,
         1 => -SQRT_3,
