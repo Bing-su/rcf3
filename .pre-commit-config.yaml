@@ -21,13 +21,13 @@ repos:
       - id: ruff-format
 
   - repo: https://github.com/oxc-project/mirrors-oxfmt
-    rev: v0.51.0
+    rev: v0.52.0
     hooks:
       - id: oxfmt
         types_or: [json, markdown, yaml]
 
   - repo: https://github.com/tombi-toml/tombi-pre-commit
-    rev: v0.11.6
+    rev: v1.0.0
     hooks:
       - id: tombi-format
 
