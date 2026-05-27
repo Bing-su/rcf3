@@ -1,7 +1,7 @@
 import math
 import tempfile
 
-from rcf3 import Forest, MStream, OnlineIForest
+from rcf3 import FeatureSketch, Forest, MStream, OnlineIForest
 
 
 def test_creating_forest_basic():
@@ -294,6 +294,93 @@ def test_mstream_practical_example():
     print(f"country contribution={suspicious['categorical_features'][0]}")
 
 
+def test_featuresketch_basic_usage():
+    """Test the basic FeatureSketch documentation flow."""
+    detector = FeatureSketch(
+        value_projection_dims=32,
+        presence_projection_dims=32,
+        chains_per_ensemble=16,
+        chain_depth=8,
+        sketch_rows=2,
+        sketch_buckets=2048,
+        decay_half_life=2048,
+        seed=42,
+    )
+
+    score = detector.update_and_score(
+        {
+            "endpoint:/login": 1.0,
+            "status:200": 1.0,
+            "bytes": 812.0,
+        }
+    )
+    assert score >= 0.0
+
+    event = {
+        "endpoint:/admin": 1.0,
+        "status:401": 1.0,
+        "bytes": 12000.0,
+    }
+    preview = detector.score(event)
+    committed = detector.update_and_score(event)
+    assert preview == committed
+    assert detector.is_ready()
+    assert detector.entries_seen() == 2
+
+
+def test_featuresketch_serialization():
+    """Test the FeatureSketch JSON documentation example."""
+    detector = FeatureSketch(seed=7)
+    detector.update(
+        {
+            "endpoint:/login": 1.0,
+            "status:200": 1.0,
+            "bytes": 812.0,
+        }
+    )
+
+    json_str = detector.to_json()
+    restored = FeatureSketch.from_json(json_str)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        path = f"{tmp_dir}/featuresketch.json"
+        detector.save_json(path)
+        restored_from_file = FeatureSketch.load_json(path)
+
+    assert restored.entries_seen() == detector.entries_seen()
+    assert restored_from_file.entries_seen() == detector.entries_seen()
+
+
+def test_featuresketch_practical_example():
+    """Test the practical FeatureSketch documentation example."""
+    detector = FeatureSketch(seed=2026, sketch_buckets=512)
+
+    for _ in range(64):
+        detector.update(
+            {
+                "endpoint:/login": 1.0,
+                "status:200": 1.0,
+                "bytes": 750.0,
+            }
+        )
+
+    normal = detector.score(
+        {
+            "endpoint:/login": 1.0,
+            "status:200": 1.0,
+            "bytes": 790.0,
+        }
+    )
+    suspicious = detector.score(
+        {
+            "endpoint:/admin": 1.0,
+            "status:401": 1.0,
+            "bytes": 12000.0,
+        }
+    )
+
+    print(f"normal={normal}, suspicious={suspicious}")
+
+
 def test_onlineiforest_basic_usage():
     """Test the basic OnlineIForest documentation flow."""
     detector = OnlineIForest(
@@ -372,6 +459,9 @@ if __name__ == "__main__":
         test_mstream_preview_and_detailed_scores()
         test_mstream_serialization()
         test_mstream_practical_example()
+        test_featuresketch_basic_usage()
+        test_featuresketch_serialization()
+        test_featuresketch_practical_example()
         test_onlineiforest_basic_usage()
         test_onlineiforest_serialization()
         test_onlineiforest_practical_example()

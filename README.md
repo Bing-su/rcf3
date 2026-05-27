@@ -1,6 +1,9 @@
 # RCF3
 
-[![Crates.io](https://img.shields.io/crates/v/rcf3)](https://crates.io/crates/rcf3) [![PyPI](https://img.shields.io/pypi/v/rcf3)](https://pypi.org/project/rcf3/) [![Documentation](https://img.shields.io/badge/docs-latest-blue)](https://bing-su.github.io/rcf3/) ![License](https://img.shields.io/crates/l/rcf3)
+[![Crates.io](https://img.shields.io/crates/v/rcf3)](https://crates.io/crates/rcf3)
+[![PyPI](https://img.shields.io/pypi/v/rcf3)](https://pypi.org/project/rcf3/)
+[![Documentation](https://img.shields.io/badge/docs-latest-blue)](https://bing-su.github.io/rcf3/)
+[![License](https://img.shields.io/crates/l/rcf3)](https://github.com/Bing-su/rcf3/blob/main/LICENSE-Apache)
 
 `rcf3` provides streaming anomaly detectors in Rust with Python bindings.
 
@@ -9,6 +12,7 @@
 - **Random Cut Forest** for online anomaly detection, feature attribution, neighborhood search, missing-value imputation, and time-series forecasting
 - **Online Isolation Forest** for numerical streams with sliding-window updates
 - **mStream** for mixed numerical/categorical streaming anomaly detection with feature-level score decomposition
+- **FeatureSketch** for sparse feature-name streams whose schema can grow or shrink over time
 - **Rust and Python APIs** over the same core implementation
 
 ## Documentation
@@ -17,6 +21,7 @@
 - [Forest API guide](https://bing-su.github.io/rcf3/forest/)
 - [OnlineIForest API guide](https://bing-su.github.io/rcf3/onlineiforest/)
 - [MStream API guide](https://bing-su.github.io/rcf3/mstream/)
+- [FeatureSketch API guide](https://bing-su.github.io/rcf3/featuresketch/)
 
 ## Quick orientation
 
@@ -45,6 +50,19 @@ use rcf3::MStream;
 
 let mut detector = MStream::builder(2, 1).build()?;
 let score = detector.update_and_score(&[1.5, 2.0], &[7], 1)?;
+```
+
+Use `FeatureSketch` when each event is a sparse set of named features and the feature universe is not fixed:
+
+```rust
+use rcf3::FeatureSketch;
+
+let mut detector = FeatureSketch::builder().build()?;
+let score = detector.update_and_score([
+    ("endpoint:/login", 1.0),
+    ("status:401", 1.0),
+    ("bytes", 812.0),
+])?;
 ```
 
 ## Features

@@ -1,8 +1,10 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from os import PathLike
 from typing import Any, Final, Self, SupportsFloat, SupportsInt, TypedDict, final
 
 __version__: Final[str]
+
+_KeyValueLike = Mapping[str, SupportsFloat] | Sequence[tuple[str, SupportsFloat]]
 
 @final
 class _NeighborResult(TypedDict):
@@ -21,6 +23,79 @@ class _MStreamScore(TypedDict):
     record: float
     numeric_features: list[float]
     categorical_features: list[float]
+
+@final
+class FeatureSketch:
+    """
+    FeatureSketch detector for sparse, schema-evolving feature streams.
+
+    Feature events can be passed as either a mapping from feature name to value
+    or as a sequence of `(name, value)` pairs. Duplicate names are combined
+    before scoring, and values must be finite.
+
+    Parameters
+    ----------
+    value_projection_dims : int, optional
+        Number of random projection dimensions for feature values (default 32).
+    presence_projection_dims : int, optional
+        Number of random projection dimensions for feature presence (default 32).
+    chains_per_ensemble : int, optional
+        Number of chains in each sketch ensemble (default 16).
+    chain_depth : int, optional
+        Number of bins traversed by each chain (default 8).
+    sketch_rows : int, optional
+        Number of hash rows in each count-min sketch (default 2).
+    sketch_buckets : int, optional
+        Number of buckets per sketch row (default 2048).
+    decay_half_life : int, optional
+        Event-count half-life used for temporal decay (default 2048).
+    seed : int, optional
+        Random seed for deterministic projections, chains, and sketches.
+    """
+    def __new__(
+        cls,
+        /,
+        value_projection_dims: SupportsInt = 32,
+        presence_projection_dims: SupportsInt = 32,
+        chains_per_ensemble: SupportsInt = 16,
+        chain_depth: SupportsInt = 8,
+        sketch_rows: SupportsInt = 2,
+        sketch_buckets: SupportsInt = 2048,
+        decay_half_life: SupportsInt = 2048,
+        seed: SupportsInt | None = None,
+    ) -> Self: ...
+    def update(self, /, feature: _KeyValueLike) -> None:
+        "Ingest a feature event without returning its score."
+    def update_and_score(self, /, feature: _KeyValueLike) -> float:
+        "Return the current anomaly score for a feature event, then ingest it."
+    def score(self, /, feature: _KeyValueLike) -> float:
+        """
+        Preview the current anomaly score for a feature event without mutating state.
+
+        This is the same pre-ingest score that `update_and_score()` would return
+        if called next. It is computed against the current sketches and does not
+        advance the decay epoch or `entries_seen()`.
+        """
+    def is_ready(self, /) -> bool:
+        "Return True once the detector has processed at least one event."
+    def entries_seen(self, /) -> int:
+        "Return the number of processed events."
+    def to_json(self, /) -> str:
+        "Serialize the detector state to JSON."
+    @staticmethod
+    def from_json(json: str | bytes | bytearray | memoryview) -> FeatureSketch:
+        "Deserialize detector state from a JSON string previously written by `to_json()`."
+    def save_json(self, /, path: str | PathLike[str]) -> None:
+        "Serialize the detector state to a JSON file."
+    @staticmethod
+    def load_json(path: str | PathLike[str]) -> FeatureSketch:
+        "Deserialize detector state from a JSON file previously written by `save_json()`."
+    def __repr__(self, /) -> str: ...
+    def __str__(self, /) -> str: ...
+    def __copy__(self, /) -> Self: ...
+    def __deepcopy__(self, /, memo: Any) -> Self: ...
+    def __getstate__(self, /) -> str: ...
+    def __setstate__(self, /, state: str) -> None: ...
 
 @final
 class Forest:

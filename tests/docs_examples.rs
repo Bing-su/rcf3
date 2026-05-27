@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod docs_examples {
-    use rcf3::{Forest, MStream, OnlineIForest};
+    use rcf3::{FeatureSketch, Forest, MStream, OnlineIForest};
 
     #[test]
     fn test_creating_forest_basic() -> Result<(), Box<dyn std::error::Error>> {
@@ -323,6 +323,90 @@ mod docs_examples {
             "country contribution={}",
             suspicious.categorical_features[0]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_featuresketch_basic_usage() -> Result<(), Box<dyn std::error::Error>> {
+        let mut detector = FeatureSketch::builder()
+            .value_projection_dims(32)
+            .presence_projection_dims(32)
+            .chains_per_ensemble(16)
+            .chain_depth(8)
+            .sketch_rows(2)
+            .sketch_buckets(2048)
+            .decay_half_life(2048)
+            .seed(42)
+            .build()?;
+
+        let score = detector.update_and_score([
+            ("endpoint:/login", 1.0),
+            ("status:200", 1.0),
+            ("bytes", 812.0),
+        ])?;
+        assert!(score >= 0.0);
+
+        let event = [
+            ("endpoint:/admin", 1.0),
+            ("status:401", 1.0),
+            ("bytes", 12000.0),
+        ];
+        let preview = detector.score(event)?;
+        let committed = detector.update_and_score(event)?;
+        assert_eq!(preview, committed);
+        assert!(detector.is_ready());
+        assert_eq!(detector.entries_seen(), 2);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_featuresketch_serialization() -> Result<(), Box<dyn std::error::Error>> {
+        let mut detector = FeatureSketch::builder().seed(7).build()?;
+        detector.update([
+            ("endpoint:/login", 1.0),
+            ("status:200", 1.0),
+            ("bytes", 812.0),
+        ])?;
+
+        let json = detector.to_json()?;
+        let restored = FeatureSketch::from_json(json)?;
+        let tmpdir = tempfile::tempdir()?;
+        let path = tmpdir.path().join("featuresketch.json");
+        detector.save_json(&path)?;
+        let restored_from_file = FeatureSketch::load_json(&path)?;
+        assert_eq!(restored.entries_seen(), detector.entries_seen());
+        assert_eq!(restored_from_file.entries_seen(), detector.entries_seen());
+        Ok(())
+    }
+
+    #[test]
+    fn test_featuresketch_practical_example() -> Result<(), Box<dyn std::error::Error>> {
+        let mut detector = FeatureSketch::builder()
+            .seed(2026)
+            .sketch_buckets(512)
+            .build()?;
+
+        for _ in 0..64 {
+            detector.update([
+                ("endpoint:/login", 1.0),
+                ("status:200", 1.0),
+                ("bytes", 750.0),
+            ])?;
+        }
+
+        let normal = detector.score([
+            ("endpoint:/login", 1.0),
+            ("status:200", 1.0),
+            ("bytes", 790.0),
+        ])?;
+        let suspicious = detector.score([
+            ("endpoint:/admin", 1.0),
+            ("status:401", 1.0),
+            ("bytes", 12000.0),
+        ])?;
+
+        println!("normal={normal}, suspicious={suspicious}");
         Ok(())
     }
 

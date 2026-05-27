@@ -24,6 +24,11 @@ path = "tests/docs_examples.rs"
 required-features = ["std"]
 
 [[test]]
+name = "featuresketch_simulation"
+path = "tests/featuresketch_simulation.rs"
+required-features = ["std"]
+
+[[test]]
 name = "forest_test"
 path = "tests/forest_test.rs"
 required-features = ["std"]

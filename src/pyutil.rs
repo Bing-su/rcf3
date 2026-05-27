@@ -2,6 +2,7 @@
 
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
+use std::collections::BTreeMap;
 
 use crate::error::RcfError;
 
@@ -41,4 +42,10 @@ impl From<Vec<u8>> for StrOrBytes {
     fn from(value: Vec<u8>) -> Self {
         Self::Bytes(value)
     }
+}
+
+#[derive(FromPyObject)]
+pub(crate) enum KeyValueLike {
+    Pairs(Vec<(String, f64)>),
+    Dict(BTreeMap<String, f64>),
 }

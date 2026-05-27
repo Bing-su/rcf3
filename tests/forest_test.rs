@@ -15,7 +15,10 @@ use rcf3::{Forest, RcfError};
 // ---------------------------------------------------------------------------
 mod public_api_surface {
     use super::*;
-    use rcf3::{Attribution, ForestBuilder, NeighborResult, RcfConfig};
+    use rcf3::{
+        Attribution, FeatureSketch, FeatureSketchBuilder, FeatureSketchConfig, ForestBuilder,
+        NeighborResult, RcfConfig,
+    };
 
     #[test]
     fn top_level_facade_exports_expected_user_facing_types() {
@@ -53,6 +56,25 @@ mod public_api_surface {
             distance: 3.0,
         };
         assert_eq!(neighbor.point, vec![1.0, 2.0]);
+
+        let feature_config = FeatureSketchConfig::new()
+            .with_value_projection_dims(4)
+            .with_presence_projection_dims(4)
+            .with_chains_per_ensemble(2)
+            .with_chain_depth(2)
+            .with_sketch_buckets(32);
+        assert_eq!(feature_config.value_projection_dims(), 4);
+
+        let builder: FeatureSketchBuilder = FeatureSketch::builder()
+            .value_projection_dims(4)
+            .presence_projection_dims(4)
+            .chains_per_ensemble(2)
+            .chain_depth(2)
+            .sketch_buckets(32)
+            .seed(7);
+        let mut detector = builder.build().unwrap();
+        detector.update([("feature", 1.0)]).unwrap();
+        assert!(detector.score([("feature", 1.0)]).unwrap().is_finite());
     }
 }
 

@@ -5,6 +5,7 @@
 extern crate alloc;
 
 mod error;
+mod featuresketch;
 mod math;
 mod mstream;
 mod onlineiforest;
@@ -13,6 +14,7 @@ mod pyutil;
 mod rcf;
 
 pub use error::{RcfError, Result};
+pub use featuresketch::{FeatureSketch, FeatureSketchBuilder, FeatureSketchConfig};
 pub use mstream::{MStream, MStreamBuilder, MStreamConfig, MStreamScore};
 pub use onlineiforest::{OnlineIForest, OnlineIForestBuilder, OnlineIForestConfig};
 pub use rcf::{Attribution, Forest, ForestBuilder, NeighborResult, RcfConfig};
@@ -31,6 +33,8 @@ mod rcf3 {
     #[allow(non_upper_case_globals)]
     const __version__: &str = env!("CARGO_PKG_VERSION");
 
+    #[pymodule_export]
+    use crate::featuresketch::python::PyFeatureSketch;
     #[pymodule_export]
     use crate::mstream::python::PyMStream;
     #[pymodule_export]
