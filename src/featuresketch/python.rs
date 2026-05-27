@@ -77,7 +77,10 @@ impl PyFeatureSketch {
 
     /// Ingest a feature event without returning its score.
     fn update(&mut self, feature: KeyValueLike) -> PyResult<()> {
-        self.inner.update(feature).map_err(to_py_err)
+        match feature {
+            KeyValueLike::Pairs(pairs) => self.inner.update(pairs).map_err(to_py_err),
+            KeyValueLike::Dict(mapping) => self.inner.update(mapping).map_err(to_py_err),
+        }
     }
 
     /// Preview the current anomaly score for a feature event without mutating state.
@@ -86,12 +89,18 @@ impl PyFeatureSketch {
     /// if called next. It is computed against the current sketches and does not
     /// advance the decay epoch or `entries_seen()`.
     fn score(&self, feature: KeyValueLike) -> PyResult<f64> {
-        self.inner.score(feature).map_err(to_py_err)
+        match feature {
+            KeyValueLike::Pairs(pairs) => self.inner.score(pairs).map_err(to_py_err),
+            KeyValueLike::Dict(mapping) => self.inner.score(mapping).map_err(to_py_err),
+        }
     }
 
     /// Return the current anomaly score for a feature event, then ingest it.
     fn update_and_score(&mut self, feature: KeyValueLike) -> PyResult<f64> {
-        self.inner.update_and_score(feature).map_err(to_py_err)
+        match feature {
+            KeyValueLike::Pairs(pairs) => self.inner.update_and_score(pairs).map_err(to_py_err),
+            KeyValueLike::Dict(mapping) => self.inner.update_and_score(mapping).map_err(to_py_err),
+        }
     }
 
     /// Return True once the detector has processed at least one event.

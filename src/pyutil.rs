@@ -49,15 +49,3 @@ pub(crate) enum KeyValueLike {
     Pairs(Vec<(String, f64)>),
     Dict(BTreeMap<String, f64>),
 }
-
-impl IntoIterator for KeyValueLike {
-    type Item = (String, f64);
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        match self {
-            KeyValueLike::Pairs(vec) => vec.into_iter(),
-            KeyValueLike::Dict(map) => map.into_iter().collect::<Vec<_>>().into_iter(),
-        }
-    }
-}
