@@ -215,12 +215,18 @@ bits, so accidental name collisions are negligible without storing a feature
 registry. If a collision occurs, it behaves like an additional projection
 collision rather than unbounded state growth.
 
-For each event, compute two projection vectors:
+For each event, compute two projection vectors. In the formulas below, `value_f`
+is the combined raw value for feature `f` before the `asinh` normalization step,
+and each sum is over the distinct observed feature names after duplicate
+combination:
 
 ```text
-value_projection[k] = sum(asinh(value_f) * coef("value", hash(f), k))
+value_projection[k] =
+    sum over observed features f of
+        asinh(value_f) * coef("value", hash(f), k)
 presence_projection[k] =
-    sum(coef("presence", hash(f), k)) for observed feature names
+    sum over observed features f of
+        coef("presence", hash(f), k)
 ```
 
 Also compute one scalar feature-count signal:
