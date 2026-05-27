@@ -9,16 +9,34 @@ const EVENTS: usize = 2_000;
 const WARMUP_EVENTS: usize = 20_000;
 
 #[derive(Clone, Copy)]
+enum ConfigSize {
+    Small,
+    Default,
+}
+
+#[derive(Clone, Copy)]
+struct ForestScenario {
+    label: &'static str,
+    size: ConfigSize,
+}
+
+#[derive(Clone, Copy)]
+struct OnlineIForestScenario {
+    label: &'static str,
+    size: ConfigSize,
+}
+
+#[derive(Clone, Copy)]
 struct MStreamScenario {
     label: &'static str,
+    size: ConfigSize,
     categorical_dim: usize,
-    rows: usize,
-    buckets: usize,
 }
 
 #[derive(Clone, Copy)]
 struct FeatureSketchScenario {
     label: &'static str,
+    size: ConfigSize,
     value_projection_dims: usize,
     presence_projection_dims: usize,
     chains_per_ensemble: usize,
@@ -139,28 +157,27 @@ fn categorical_row_slice<'a>(row: &'a ArrayView1<'a, i64>) -> &'a [i64] {
         .expect("categorical_stream rows should be contiguous")
 }
 
-fn build_ready_forest(warmup: &StreamData) -> Forest {
-    let mut forest = Forest::builder(DIM)
-        .shingle_size(1)
-        .num_trees(50)
-        .capacity(256)
-        .seed(42)
-        .build()
-        .unwrap();
+fn build_ready_forest(warmup: &StreamData, scenario: ForestScenario) -> Forest {
+    let mut builder = Forest::builder(DIM).seed(42);
+    if matches!(scenario.size, ConfigSize::Small) {
+        builder = builder.num_trees(16).capacity(128);
+    }
+    let mut forest = builder.build().unwrap();
 
     warmup.for_each_numeric_row(|point| forest.update(point).unwrap());
 
     forest
 }
 
-fn build_ready_onlineiforest(warmup: &StreamData) -> OnlineIForest {
-    let mut detector = OnlineIForest::builder(DIM)
-        .num_trees(50)
-        .window_size(256)
-        .max_leaf_samples(8)
-        .seed(42)
-        .build()
-        .unwrap();
+fn build_ready_onlineiforest(
+    warmup: &StreamData,
+    scenario: OnlineIForestScenario,
+) -> OnlineIForest {
+    let mut builder = OnlineIForest::builder(DIM).seed(42);
+    if matches!(scenario.size, ConfigSize::Small) {
+        builder = builder.num_trees(16).window_size(512).max_leaf_samples(8);
+    }
+    let mut detector = builder.build().unwrap();
 
     warmup.for_each_numeric_row(|point| detector.update(point).unwrap());
 
@@ -171,17 +188,18 @@ fn build_ready_featuresketch(
     warmup: &FeatureStreamData,
     scenario: FeatureSketchScenario,
 ) -> FeatureSketch {
-    let mut detector = FeatureSketch::builder()
-        .value_projection_dims(scenario.value_projection_dims)
-        .presence_projection_dims(scenario.presence_projection_dims)
-        .chains_per_ensemble(scenario.chains_per_ensemble)
-        .chain_depth(scenario.chain_depth)
-        .sketch_rows(scenario.sketch_rows)
-        .sketch_buckets(scenario.sketch_buckets)
-        .decay_half_life(scenario.decay_half_life)
-        .seed(42)
-        .build()
-        .unwrap();
+    let mut builder = FeatureSketch::builder().seed(42);
+    if matches!(scenario.size, ConfigSize::Small) {
+        builder = builder
+            .value_projection_dims(scenario.value_projection_dims)
+            .presence_projection_dims(scenario.presence_projection_dims)
+            .chains_per_ensemble(scenario.chains_per_ensemble)
+            .chain_depth(scenario.chain_depth)
+            .sketch_rows(scenario.sketch_rows)
+            .sketch_buckets(scenario.sketch_buckets)
+            .decay_half_life(scenario.decay_half_life);
+    }
+    let mut detector = builder.build().unwrap();
 
     warmup.for_each_event(|event| {
         detector
@@ -193,13 +211,11 @@ fn build_ready_featuresketch(
 }
 
 fn build_ready_mstream(warmup: &StreamData, scenario: MStreamScenario) -> MStream {
-    let mut detector = MStream::builder(DIM, scenario.categorical_dim)
-        .seed(42)
-        .alpha(0.8)
-        .num_rows(scenario.rows)
-        .num_buckets(scenario.buckets)
-        .build()
-        .unwrap();
+    let mut builder = MStream::builder(DIM, scenario.categorical_dim).seed(42);
+    if matches!(scenario.size, ConfigSize::Small) {
+        builder = builder.num_rows(2).num_buckets(256);
+    }
+    let mut detector = builder.build().unwrap();
 
     warmup.for_each_mstream_row(|offset, numeric, categorical| {
         detector
@@ -223,13 +239,6 @@ fn run_onlineiforest_update_and_score(detector: &mut OnlineIForest, events: &Str
     });
 }
 
-fn run_onlineiforest_score_then_update(detector: &mut OnlineIForest, events: &StreamData) {
-    events.for_each_numeric_row(|point| {
-        let _ = detector.score(point).unwrap();
-        detector.update(point).unwrap();
-    });
-}
-
 fn run_featuresketch_update_and_score(detector: &mut FeatureSketch, events: &FeatureStreamData) {
     events.for_each_event(|event| {
         let _ = detector
@@ -248,49 +257,62 @@ fn run_mstream_update_and_score(detector: &mut MStream, events: &StreamData) {
 }
 
 fn bench_numeric_stream_step(c: &mut Criterion) {
+    let forest_scenarios = [
+        ForestScenario {
+            label: "small_d8_t16_c128",
+            size: ConfigSize::Small,
+        },
+        ForestScenario {
+            label: "default_d8_t50_c256",
+            size: ConfigSize::Default,
+        },
+    ];
+    let onlineiforest_scenarios = [
+        OnlineIForestScenario {
+            label: "small_d8_t16_w512_l8",
+            size: ConfigSize::Small,
+        },
+        OnlineIForestScenario {
+            label: "default_d8_t32_w2048_l32",
+            size: ConfigSize::Default,
+        },
+    ];
+
     let warmup = StreamData::new(WARMUP_EVENTS, 0);
     let events = StreamData::new(EVENTS, 0);
-    let forest = build_ready_forest(&warmup);
-    let onlineiforest = build_ready_onlineiforest(&warmup);
 
     let mut group = c.benchmark_group("numeric_stream_step");
     group.throughput(Throughput::Elements(EVENTS as u64));
 
-    group.bench_with_input(
-        BenchmarkId::new("forest_score_then_update", "d8_t50_c256"),
-        &events,
-        |b, events| {
-            b.iter_batched(
-                || forest.clone(),
-                |mut detector| run_forest_score_then_update(&mut detector, events),
-                BatchSize::SmallInput,
-            );
-        },
-    );
+    for scenario in forest_scenarios {
+        let forest = build_ready_forest(&warmup, scenario);
+        group.bench_with_input(
+            BenchmarkId::new("forest_score_then_update", scenario.label),
+            &events,
+            |b, events| {
+                b.iter_batched(
+                    || forest.clone(),
+                    |mut detector| run_forest_score_then_update(&mut detector, events),
+                    BatchSize::SmallInput,
+                );
+            },
+        );
+    }
 
-    group.bench_with_input(
-        BenchmarkId::new("onlineiforest_update_and_score", "d8_t50_w256_l8"),
-        &events,
-        |b, events| {
-            b.iter_batched(
-                || onlineiforest.clone(),
-                |mut detector| run_onlineiforest_update_and_score(&mut detector, events),
-                BatchSize::SmallInput,
-            );
-        },
-    );
-
-    group.bench_with_input(
-        BenchmarkId::new("onlineiforest_score_then_update", "d8_t50_w256_l8"),
-        &events,
-        |b, events| {
-            b.iter_batched(
-                || onlineiforest.clone(),
-                |mut detector| run_onlineiforest_score_then_update(&mut detector, events),
-                BatchSize::SmallInput,
-            );
-        },
-    );
+    for scenario in onlineiforest_scenarios {
+        let onlineiforest = build_ready_onlineiforest(&warmup, scenario);
+        group.bench_with_input(
+            BenchmarkId::new("onlineiforest_update_and_score", scenario.label),
+            &events,
+            |b, events| {
+                b.iter_batched(
+                    || onlineiforest.clone(),
+                    |mut detector| run_onlineiforest_update_and_score(&mut detector, events),
+                    BatchSize::SmallInput,
+                );
+            },
+        );
+    }
 
     group.finish();
 }
@@ -298,16 +320,14 @@ fn bench_numeric_stream_step(c: &mut Criterion) {
 fn bench_mstream_stream_step(c: &mut Criterion) {
     let scenarios = [
         MStreamScenario {
-            label: "n8_c0_r2_b256",
+            label: "small_n8_c0_r2_b256",
+            size: ConfigSize::Small,
             categorical_dim: 0,
-            rows: 2,
-            buckets: 256,
         },
         MStreamScenario {
-            label: "n8_c4_r2_b256",
-            categorical_dim: 4,
-            rows: 2,
-            buckets: 256,
+            label: "default_n8_c0_r2_b1024",
+            size: ConfigSize::Default,
+            categorical_dim: 0,
         },
     ];
 
@@ -338,7 +358,8 @@ fn bench_mstream_stream_step(c: &mut Criterion) {
 fn bench_featuresketch_stream_step(c: &mut Criterion) {
     let scenarios = [
         FeatureSketchScenario {
-            label: "api_sparse_v16_p16_c12_d6_r2_b512",
+            label: "small_api_sparse_v16_p16_c12_d6_r2_b512",
+            size: ConfigSize::Small,
             value_projection_dims: 16,
             presence_projection_dims: 16,
             chains_per_ensemble: 12,
@@ -348,7 +369,8 @@ fn bench_featuresketch_stream_step(c: &mut Criterion) {
             decay_half_life: 512,
         },
         FeatureSketchScenario {
-            label: "api_sparse_v32_p32_c16_d8_r2_b2048",
+            label: "default_api_sparse_v32_p32_c16_d8_r2_b2048",
+            size: ConfigSize::Default,
             value_projection_dims: 32,
             presence_projection_dims: 32,
             chains_per_ensemble: 16,
@@ -386,7 +408,7 @@ fn bench_featuresketch_stream_step(c: &mut Criterion) {
 
 criterion_group!(
     name = benches;
-    config = Criterion::default().measurement_time(Duration::from_secs(10));
+    config = Criterion::default().measurement_time(Duration::from_secs(15));
     targets = bench_numeric_stream_step, bench_mstream_stream_step, bench_featuresketch_stream_step
 );
 criterion_main!(benches);
