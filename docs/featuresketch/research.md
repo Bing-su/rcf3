@@ -1,4 +1,10 @@
-# FeatureSketch
+# FeatureSketch Research Notes
+
+This file records the research background and design rationale behind the
+`rcf3` FeatureSketch detector. FeatureSketch is an independent library
+implementation for sparse, schema-evolving event streams; it is not a
+paper-faithful implementation of xStream, RS-Hash, OAD-TDS, or any other
+specific publication.
 
 ## Goal
 
