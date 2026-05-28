@@ -99,9 +99,9 @@ fn build_mstream_for_case(case: MStreamCase) -> MStream {
     )
 }
 
-fn build_case_input(case: MStreamCase) -> (MStream, Vec<f32>, Vec<i64>) {
+fn build_case_input(case: MStreamCase) -> (MStream, Vec<f64>, Vec<i64>) {
     let detector = build_mstream_for_case(case);
-    let numeric = vec![0.5_f32; case.numeric_dim];
+    let numeric = vec![0.5_f64; case.numeric_dim];
     let categorical = vec![1_i64; case.categorical_dim];
     (detector, numeric, categorical)
 }
@@ -115,7 +115,7 @@ fn timestamp_for(mode: TimestampMode, offset: usize) -> u64 {
 
 fn run_update_and_score_case(
     detector: &mut MStream,
-    numeric: &[f32],
+    numeric: &[f64],
     categorical: &[i64],
     events: usize,
     timestamp_mode: TimestampMode,

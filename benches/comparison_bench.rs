@@ -48,6 +48,7 @@ struct FeatureSketchScenario {
 
 struct StreamData {
     numeric: Array2<f32>,
+    numeric_f64: Array2<f64>,
     categorical: Array2<i64>,
 }
 
@@ -59,6 +60,7 @@ impl StreamData {
     fn new(len: usize, categorical_dim: usize) -> Self {
         Self {
             numeric: numeric_stream(len),
+            numeric_f64: numeric_stream_f64(len),
             categorical: categorical_stream(len, categorical_dim),
         }
     }
@@ -69,16 +71,16 @@ impl StreamData {
         }
     }
 
-    fn for_each_mstream_row(&self, mut visit: impl FnMut(usize, &[f32], &[i64])) {
+    fn for_each_mstream_row(&self, mut visit: impl FnMut(usize, &[f64], &[i64])) {
         for (offset, (numeric, categorical)) in self
-            .numeric
+            .numeric_f64
             .axis_iter(Axis(0))
             .zip(self.categorical.axis_iter(Axis(0)))
             .enumerate()
         {
             visit(
                 offset,
-                row_slice(&numeric),
+                row_slice_f64(&numeric),
                 categorical_row_slice(&categorical),
             );
         }
@@ -102,6 +104,13 @@ impl FeatureStreamData {
 fn numeric_stream(len: usize) -> Array2<f32> {
     Array2::from_shape_fn((len, DIM), |(event_idx, feature_idx)| {
         let x = event_idx as f32 * 0.01 + feature_idx as f32 * 0.1;
+        2.0 + x.sin() + 0.25 * (x * 0.5).cos()
+    })
+}
+
+fn numeric_stream_f64(len: usize) -> Array2<f64> {
+    Array2::from_shape_fn((len, DIM), |(event_idx, feature_idx)| {
+        let x = event_idx as f64 * 0.01 + feature_idx as f64 * 0.1;
         2.0 + x.sin() + 0.25 * (x * 0.5).cos()
     })
 }
@@ -150,6 +159,11 @@ fn feature_event(event_idx: usize) -> Vec<(String, f64)> {
 fn row_slice<'a>(row: &'a ArrayView1<'a, f32>) -> &'a [f32] {
     row.as_slice()
         .expect("numeric_stream rows should be contiguous")
+}
+
+fn row_slice_f64<'a>(row: &'a ArrayView1<'a, f64>) -> &'a [f64] {
+    row.as_slice()
+        .expect("numeric_stream_f64 rows should be contiguous")
 }
 
 fn categorical_row_slice<'a>(row: &'a ArrayView1<'a, i64>) -> &'a [i64] {

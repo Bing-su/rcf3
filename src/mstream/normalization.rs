@@ -32,18 +32,18 @@ impl NumericRangeNormalizer {
 
     pub(crate) fn normalize(
         &mut self,
-        numeric: &[f32],
+        numeric: &[f64],
         entries_seen: u64,
     ) -> Result<NormalizedRecord> {
         debug_assert_eq!(numeric.len(), self.min_numeric.len());
         debug_assert_eq!(numeric.len(), self.max_numeric.len());
+        validate_numeric_values(numeric)?;
 
         let mut raw_values = Vec::with_capacity(numeric.len());
         let mut normalized = Vec::with_capacity(numeric.len());
 
         for (index, value) in numeric.iter().enumerate() {
-            let raw = f64::from(*value);
-            validate_raw(raw)?;
+            let raw = *value;
             raw_values.push(raw);
 
             let transformed = math::asinh(raw);
@@ -56,16 +56,16 @@ impl NumericRangeNormalizer {
         })
     }
 
-    pub(crate) fn preview(&self, numeric: &[f32], entries_seen: u64) -> Result<NormalizedRecord> {
+    pub(crate) fn preview(&self, numeric: &[f64], entries_seen: u64) -> Result<NormalizedRecord> {
         debug_assert_eq!(numeric.len(), self.min_numeric.len());
         debug_assert_eq!(numeric.len(), self.max_numeric.len());
+        validate_numeric_values(numeric)?;
 
         let mut raw_values = Vec::with_capacity(numeric.len());
         let mut normalized = Vec::with_capacity(numeric.len());
 
         for (index, value) in numeric.iter().enumerate() {
-            let raw = f64::from(*value);
-            validate_raw(raw)?;
+            let raw = *value;
             raw_values.push(raw);
 
             let transformed = math::asinh(raw);
@@ -112,8 +112,8 @@ impl NumericRangeNormalizer {
     }
 }
 
-fn validate_raw(raw: f64) -> Result<()> {
-    if !raw.is_finite() {
+fn validate_numeric_values(numeric: &[f64]) -> Result<()> {
+    if numeric.iter().any(|value| !value.is_finite()) {
         return Err(RcfError::InvalidArgument(
             "numeric values must be finite".into(),
         ));
@@ -131,7 +131,7 @@ mod tests {
     #[rstest]
     #[case(vec![0.0], vec![0.0])]
     #[case(vec![1.0], vec![0.0])]
-    fn first_record_starts_at_zero(#[case] input: Vec<f32>, #[case] expected: Vec<f64>) {
+    fn first_record_starts_at_zero(#[case] input: Vec<f64>, #[case] expected: Vec<f64>) {
         let mut normalizer = NumericRangeNormalizer::new(input.len());
         let output = normalizer.normalize(&input, 0).unwrap();
 
@@ -166,19 +166,29 @@ mod tests {
     #[case(-1.0)]
     #[case(-2.0)]
     #[case(-10_000.0)]
-    fn accepts_finite_negative_values(#[case] value: f32) {
+    fn accepts_finite_negative_values(#[case] value: f64) {
         let mut normalizer = NumericRangeNormalizer::new(1);
         let output = normalizer.normalize(&[value], 0).unwrap();
 
-        assert_eq!(output.raw, vec![f64::from(value)]);
+        assert_eq!(output.raw, vec![value]);
         assert_eq!(output.normalized, vec![0.0]);
     }
 
+    #[test]
+    fn preserves_f64_input_precision() {
+        let value = 16_777_217.0_f64;
+        let mut normalizer = NumericRangeNormalizer::new(1);
+        let output = normalizer.normalize(&[value], 0).unwrap();
+
+        assert_eq!(output.raw, vec![value]);
+        assert_ne!(output.raw[0], f64::from(value as f32));
+    }
+
     #[rstest]
-    #[case(f32::NAN)]
-    #[case(f32::INFINITY)]
-    #[case(f32::NEG_INFINITY)]
-    fn rejects_non_finite_values(#[case] value: f32) {
+    #[case(f64::NAN)]
+    #[case(f64::INFINITY)]
+    #[case(f64::NEG_INFINITY)]
+    fn rejects_non_finite_values(#[case] value: f64) {
         let mut normalizer = NumericRangeNormalizer::new(1);
         let err = normalizer.normalize(&[value], 0).unwrap_err();
 
@@ -189,7 +199,7 @@ mod tests {
         #[test]
         fn normalized_values_stay_finite_and_bounded(
             records in prop::collection::vec(
-                prop::collection::vec(-10_000.0f32..10_000.0, 3),
+                prop::collection::vec(-10_000.0f64..10_000.0, 3),
                 1..=32,
             ),
         ) {
