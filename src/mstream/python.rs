@@ -84,7 +84,7 @@ impl PyMStream {
     }
 
     /// Ingest a record without returning its score.
-    fn update(&mut self, numeric: Vec<f32>, categorical: Vec<i64>, timestamp: u64) -> PyResult<()> {
+    fn update(&mut self, numeric: Vec<f64>, categorical: Vec<i64>, timestamp: u64) -> PyResult<()> {
         self.inner
             .update(&numeric, &categorical, timestamp)
             .map_err(to_py_err)
@@ -94,7 +94,7 @@ impl PyMStream {
     ///
     /// The preview answers what this record would score if it were ingested
     /// next, using the same timestamp semantics as `update_and_score()`.
-    fn score(&self, numeric: Vec<f32>, categorical: Vec<i64>, timestamp: u64) -> PyResult<f64> {
+    fn score(&self, numeric: Vec<f64>, categorical: Vec<i64>, timestamp: u64) -> PyResult<f64> {
         self.inner
             .score(&numeric, &categorical, timestamp)
             .map_err(to_py_err)
@@ -107,7 +107,7 @@ impl PyMStream {
     /// not change the scores.
     fn update_and_score(
         &mut self,
-        numeric: Vec<f32>,
+        numeric: Vec<f64>,
         categorical: Vec<i64>,
         timestamp: u64,
     ) -> PyResult<f64> {
@@ -119,7 +119,7 @@ impl PyMStream {
     /// Preview the decomposed anomaly score without mutating detector state.
     fn score_detailed(
         &self,
-        numeric: Vec<f32>,
+        numeric: Vec<f64>,
         categorical: Vec<i64>,
         timestamp: u64,
     ) -> PyResult<PyMStreamScore> {
@@ -132,7 +132,7 @@ impl PyMStream {
     /// Ingest a record and return the decomposed score used to form the final anomaly score.
     fn update_and_score_detailed(
         &mut self,
-        numeric: Vec<f32>,
+        numeric: Vec<f64>,
         categorical: Vec<i64>,
         timestamp: u64,
     ) -> PyResult<PyMStreamScore> {

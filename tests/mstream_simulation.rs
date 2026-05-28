@@ -10,15 +10,15 @@ mod fixtures {
 
     #[derive(Clone, Copy)]
     pub(super) struct LoginEvent {
-        failed_attempts: f32,
-        bytes_sent_kib: f32,
+        failed_attempts: f64,
+        bytes_sent_kib: f64,
         country_id: i64,
         endpoint_id: i64,
         tick: u64,
     }
 
     impl LoginEvent {
-        pub(super) fn numeric(self) -> [f32; 2] {
+        pub(super) fn numeric(self) -> [f64; 2] {
             [self.failed_attempts, self.bytes_sent_kib]
         }
 
@@ -56,8 +56,8 @@ mod fixtures {
             let sample: NormalLoginSample = Faker.fake_with_rng(&mut self.rng);
 
             LoginEvent {
-                failed_attempts: sample.failed_attempts as f32,
-                bytes_sent_kib: sample.bytes_sent_tenths_kib as f32 / 10.0,
+                failed_attempts: sample.failed_attempts as f64,
+                bytes_sent_kib: sample.bytes_sent_tenths_kib as f64 / 10.0,
                 country_id: sample.country_id as i64,
                 endpoint_id: 10,
                 tick,

@@ -8,18 +8,18 @@ from hypothesis import strategies as st
 
 from rcf3 import MStream
 
-VALID_NUMERIC_F32 = st.floats(
+VALID_NUMERIC_F64 = st.floats(
     min_value=-1_000.0,
     max_value=1_000.0,
     allow_nan=False,
     allow_infinity=False,
-    width=32,
+    width=64,
 )
 CATEGORICAL_I64 = st.integers(min_value=-(2**31), max_value=2**31 - 1)
 
 
 def numeric_strategy(dim: int) -> st.SearchStrategy[list[float]]:
-    return st.lists(VALID_NUMERIC_F32, min_size=dim, max_size=dim)
+    return st.lists(VALID_NUMERIC_F64, min_size=dim, max_size=dim)
 
 
 def categorical_strategy(dim: int) -> st.SearchStrategy[list[int]]:

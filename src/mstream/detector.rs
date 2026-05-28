@@ -212,7 +212,7 @@ impl MStream {
     /// constant does not change the scores.
     pub fn update_and_score(
         &mut self,
-        numeric: &[f32],
+        numeric: &[f64],
         categorical: &[i64],
         timestamp: u64,
     ) -> Result<f64> {
@@ -225,7 +225,7 @@ impl MStream {
     /// anomaly score.
     pub fn update_and_score_detailed(
         &mut self,
-        numeric: &[f32],
+        numeric: &[f64],
         categorical: &[i64],
         timestamp: u64,
     ) -> Result<MStreamScore> {
@@ -289,12 +289,12 @@ impl MStream {
     /// The preview answers “what would this record score if it were ingested
     /// next?” using the same timestamp semantics as
     /// [`update_and_score`](Self::update_and_score).
-    pub fn score(&self, numeric: &[f32], categorical: &[i64], timestamp: u64) -> Result<f64> {
+    pub fn score(&self, numeric: &[f64], categorical: &[i64], timestamp: u64) -> Result<f64> {
         Ok(self.score_detailed(numeric, categorical, timestamp)?.total)
     }
 
     /// Ingest a record without returning its score.
-    pub fn update(&mut self, numeric: &[f32], categorical: &[i64], timestamp: u64) -> Result<()> {
+    pub fn update(&mut self, numeric: &[f64], categorical: &[i64], timestamp: u64) -> Result<()> {
         let _ = self.update_and_score(numeric, categorical, timestamp)?;
         Ok(())
     }
@@ -302,7 +302,7 @@ impl MStream {
     /// Preview the decomposed anomaly score without mutating detector state.
     pub fn score_detailed(
         &self,
-        numeric: &[f32],
+        numeric: &[f64],
         categorical: &[i64],
         timestamp: u64,
     ) -> Result<MStreamScore> {
@@ -380,7 +380,7 @@ impl MStream {
         Self::from_json(&data)
     }
 
-    fn validate_record(&self, numeric: &[f32], categorical: &[i64]) -> Result<()> {
+    fn validate_record(&self, numeric: &[f64], categorical: &[i64]) -> Result<()> {
         if numeric.len() != self.config.numeric_dim() {
             return Err(RcfError::DimensionMismatch {
                 expected: self.config.numeric_dim(),
@@ -696,7 +696,7 @@ mod tests {
     #[test]
     fn rejects_non_finite_numeric_values() {
         let mut d = MStream::builder(1, 0).seed(7).build().unwrap();
-        let err = d.update_and_score(&[f32::NAN], &[], 1).unwrap_err();
+        let err = d.update_and_score(&[f64::NAN], &[], 1).unwrap_err();
         assert!(matches!(err, RcfError::InvalidArgument(_)));
     }
 
@@ -743,7 +743,7 @@ mod tests {
         #[test]
         fn detailed_score_total_matches_component_sum(
             records in prop::collection::vec(
-                ((-10_000.0f32..10_000.0), (-10_000.0f32..10_000.0), -8i64..=8, 0u64..=3),
+                ((-10_000.0f64..10_000.0), (-10_000.0f64..10_000.0), -8i64..=8, 0u64..=3),
                 1..=32,
             ),
         ) {
@@ -771,7 +771,7 @@ mod tests {
         #[test]
         fn seeded_detectors_match_for_same_sequence(
             records in prop::collection::vec(
-                ((-10_000.0f32..10_000.0), -8i64..=8, 0u64..=3),
+                ((-10_000.0f64..10_000.0), -8i64..=8, 0u64..=3),
                 1..=32,
             ),
         ) {
