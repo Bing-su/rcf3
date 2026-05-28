@@ -127,23 +127,56 @@ pub(crate) fn random_state(seed: Seed4) -> RandomState {
 mod tests {
     use approx::assert_abs_diff_eq;
     use itertools::izip;
+    use proptest::prelude::*;
     use rstest::rstest;
 
     use super::*;
     use crate::featuresketch::input::normalize;
 
-    #[test]
-    fn projection_is_deterministic() {
-        let mut rng = Xoshiro256PlusPlus::seed_from_u64(7);
+    proptest! {
+        #[test]
+        fn projection_matches_value_and_presence_formulas(
+            raw_features in prop::collection::vec(
+                (
+                    prop::sample::select(&["a", "b", "c", "d", "e", "f"]),
+                    -1.0e6f64..1.0e6f64,
+                ),
+                0..24,
+            ),
+            dims in 1usize..16,
+            seed in 0u64..u64::MAX,
+        ) {
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
         let seeds = ProjectionSeeds::new(&mut rng);
-        let features = normalize([("a", 1.0), ("b", -2.0)]).unwrap();
-        let left = project(&features, 8, 8, &seeds);
-        let right = project(&features, 8, 8, &seeds);
-        for (left, right) in izip!(left.value, right.value) {
-            assert_abs_diff_eq!(left, right, epsilon = 1.0e-12);
+        let features = normalize(raw_features.iter().copied()).unwrap();
+        let projected = project(&features, dims, dims, &seeds);
+        let hashers = ProjectionHashers::new(&seeds);
+        let feature_hashes: Vec<_> = features
+            .iter()
+            .map(|feature| feature_hash(&feature.name, &hashers))
+            .collect();
+
+        for dim in 0..dims {
+            let expected_value: f64 = izip!(&features, &feature_hashes)
+                .map(|(feature, hash)| feature.value * coefficient(&hashers.value, *hash, dim))
+                .sum();
+            let expected_presence: f64 = feature_hashes
+                .iter()
+                .map(|hash| coefficient(&hashers.presence, *hash, dim))
+                .sum();
+
+            assert_abs_diff_eq!(projected.value[dim], expected_value, epsilon = 1.0e-12);
+            assert_abs_diff_eq!(
+                projected.presence[dim],
+                expected_presence,
+                epsilon = 1.0e-12
+            );
         }
-        for (left, right) in izip!(left.presence, right.presence) {
-            assert_abs_diff_eq!(left, right, epsilon = 1.0e-12);
+        assert_abs_diff_eq!(
+            projected.presence[dims],
+            math::ln_1p(features.len() as f64),
+            epsilon = 1.0e-12
+        );
         }
     }
 

@@ -45,9 +45,7 @@ where
 #[cfg(test)]
 mod tests {
     #[cfg(not(feature = "std"))]
-    use alloc::{collections::BTreeMap, format, vec::Vec};
-    #[cfg(feature = "std")]
-    use std::collections::BTreeMap;
+    use alloc::format;
 
     use approx::{abs_diff_eq, assert_abs_diff_eq};
     use itertools::izip;
