@@ -56,16 +56,8 @@ harness = false
 name = "comparison_bench"
 
 [dependencies]
-ahash = {
-  version = "0.8",
-  default-features = false,
-  features = ["runtime-rng"]
-}
-itertools = {
-  version = "0.14",
-  default-features = false,
-  features = ["use_alloc"]
-}
+ahash = { version = "0.8", default-features = false }
+itertools = { version = "0.14", default-features = false }
 libm = "0.2"
 ndarray = { version = "0.17", default-features = false }
 pyo3 = {
