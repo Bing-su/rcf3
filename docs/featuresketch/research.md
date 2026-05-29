@@ -256,72 +256,89 @@ presence coefficients collide or cancel out.
 
 ### Density model
 
-FeatureSketch uses two ensembles of half-space chains over the projected
-vectors:
+FeatureSketch keeps two independent density models over the projected event:
 
-- each chain has fixed depth `D`;
-- value-chain levels sample dimensions from `value_projection`;
-- presence-chain levels sample dimensions from `presence_vector`, including the
-  appended feature-count dimension;
-- each chain level is one-dimensional: it owns one selected dimension, one bin
-  width, and one bin offset;
-- each level chooses its projected dimension, bin width, and bin offset from
-  seeded constants;
-- levels are zero-based: `l = 0..D-1`;
-- value-chain bin widths follow `width_l = 4.0 / 2^l`;
-- presence-chain projection dimensions use the same `width_l = 4.0 / 2^l`;
-- the appended feature-count dimension uses `width_l = 2.0 / 2^l`, which better
-  matches the scale of `log1p(count)`;
-- each level's offset is seeded uniformly in `[0, width_l)`;
-- the selected projected value `x` maps to
-  `bin = floor((x + offset_l) / width_l)`;
-- each level owns a count-min sketch for bin counts;
-- each count-min row maps `(ensemble, chain, level, row, bin)` to a bucket with
-  seeded hashing, where `ensemble` separates value and presence state;
-- `density_count_chain_level` is the minimum decayed count across the `R` rows
-  of that level's count-min sketch for the selected bin;
-- scoring uses the highest normalized surprise across levels, which is
-  equivalent to the lowest clamped density ratio across levels;
-- each chain level tracks a decayed reference mass for normalization, separate
-  from the per-cell sketch counts;
-- each chain level also has a fixed bin-volume correction derived from its
-  bin width, so different half-space scales are comparable;
-- each ensemble converts low normalized densities into high anomaly
-  contributions and averages those contributions.
+| Ensemble | Vector scored by the ensemble | What a low-density bin means                                        |
+| -------- | ----------------------------- | ------------------------------------------------------------------- |
+| Value    | `value_projection`            | Unusual feature magnitudes or value combinations                    |
+| Presence | `presence_vector`             | Unusual observed key sets, feature-count changes, or feature shrink |
+
+Each ensemble contains `C` half-space chains. Each chain has fixed depth `D`,
+and each chain level is a one-dimensional density estimate over one selected
+dimension of the ensemble vector. The selected dimension, bin offset, and
+count-min hash seeds are generated from the configured seed, then kept stable
+for the detector's lifetime.
+
+```mermaid
+flowchart LR
+    event["projected event vector"] --> level["chain level"]
+    level --> select["select one dimension x"]
+    select --> bin["bin = floor((x + offset_l) / width_l)"]
+    bin --> cms["count-min sketch rows"]
+    cms --> count["density estimate = min decayed row count"]
+    count --> ratio["density ratio"]
+    ratio --> surprise["level surprise"]
+```
+
+For a zero-based level `l = 0..D-1`, the level width is:
+
+```text
+base_width(dimension) =
+    4.0  for value and presence projection dimensions
+    2.0  for the appended feature-count dimension
+
+width_l = base_width(dimension) / 2^l
+offset_l ~ Uniform([0, width_l))
+bin_l(x) = floor((x + offset_l) / width_l)
+bin_volume_ratio_l = width_l / base_width(dimension)
+```
+
+The appended feature-count dimension uses the smaller base width `2.0` because
+its input is `log1p(count)`, not a random projection sum.
+
+Each level owns a count-min sketch. For a selected bin, the density estimate is
+the minimum decayed row count across the `R` sketch rows:
+
+```text
+density_estimate_l =
+    min over rows r of decayed_count(row = r, bin = bin_l(x))
+```
+
+The row hash includes the row and bin, and the value and presence ensembles
+store separate sketches. Count-min collisions can only overestimate the density
+estimate, which may reduce surprise for that bin but cannot create a false
+high-surprise estimate from a common bin.
+
+Each level also tracks a decayed reference mass for normalization. This mass is
+updated once per committed event at that level, separately from the per-bin
+sketch cells. Normalizing by this mass makes scores less sensitive to warmup
+length, bursty traffic, and long-running decay.
 
 The public anomaly score is higher for more anomalous events. Internally,
 xStream-style density is lower for anomalies, so FeatureSketch exposes a
 surprise score:
 
 ```text
-observed_mass_ratio_chain_level =
-    density_count_chain_level / max(reference_mass_chain_level, epsilon_mass)
+observed_mass_ratio_l =
+    density_estimate_l / max(reference_mass_l, epsilon_mass)
 
-density_ratio_chain_level = clamp(
-    observed_mass_ratio_chain_level / max(bin_volume_ratio_chain_level, epsilon),
+density_ratio_l = clamp(
+    observed_mass_ratio_l / max(bin_volume_ratio_l, epsilon),
     epsilon,
     1.0,
 )
-chain_surprise = max(-log(density_ratio_chain_level)) across chain levels
-ensemble_surprise = mean(chain_surprise) across chains
+
+level_surprise_l = -log(density_ratio_l)
+chain_surprise = max(level_surprise_l) across levels l in the chain
+ensemble_surprise = mean(chain_surprise) across chains in the ensemble
 ```
 
-where `bin_volume_ratio_chain_level = width_l / width_0` for the selected
-one-dimensional chain level. `width_0` is the base width for that selected
-dimension family: `4.0` for value/presence projection dimensions and `2.0` for
-the appended feature-count dimension. It is not derived from an observed bounding
-box.
 `epsilon` prevents `log(0)`, and `epsilon_mass` only prevents division by zero.
 This is not a calibrated probability; it is a scale-normalized surprise score.
-Normalizing by the decayed reference mass of the same chain level keeps the
-score scale more stable across warm streams, traffic bursts, and long-running
-decay than a raw reciprocal density. Dividing by the level's bin-volume ratio
-keeps shallow and deep half-space levels comparable: deeper levels are not
-automatically more surprising only because their bins are smaller. The upper
-clamp at `1.0` means common or over-dense bins contribute zero surprise, while
-rare bins contribute positive surprise. Count-min collisions can overestimate a
-bin's density; this is acceptable because it can only reduce surprise for that
-bin, not create a false high-surprise score.
+The bin-volume correction keeps shallow and deep half-space levels comparable:
+deeper levels are not automatically more surprising only because their bins are
+smaller. The upper clamp at `1.0` means common or over-dense bins contribute
+zero surprise, while rare bins contribute positive surprise.
 
 The final score is the average of the value-ensemble surprise and the
 presence-ensemble surprise:
@@ -332,62 +349,125 @@ score = mean(value_surprise, presence_surprise)
 
 ### Online update order
 
-For `score(features)`, compute the score against the current reference state
-without mutation. `score` never teaches the detector; streams that should adapt
-must also call `update`.
+FeatureSketch keeps scoring and learning as separate operations:
 
-For `update(features)`, perform only the update. It still computes projections
-and chain-level bin assignments because the sketch update locations are defined
-in projected space, but it skips the scoring reads and anomaly-score reduction.
+| Operation                    | Mutates detector state | Advances epoch | Returns score | Meaning                                             |
+| ---------------------------- | ---------------------- | -------------- | ------------: | --------------------------------------------------- |
+| `score(features)`            | No                     | No             |           Yes | Preview anomaly against the current reference state |
+| `update(features)`           | Yes                    | Yes            |            No | Commit the event into the reference state           |
+| `update_and_score(features)` | Yes                    | Yes            |           Yes | Score first, then commit the same projected event   |
 
-When a caller needs both operations for the same event, call `score(features)`
-before `update(features)`. Scoring after update is also valid if the desired
-meaning is "how anomalous is this event after it has been incorporated," but
-the default online-detection pattern is score-before-update.
+The default online-detection pattern is score-before-update:
+
+```mermaid
+sequenceDiagram
+    participant Caller
+    participant Detector
+    Caller->>Detector: score(features)
+    Detector-->>Caller: anomaly score against current state
+    Caller->>Detector: update(features)
+    Detector-->>Detector: advance epoch and update sketches
+```
+
+`score(features)` still performs input normalization, projection, chain-level
+binning, and sketch reads, but it applies decay logically and does not write
+back cells, reference masses, epochs, or counters.
+
+`update(features)` performs the same normalization, projection, and chain-level
+binning because sketch update locations are defined in projected space. It then
+advances counters and writes the selected sketch cells and reference masses, but
+it skips scoring reads and anomaly-score reduction.
+
+```text
+score(features):
+    projected = project(normalize(features))
+    return score_projected(projected, current_epoch)
+
+update(features):
+    projected = project(normalize(features))
+    next_epoch = current_epoch + 1
+    update_projected(projected, next_epoch)
+    current_epoch = next_epoch
+
+update_and_score(features):
+    projected = project(normalize(features))
+    next_epoch = current_epoch + 1
+    score = score_projected(projected, current_epoch)
+    update_projected(projected, next_epoch)
+    current_epoch = next_epoch
+    return score
+```
 
 Calling `score(features)` and then `update(features)` through the public API
-computes projection and chain binning twice. This is intentional for the
-minimal API: `score` remains purely non-mutating, and `update` remains a
-commit-only operation.
+computes normalization, projection, and chain binning twice. This is intentional
+for the minimal API: `score` remains purely non-mutating, and `update` remains a
+commit-only operation. Call `update_and_score(features)` when the caller wants
+the score-before-update semantics with one projection pass.
+
+Scoring after update is also valid when the desired meaning is "how anomalous is
+this event after it has already been incorporated." It is not the default
+online-detection interpretation.
 
 ### Adaptation and shrink handling
 
-FeatureSketch uses lazy exponential decay. It adapts continuously without
-exposing a window boundary in the public API:
+FeatureSketch adapts with lazy exponential decay, not with an exposed sliding
+window. Time is measured in committed events:
 
-- the detector stores an internal event counter, initialized to `0`;
-- `score(features)` evaluates decay relative to the current event counter and
-  does not advance it;
-- `update(features)` first advances the counter to `next_epoch = current_epoch +
-1`;
-- each sketch cell stores `(count, last_seen_epoch)`;
-- each chain level stores `(reference_mass, last_seen_epoch)` for the same lazy
-  decay schedule used by sketch cells;
-- scoring reads apply decay logically without writing back updated cells or
-  epochs, preserving `score(features)` as a non-mutating operation;
-- update writes physically decay touched sketch cells and reference masses to
-  `next_epoch` before incrementing them;
-- each committed event increments the selected bin counts and increments every
-  touched chain-level reference mass by one after decay has been applied, then
-  stores `last_seen_epoch = next_epoch` for those cells and masses;
-- old features and old bins naturally lose influence without explicit deletion.
+```text
+epoch_0 = 0
+next_epoch = current_epoch + 1
+decay_factor(delta) = 0.5^(delta / decay_half_life)
+decayed(value, stored_epoch, target_epoch) =
+    value * decay_factor(target_epoch - stored_epoch)
+```
 
-This handles global feature shrink: if a feature disappears from the stream,
-its historical bins stop receiving updates and decay away. It handles per-event
-feature shrink through the presence projection because the event's observed key
-set changes even if values are otherwise normal.
+The same decay rule is used for sketch cells and per-level reference masses:
 
-FeatureSketch intentionally does not special-case cold start. Early scores are
-unstable because the density sketches have not yet accumulated a useful
-reference distribution. As operational guidance, production pipelines can ignore
-or down-rank roughly the first internal half-life of scores when startup
-behavior matters. This is not a readiness invariant; it is a simple default
-warmup policy.
+| State item       | Stored fields                   | Read during `score`                  | Written during `update`                              |
+| ---------------- | ------------------------------- | ------------------------------------ | ---------------------------------------------------- |
+| Sketch cell      | `(count, last_seen_epoch)`      | Decayed logically at `current_epoch` | Decay to `next_epoch`, then increment selected bins  |
+| Reference mass   | `(mass, last_seen_epoch)`       | Decayed logically at `current_epoch` | Decay to `next_epoch`, then increment touched levels |
+| Detector counter | `current_epoch`, `entries_seen` | Read only                            | Increment after the projected event is committed     |
 
-The detector should not maintain a dense registry of all feature names.
-Implementation-internal diagnostics, if added later, must remain sketch-based
-and must not add public configuration or memory growth proportional to the
-number of feature names ever seen.
+```mermaid
+flowchart LR
+    old["old cell or reference mass"] --> read["score: logical decay only"]
+    old --> write["update: physical decay to next_epoch"]
+    write --> inc["increment by one"]
+    inc --> stored["store last_seen_epoch = next_epoch"]
+```
+
+This update rule means old evidence fades without deletion. For an untouched
+sketch cell, ignoring later count-min collisions into the same row bucket:
+
+```text
+if a sketch cell is not touched for delta committed events:
+    effective_count = stored_count * 0.5^(delta / decay_half_life)
+```
+
+Feature shrink is handled at two levels:
+
+| Shrink type      | What changes                                       | Why the score can react                                                                    | How adaptation happens                         |
+| ---------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------- |
+| Global shrink    | A feature stops appearing in the stream            | Historical bins for events containing that feature stop receiving direct support           | Their influence decays over time               |
+| Per-event shrink | A usually present feature is absent from one event | The presence projection and feature-count signal change even if numeric values look normal | Repeated shrunk events train new presence bins |
+
+The detector intentionally does not store a dense registry of all feature names.
+Old features and old bins lose influence through decay; they do not need
+explicit deletion. Implementation-internal diagnostics, if added later, must
+remain sketch-based and must not add public configuration or memory growth
+proportional to the number of feature names ever seen.
+
+FeatureSketch also intentionally does not special-case cold start. Early scores
+are unstable because the density sketches have not yet accumulated a useful
+reference distribution:
+
+| Phase       | Expected behavior                                                        | Operational guidance                                                                   |
+| ----------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| Cold start  | Scores depend strongly on the first few committed events                 | Ignore or down-rank roughly the first internal half-life when startup behavior matters |
+| Warm stream | Decayed counts and reference masses provide a stable comparison baseline | Use score-before-update for online detection                                           |
+
+This is not a readiness invariant; it is a simple default warmup policy.
 
 ## Public Configuration and Internal Constants
 
@@ -403,7 +483,7 @@ memory, or adaptation tradeoffs:
 | Sketch rows                    |             2 | Count-min collision robustness versus memory and CPU         |
 | Sketch buckets                 |          2048 | Count-min bucket capacity versus memory                      |
 | Decay half-life                |   2048 events | Adaptation speed for non-stationary streams                  |
-| Seed                           |       builder | Optional deterministic layout/projection/sketch seed         |
+| Seed                           |        random | Optional deterministic layout/projection/sketch seed         |
 
 The following values are intentionally fixed internal constants because they
 are numerical or scale choices rather than useful application-level tuning
@@ -416,10 +496,10 @@ knobs:
 | Epsilon                      | 1e-12 | Prevents `log(0)` in density-ratio scoring               |
 | Epsilon mass                 | 1e-12 | Prevents division by zero before enough mass accumulates |
 
-The configured seed is expanded internally into separate seed material for
-projection coefficients, chain layout, and count-min bucket hashing. Serialized
-state stores the generated layout and seed material, not just the original
-seed.
+If the caller does not set a seed, the builder generates a random seed. The
+chosen seed is expanded internally into separate seed material for projection
+coefficients, chain layout, and count-min bucket hashing. Serialized state
+stores the generated layout and seed material, not just the original seed.
 
 ## Complexity
 
