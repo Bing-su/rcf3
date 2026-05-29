@@ -102,6 +102,10 @@ impl PyMStream {
 
     /// Ingest a record and return its anomaly score.
     ///
+    /// This has the same behavior as calling `score(numeric, categorical,
+    /// timestamp)` first and then `update(numeric, categorical, timestamp)`
+    /// with the same record and timestamp.
+    ///
     /// `timestamp` must be a monotonically non-decreasing tick index. Only tick
     /// differences matter: shifting all timestamps by the same constant does
     /// not change the scores.
@@ -130,6 +134,9 @@ impl PyMStream {
     }
 
     /// Ingest a record and return the decomposed score used to form the final anomaly score.
+    ///
+    /// This has the same score-then-update behavior as `update_and_score()`,
+    /// but returns the decomposed score instead of only the total.
     fn update_and_score_detailed(
         &mut self,
         numeric: Vec<f64>,

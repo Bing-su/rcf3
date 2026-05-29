@@ -207,6 +207,10 @@ impl MStream {
 
     /// Ingest a record and return its anomaly score.
     ///
+    /// This has the same behavior as calling [`score`](Self::score) first and
+    /// then [`update`](Self::update) with the same record and timestamp. The
+    /// returned score is the preview score for the record being ingested.
+    ///
     /// The `timestamp` argument must be a monotonically non-decreasing tick
     /// index. Only tick differences matter: shifting all timestamps by the same
     /// constant does not change the scores.
@@ -223,6 +227,10 @@ impl MStream {
 
     /// Ingest a record and return the decomposed score used to form the final
     /// anomaly score.
+    ///
+    /// This has the same score-then-update behavior as
+    /// [`update_and_score`](Self::update_and_score), but returns the decomposed
+    /// score instead of only the total.
     pub fn update_and_score_detailed(
         &mut self,
         numeric: &[f64],
@@ -294,6 +302,9 @@ impl MStream {
     }
 
     /// Ingest a record without returning its score.
+    ///
+    /// This delegates to [`update_and_score`](Self::update_and_score), so it
+    /// performs the same ingest path and discards the returned score.
     pub fn update(&mut self, numeric: &[f64], categorical: &[i64], timestamp: u64) -> Result<()> {
         let _ = self.update_and_score(numeric, categorical, timestamp)?;
         Ok(())

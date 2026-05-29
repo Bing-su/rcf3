@@ -10,7 +10,17 @@ impl Forest {
     // Update
     // -----------------------------------------------------------------------
 
-    /// Incorporate a new observation into the forest.
+    /// Ingest an observation and return its anomaly score.
+    ///
+    /// This has the same behavior as calling [`score`](Self::score) first and
+    /// then [`update`](Self::update) with the same observation.
+    pub fn update_and_score(&mut self, point: &[f32]) -> Result<f64> {
+        let score = self.score(point)?;
+        self.update(point)?;
+        Ok(score)
+    }
+
+    /// Ingest an observation without returning its score.
     ///
     /// When `internal_shingling` is true, pass one base observation of length
     /// `input_dim`.  Otherwise pass the full shingled vector of length

@@ -67,8 +67,9 @@ impl PyOnlineIForest {
     /// Preview the current anomaly score for `point` without mutating state.
     ///
     /// This can differ from `update_and_score()` because the preview is
-    /// computed before `point` is learned by the forest. By contrast,
-    /// `update_and_score(point)` returns the same value as calling
+    /// computed before `point` is learned by the forest, unlike the
+    /// preview-style scoring semantics used by the other detectors. By
+    /// contrast, `update_and_score(point)` returns the same value as calling
     /// `update(point)` and then `score(point)`.
     ///
     /// Calling this before `is_ready()` is allowed, but the value is not a
@@ -78,6 +79,10 @@ impl PyOnlineIForest {
     }
 
     /// Ingest a point and return its anomaly score under the updated forest.
+    ///
+    /// This has the same behavior as calling `update(point)` first and then
+    /// `score(point)` with the same point. This update-then-score order is
+    /// specific to Online Isolation Forest.
     fn update_and_score(&mut self, point: Vec<f32>) -> PyResult<f64> {
         self.inner.update_and_score(&point).map_err(to_py_err)
     }

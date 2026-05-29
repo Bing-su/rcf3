@@ -107,6 +107,37 @@ def test_seeded_stream_is_deterministic(
 @settings(max_examples=25, deadline=None)
 @given(
     input_dim=st.integers(min_value=1, max_value=5),
+    seed=st.integers(min_value=0, max_value=2**32 - 1),
+    data=st.data(),
+)
+def test_update_and_score_matches_score_then_update(
+    input_dim: int,
+    seed: int,
+    data: st.DataObject,
+) -> None:
+    warmup = [
+        data.draw(vector_strategy(input_dim), label=f"warmup{i}") for i in range(32)
+    ]
+    point = data.draw(vector_strategy(input_dim), label="point")
+    probe = data.draw(vector_strategy(input_dim), label="probe")
+
+    manual = make_forest(input_dim=input_dim, seed=seed)
+    for item in warmup:
+        manual.update(item)
+    fused = deepcopy(manual)
+
+    expected = manual.score(point)
+    manual.update(point)
+    actual = fused.update_and_score(point)
+
+    assert actual == pytest.approx(expected, abs=1e-12)
+    assert fused.entries_seen() == manual.entries_seen()
+    assert fused.score(probe) == pytest.approx(manual.score(probe), abs=1e-12)
+
+
+@settings(max_examples=25, deadline=None)
+@given(
+    input_dim=st.integers(min_value=1, max_value=5),
     shingle_size=st.integers(min_value=1, max_value=4),
     capacity=st.integers(min_value=8, max_value=128),
     internal_shingling=st.booleans(),

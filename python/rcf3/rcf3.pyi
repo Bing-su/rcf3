@@ -67,7 +67,13 @@ class FeatureSketch:
     def update(self, /, feature: _KeyValueLike) -> None:
         "Ingest a feature event without returning its score."
     def update_and_score(self, /, feature: _KeyValueLike) -> float:
-        "Return the current anomaly score for a feature event, then ingest it."
+        """
+        Ingest a feature event and return its anomaly score.
+
+        This has the same behavior as calling `score(feature)` first and then
+        `update(feature)` with the same event. Unlike a literal two-call
+        sequence, this method normalizes and projects the input once.
+        """
     def score(self, /, feature: _KeyValueLike) -> float:
         """
         Preview the current anomaly score for a feature event without mutating state.
@@ -147,6 +153,13 @@ class Forest:
         When `internal_shingling` is True, pass one base observation of length
         `input_dim`. Otherwise pass the full shingled vector of length
         `input_dim * shingle_size`.
+        """
+    def update_and_score(self, /, point: Sequence[SupportsFloat]) -> float:
+        """
+        Ingest an observation and return its anomaly score.
+
+        This has the same behavior as calling `score(point)` first and then
+        `update(point)` with the same observation.
         """
     def score(self, /, point: Sequence[SupportsFloat]) -> float:
         "Anomaly score for `point`. Higher means more anomalous."
@@ -264,7 +277,10 @@ class MStream:
         categorical: Sequence[SupportsInt],
         timestamp: SupportsInt,
     ) -> None:
-        "Ingest a record without returning its score."
+        """
+        Ingest a record through the same path as `update_and_score()` and
+        discard the score.
+        """
     def update_and_score(
         self,
         /,
@@ -274,6 +290,11 @@ class MStream:
     ) -> float:
         """
         Ingest a record and return its anomaly score.
+
+        This has the same behavior as calling
+        `score(numeric, categorical, timestamp)` first and then
+        `update(numeric, categorical, timestamp)` with the same record and
+        timestamp.
 
         `timestamp` must be a monotonically non-decreasing tick index. Only tick
         differences matter: shifting all timestamps by the same constant does
@@ -286,7 +307,13 @@ class MStream:
         categorical: Sequence[SupportsInt],
         timestamp: SupportsInt,
     ) -> _MStreamScore:
-        "Ingest a record and return the decomposed score used to form the final anomaly score."
+        """
+        Ingest a record and return the decomposed score used to form the final
+        anomaly score.
+
+        This has the same score-then-update behavior as `update_and_score()`,
+        but returns the decomposed score instead of only the total.
+        """
     def score(
         self,
         /,
@@ -365,14 +392,21 @@ class OnlineIForest:
     def update(self, /, point: Sequence[SupportsFloat]) -> None:
         "Ingest a point without returning its score."
     def update_and_score(self, /, point: Sequence[SupportsFloat]) -> float:
-        "Ingest a point and return its anomaly score under the updated forest."
+        """
+        Ingest a point and return its anomaly score under the updated forest.
+
+        This has the same behavior as calling `update(point)` first and then
+        `score(point)` with the same point. This update-then-score order is
+        specific to Online Isolation Forest.
+        """
     def score(self, /, point: Sequence[SupportsFloat]) -> float:
         """
         Preview the current anomaly score for `point` without mutating state.
 
         This can differ from `update_and_score()` because the preview is
-        computed before `point` is learned by the forest. By contrast,
-        `update_and_score(point)` returns the same value as calling
+        computed before `point` is learned by the forest, unlike the
+        preview-style scoring semantics used by the other detectors. By
+        contrast, `update_and_score(point)` returns the same value as calling
         `update(point)` and then `score(point)`.
 
         Calling this before `is_ready()` is allowed, but the value is not a

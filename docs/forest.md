@@ -69,6 +69,14 @@ forest.update(&point)?;
 println!("Entries seen: {}", forest.entries_seen());
 ```
 
+Use `update_and_score` when you want the score-first behavior and commit in one
+call:
+
+```rust
+let score = forest.update_and_score(&point)?;
+println!("Anomaly score: {score}");
+```
+
 ### Scoring and interpretation
 
 ```rust

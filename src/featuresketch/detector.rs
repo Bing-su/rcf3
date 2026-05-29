@@ -177,7 +177,7 @@ impl FeatureSketch {
         Ok(self.score_projected(&projected))
     }
 
-    /// Ingest an event without returning its score.
+    /// Ingest a feature event without returning its score.
     pub fn update<I, N>(&mut self, features: I) -> Result<()>
     where
         I: IntoIterator<Item = (N, f64)>,
@@ -189,7 +189,12 @@ impl FeatureSketch {
         Ok(())
     }
 
-    /// Return the current anomaly score for an event, then ingest it.
+    /// Ingest a feature event and return its anomaly score.
+    ///
+    /// This has the same behavior as calling [`score`](Self::score) first and
+    /// then [`update`](Self::update) with the same feature event. Unlike a
+    /// literal two-call sequence, this method normalizes and projects the input
+    /// once.
     pub fn update_and_score<I, N>(&mut self, features: I) -> Result<f64>
     where
         I: IntoIterator<Item = (N, f64)>,

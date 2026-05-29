@@ -95,7 +95,11 @@ impl PyFeatureSketch {
         }
     }
 
-    /// Return the current anomaly score for a feature event, then ingest it.
+    /// Ingest a feature event and return its anomaly score.
+    ///
+    /// This has the same behavior as calling `score(feature)` first and then
+    /// `update(feature)` with the same event. Unlike a literal two-call
+    /// sequence, this method normalizes and projects the input once.
     fn update_and_score(&mut self, feature: KeyValueLike) -> PyResult<f64> {
         match feature {
             KeyValueLike::Pairs(pairs) => self.inner.update_and_score(pairs).map_err(to_py_err),

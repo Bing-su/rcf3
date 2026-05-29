@@ -62,6 +62,11 @@ mod docs_examples {
         forest.update(&point)?;
         println!("Entries seen: {}", forest.entries_seen());
 
+        let score = forest.update_and_score(&point)?;
+        println!("Anomaly score: {score}");
+        assert!(score >= 0.0);
+        assert_eq!(forest.entries_seen(), 2);
+
         Ok(())
     }
 

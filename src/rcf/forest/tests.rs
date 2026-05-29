@@ -92,6 +92,62 @@ fn score_zero_before_ready() {
 }
 
 #[test]
+fn update_and_score_matches_score_before_update() {
+    let mut manual = make_forest();
+    for i in 0..128 {
+        manual.update(&[(i % 7) as f32 * 0.1, 0.5]).unwrap();
+    }
+    let mut fused = manual.clone();
+    let point = [8.0f32, -3.0];
+
+    let expected = manual.score(&point).unwrap();
+    manual.update(&point).unwrap();
+    let actual = fused.update_and_score(&point).unwrap();
+
+    assert_abs_diff_eq!(actual, expected, epsilon = 1e-12);
+    assert_eq!(fused.entries_seen(), manual.entries_seen());
+    assert_eq!(
+        fused.point_store.entries_seen(),
+        manual.point_store.entries_seen()
+    );
+
+    let probe = [0.25f32, 0.5];
+    assert_abs_diff_eq!(
+        fused.score(&probe).unwrap(),
+        manual.score(&probe).unwrap(),
+        epsilon = 1e-12
+    );
+}
+
+#[test]
+fn update_and_score_score_error_does_not_update() {
+    let mut f = Forest::builder(2)
+        .shingle_size(2)
+        .internal_shingling(true)
+        .seed(42)
+        .build()
+        .unwrap();
+    f.update(&[1.0, 2.0]).unwrap();
+
+    let entries_seen = f.entries_seen();
+    let point_store_entries_seen = f.point_store.entries_seen();
+    let shingle = f.point_store.current_shingled().to_vec();
+
+    let err = f.update_and_score(&[1.0, 2.0, 3.0]).unwrap_err();
+
+    assert!(matches!(
+        err,
+        RcfError::DimensionMismatch {
+            expected: 4,
+            got: 3
+        }
+    ));
+    assert_eq!(f.entries_seen(), entries_seen);
+    assert_eq!(f.point_store.entries_seen(), point_store_entries_seen);
+    assert_eq!(f.point_store.current_shingled(), shingle.as_slice());
+}
+
+#[test]
 fn duplicate_updates_share_canonical_point_storage() {
     let mut f = Forest::builder(2)
         .shingle_size(1)
