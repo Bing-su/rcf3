@@ -177,7 +177,7 @@ impl FeatureSketch {
         Ok(self.score_projected(&projected))
     }
 
-    /// Ingest an event without returning its score.
+    /// Ingest a feature event without returning its score.
     pub fn update<I, N>(&mut self, features: I) -> Result<()>
     where
         I: IntoIterator<Item = (N, f64)>,

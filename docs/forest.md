@@ -69,8 +69,8 @@ forest.update(&point)?;
 println!("Entries seen: {}", forest.entries_seen());
 ```
 
-Use `update_and_score` when you want that same pre-update score and commit in
-one call:
+Use `update_and_score` when you want the score-first behavior and commit in one
+call:
 
 ```rust
 let score = forest.update_and_score(&point)?;

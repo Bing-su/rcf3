@@ -20,7 +20,7 @@ impl Forest {
         Ok(score)
     }
 
-    /// Incorporate a new observation into the forest.
+    /// Ingest an observation without returning its score.
     ///
     /// When `internal_shingling` is true, pass one base observation of length
     /// `input_dim`.  Otherwise pass the full shingled vector of length
