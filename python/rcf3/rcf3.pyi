@@ -68,7 +68,7 @@ class FeatureSketch:
         "Ingest a feature event without returning its score."
     def update_and_score(self, /, feature: _KeyValueLike) -> float:
         """
-        Return the current anomaly score for a feature event, then ingest it.
+        Ingest a feature event and return its anomaly score.
 
         This has the same behavior as calling `score(feature)` first and then
         `update(feature)` with the same event. Unlike a literal two-call
@@ -156,7 +156,7 @@ class Forest:
         """
     def update_and_score(self, /, point: Sequence[SupportsFloat]) -> float:
         """
-        Return the current anomaly score for an observation, then ingest it.
+        Ingest an observation and return its anomaly score.
 
         This has the same behavior as calling `score(point)` first and then
         `update(point)` with the same observation.

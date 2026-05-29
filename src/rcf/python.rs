@@ -124,7 +124,7 @@ impl PyForest {
         self.inner.update(&point).map_err(to_py_err)
     }
 
-    /// Return the current anomaly score for an observation, then ingest it.
+    /// Ingest an observation and return its anomaly score.
     ///
     /// This has the same behavior as calling `score(point)` first and then
     /// `update(point)` with the same observation.

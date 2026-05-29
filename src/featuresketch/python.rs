@@ -95,7 +95,7 @@ impl PyFeatureSketch {
         }
     }
 
-    /// Return the current anomaly score for a feature event, then ingest it.
+    /// Ingest a feature event and return its anomaly score.
     ///
     /// This has the same behavior as calling `score(feature)` first and then
     /// `update(feature)` with the same event. Unlike a literal two-call

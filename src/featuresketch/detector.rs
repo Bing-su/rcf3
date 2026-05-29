@@ -189,7 +189,7 @@ impl FeatureSketch {
         Ok(())
     }
 
-    /// Return the current anomaly score for an event, then ingest it.
+    /// Ingest a feature event and return its anomaly score.
     ///
     /// This has the same behavior as calling [`score`](Self::score) first and
     /// then [`update`](Self::update) with the same feature event. Unlike a
