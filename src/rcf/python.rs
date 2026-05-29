@@ -124,6 +124,14 @@ impl PyForest {
         self.inner.update(&point).map_err(to_py_err)
     }
 
+    /// Return the current anomaly score for an observation, then ingest it.
+    ///
+    /// This has the same behavior as calling `score(point)` first and then
+    /// `update(point)` with the same observation.
+    fn update_and_score(&mut self, point: Vec<f32>) -> PyResult<f64> {
+        self.inner.update_and_score(&point).map_err(to_py_err)
+    }
+
     /// Anomaly score for `point`. Higher means more anomalous.
     fn score(&self, point: Vec<f32>) -> PyResult<f64> {
         self.inner.score(&point).map_err(to_py_err)

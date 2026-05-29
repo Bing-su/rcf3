@@ -78,6 +78,10 @@ impl PyOnlineIForest {
     }
 
     /// Ingest a point and return its anomaly score under the updated forest.
+    ///
+    /// This has the same behavior as calling `update(point)` first and then
+    /// `score(point)` with the same point. This update-then-score order is
+    /// specific to Online Isolation Forest.
     fn update_and_score(&mut self, point: Vec<f32>) -> PyResult<f64> {
         self.inner.update_and_score(&point).map_err(to_py_err)
     }

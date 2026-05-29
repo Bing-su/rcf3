@@ -43,6 +43,11 @@ def test_basic_operations():
 
     forest.update(point)
     print(f"Entries seen: {forest.entries_seen()}")
+
+    score = forest.update_and_score(point)
+    print(f"Anomaly score: {score}")
+    assert score >= 0.0
+    assert forest.entries_seen() == 2
     print("✓ test_basic_operations passed")
 
 

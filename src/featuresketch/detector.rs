@@ -190,6 +190,11 @@ impl FeatureSketch {
     }
 
     /// Return the current anomaly score for an event, then ingest it.
+    ///
+    /// This has the same behavior as calling [`score`](Self::score) first and
+    /// then [`update`](Self::update) with the same feature event. Unlike a
+    /// literal two-call sequence, this method normalizes and projects the input
+    /// once.
     pub fn update_and_score<I, N>(&mut self, features: I) -> Result<f64>
     where
         I: IntoIterator<Item = (N, f64)>,

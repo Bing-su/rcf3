@@ -240,10 +240,9 @@ fn build_ready_mstream(warmup: &StreamData, scenario: MStreamScenario) -> MStrea
     detector
 }
 
-fn run_forest_score_then_update(detector: &mut Forest, events: &StreamData) {
+fn run_forest_update_and_score(detector: &mut Forest, events: &StreamData) {
     events.for_each_numeric_row(|point| {
-        let _ = detector.score(point).unwrap();
-        detector.update(point).unwrap();
+        let _ = detector.update_and_score(point).unwrap();
     });
 }
 
@@ -301,12 +300,12 @@ fn bench_numeric_stream_step(c: &mut Criterion) {
     for scenario in forest_scenarios {
         let forest = build_ready_forest(&warmup, scenario);
         group.bench_with_input(
-            BenchmarkId::new("forest_score_then_update", scenario.label),
+            BenchmarkId::new("forest_update_and_score", scenario.label),
             &events,
             |b, events| {
                 b.iter_batched(
                     || forest.clone(),
-                    |mut detector| run_forest_score_then_update(&mut detector, events),
+                    |mut detector| run_forest_update_and_score(&mut detector, events),
                     BatchSize::SmallInput,
                 );
             },

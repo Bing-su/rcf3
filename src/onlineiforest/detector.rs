@@ -130,6 +130,11 @@ impl OnlineIForest {
     }
 
     /// Ingest a point and return its anomaly score under the updated forest.
+    ///
+    /// This has the same behavior as calling [`update`](Self::update) first and
+    /// then [`score`](Self::score) with the same point. This update-then-score
+    /// order is specific to Online Isolation Forest; [`score`](Self::score)
+    /// alone remains a non-mutating pre-update preview.
     pub fn update_and_score(&mut self, point: &[f32]) -> Result<f64> {
         self.update(point)?;
         Ok(self.score_validated(point))
