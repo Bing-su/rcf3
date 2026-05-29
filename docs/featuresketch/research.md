@@ -270,7 +270,7 @@ count-min hash seeds are generated from the configured seed, then kept stable
 for the detector's lifetime.
 
 ```mermaid
-flowchart LR
+flowchart TD
     event["projected event vector"] --> level["chain level"]
     level --> select["select one dimension x"]
     select --> bin["bin = floor((x + offset_l) / width_l)"]
@@ -360,13 +360,13 @@ FeatureSketch keeps scoring and learning as separate operations:
 The default online-detection pattern is score-before-update:
 
 ```mermaid
-sequenceDiagram
-    participant Caller
-    participant Detector
-    Caller->>Detector: score(features)
-    Detector-->>Caller: anomaly score against current state
-    Caller->>Detector: update(features)
-    Detector-->>Detector: advance epoch and update sketches
+flowchart TD
+    score["score(features)"]
+    preview["return anomaly score against current state"]
+    update["update(features)"]
+    commit["advance epoch and update sketches"]
+
+    score --> preview --> update --> commit
 ```
 
 `score(features)` still performs input normalization, projection, chain-level
