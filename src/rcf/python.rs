@@ -120,41 +120,43 @@ impl PyForest {
     /// When `internal_shingling` is True, pass one base observation of length
     /// `input_dim`. Otherwise pass the full shingled vector of length
     /// `input_dim * shingle_size`.
-    fn update(&mut self, point: Vec<f32>) -> PyResult<()> {
-        self.inner.update(&point).map_err(to_py_err)
+    fn update(&mut self, py: Python<'_>, point: Vec<f32>) -> PyResult<()> {
+        py.detach(|| self.inner.update(&point).map_err(to_py_err))
     }
 
     /// Ingest an observation and return its anomaly score.
     ///
     /// This has the same behavior as calling `score(point)` first and then
     /// `update(point)` with the same observation.
-    fn update_and_score(&mut self, point: Vec<f32>) -> PyResult<f64> {
-        self.inner.update_and_score(&point).map_err(to_py_err)
+    fn update_and_score(&mut self, py: Python<'_>, point: Vec<f32>) -> PyResult<f64> {
+        py.detach(|| self.inner.update_and_score(&point).map_err(to_py_err))
     }
 
     /// Anomaly score for `point`. Higher means more anomalous.
-    fn score(&self, point: Vec<f32>) -> PyResult<f64> {
-        self.inner.score(&point).map_err(to_py_err)
+    fn score(&self, py: Python<'_>, point: Vec<f32>) -> PyResult<f64> {
+        py.detach(|| self.inner.score(&point).map_err(to_py_err))
     }
 
     /// Displacement-based anomaly score.
-    fn displacement_score(&self, point: Vec<f32>) -> PyResult<f64> {
-        self.inner.displacement_score(&point).map_err(to_py_err)
+    fn displacement_score(&self, py: Python<'_>, point: Vec<f32>) -> PyResult<f64> {
+        py.detach(|| self.inner.displacement_score(&point).map_err(to_py_err))
     }
 
     /// Per-dimension attribution of the anomaly score.
     ///
     /// Returns a list of length `input_dim * shingle_size`.
-    fn attribution(&self, point: Vec<f32>) -> PyResult<Vec<PyAttribution>> {
-        self.inner
-            .attribution(&point)
-            .map(|items| items.into_iter().map(PyAttribution::from).collect())
-            .map_err(to_py_err)
+    fn attribution(&self, py: Python<'_>, point: Vec<f32>) -> PyResult<Vec<PyAttribution>> {
+        py.detach(|| {
+            self.inner
+                .attribution(&point)
+                .map(|items| items.into_iter().map(PyAttribution::from).collect())
+                .map_err(to_py_err)
+        })
     }
 
     /// Density estimate at `point`. Higher means a denser neighbourhood.
-    fn density(&self, point: Vec<f32>) -> PyResult<f64> {
-        self.inner.density(&point).map_err(to_py_err)
+    fn density(&self, py: Python<'_>, point: Vec<f32>) -> PyResult<f64> {
+        py.detach(|| self.inner.density(&point).map_err(to_py_err))
     }
 
     /// Find approximate near-neighbours of `point`.
@@ -166,14 +168,17 @@ impl PyForest {
     #[pyo3(signature = (point, top_k = 10, percentile = 50))]
     fn near_neighbors(
         &self,
+        py: Python<'_>,
         point: Vec<f32>,
         top_k: usize,
         percentile: usize,
     ) -> PyResult<Vec<PyNeighborResult>> {
-        self.inner
-            .near_neighbors(&point, top_k, percentile)
-            .map(|items| items.into_iter().map(PyNeighborResult::from).collect())
-            .map_err(to_py_err)
+        py.detach(|| {
+            self.inner
+                .near_neighbors(&point, top_k, percentile)
+                .map(|items| items.into_iter().map(PyNeighborResult::from).collect())
+                .map_err(to_py_err)
+        })
     }
 
     /// Impute the `missing` positions of `point`.
@@ -184,10 +189,18 @@ impl PyForest {
     /// When `centrality = 1.0`, the nearest neighbour in each tree is selected
     /// deterministically; lower values introduce randomness.
     #[pyo3(signature = (point, missing, centrality = 1.0))]
-    fn impute(&self, point: Vec<f32>, missing: Vec<usize>, centrality: f64) -> PyResult<Vec<f32>> {
-        self.inner
-            .impute(&point, &missing, centrality)
-            .map_err(to_py_err)
+    fn impute(
+        &self,
+        py: Python<'_>,
+        point: Vec<f32>,
+        missing: Vec<usize>,
+        centrality: f64,
+    ) -> PyResult<Vec<f32>> {
+        py.detach(|| {
+            self.inner
+                .impute(&point, &missing, centrality)
+                .map_err(to_py_err)
+        })
     }
 
     /// Predict the next `look_ahead` base observations beyond the current shingle buffer.
@@ -195,8 +208,8 @@ impl PyForest {
     /// Requires `internal_shingling = True`, `shingle_size > 1`, and
     /// `look_ahead <= shingle_size`. Returns a list of length
     /// `look_ahead * input_dim`.
-    fn extrapolate(&self, look_ahead: usize) -> PyResult<Vec<f32>> {
-        self.inner.extrapolate(look_ahead).map_err(to_py_err)
+    fn extrapolate(&self, py: Python<'_>, look_ahead: usize) -> PyResult<Vec<f32>> {
+        py.detach(|| self.inner.extrapolate(look_ahead).map_err(to_py_err))
     }
 
     /// Return True once scoring functions return meaningful values.
