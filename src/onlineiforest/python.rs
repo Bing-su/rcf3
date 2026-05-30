@@ -60,8 +60,8 @@ impl PyOnlineIForest {
     }
 
     /// Ingest a point without returning its score.
-    fn update(&mut self, point: Vec<f32>) -> PyResult<()> {
-        self.inner.update(&point).map_err(to_py_err)
+    fn update(&mut self, py: Python<'_>, point: Vec<f32>) -> PyResult<()> {
+        py.detach(|| self.inner.update(&point).map_err(to_py_err))
     }
 
     /// Preview the current anomaly score for `point` without mutating state.
@@ -74,8 +74,8 @@ impl PyOnlineIForest {
     ///
     /// Calling this before `is_ready()` is allowed, but the value is not a
     /// stable anomaly estimate yet.
-    fn score(&self, point: Vec<f32>) -> PyResult<f64> {
-        self.inner.score(&point).map_err(to_py_err)
+    fn score(&self, py: Python<'_>, point: Vec<f32>) -> PyResult<f64> {
+        py.detach(|| self.inner.score(&point).map_err(to_py_err))
     }
 
     /// Ingest a point and return its anomaly score under the updated forest.
@@ -83,8 +83,8 @@ impl PyOnlineIForest {
     /// This has the same behavior as calling `update(point)` first and then
     /// `score(point)` with the same point. This update-then-score order is
     /// specific to Online Isolation Forest.
-    fn update_and_score(&mut self, point: Vec<f32>) -> PyResult<f64> {
-        self.inner.update_and_score(&point).map_err(to_py_err)
+    fn update_and_score(&mut self, py: Python<'_>, point: Vec<f32>) -> PyResult<f64> {
+        py.detach(|| self.inner.update_and_score(&point).map_err(to_py_err))
     }
 
     /// Return True once at least one point has been processed.

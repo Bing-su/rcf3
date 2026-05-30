@@ -76,11 +76,11 @@ impl PyFeatureSketch {
     }
 
     /// Ingest a feature event without returning its score.
-    fn update(&mut self, feature: KeyValueLike) -> PyResult<()> {
-        match feature {
+    fn update(&mut self, py: Python<'_>, feature: KeyValueLike) -> PyResult<()> {
+        py.detach(|| match feature {
             KeyValueLike::Pairs(pairs) => self.inner.update(pairs).map_err(to_py_err),
             KeyValueLike::Dict(mapping) => self.inner.update(mapping).map_err(to_py_err),
-        }
+        })
     }
 
     /// Preview the current anomaly score for a feature event without mutating state.
@@ -88,11 +88,11 @@ impl PyFeatureSketch {
     /// This is the same pre-ingest score that `update_and_score()` would return
     /// if called next. It is computed against the current sketches and does not
     /// advance the decay epoch or `entries_seen()`.
-    fn score(&self, feature: KeyValueLike) -> PyResult<f64> {
-        match feature {
+    fn score(&self, py: Python<'_>, feature: KeyValueLike) -> PyResult<f64> {
+        py.detach(|| match feature {
             KeyValueLike::Pairs(pairs) => self.inner.score(pairs).map_err(to_py_err),
             KeyValueLike::Dict(mapping) => self.inner.score(mapping).map_err(to_py_err),
-        }
+        })
     }
 
     /// Ingest a feature event and return its anomaly score.
@@ -100,11 +100,11 @@ impl PyFeatureSketch {
     /// This has the same behavior as calling `score(feature)` first and then
     /// `update(feature)` with the same event. Unlike a literal two-call
     /// sequence, this method normalizes and projects the input once.
-    fn update_and_score(&mut self, feature: KeyValueLike) -> PyResult<f64> {
-        match feature {
+    fn update_and_score(&mut self, py: Python<'_>, feature: KeyValueLike) -> PyResult<f64> {
+        py.detach(|| match feature {
             KeyValueLike::Pairs(pairs) => self.inner.update_and_score(pairs).map_err(to_py_err),
             KeyValueLike::Dict(mapping) => self.inner.update_and_score(mapping).map_err(to_py_err),
-        }
+        })
     }
 
     /// Return True once the detector has processed at least one event.
