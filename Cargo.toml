@@ -55,6 +55,10 @@ name = "mstream_bench"
 harness = false
 name = "comparison_bench"
 
+[[bench]]
+harness = false
+name = "featuresketch_bench"
+
 [dependencies]
 ahash = { version = "0.8", default-features = false }
 itertools = { version = "0.14", default-features = false }
