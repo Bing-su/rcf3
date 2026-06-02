@@ -156,7 +156,11 @@ mod docs_examples {
         }
 
         let neighbors = forest.near_neighbors(&[1.5, 2.3], 10, 50)?;
-        for neighbor in neighbors {
+        assert!(neighbors.len() <= 10);
+        for pair in neighbors.windows(2) {
+            assert!(pair[0].distance <= pair[1].distance);
+        }
+        for neighbor in &neighbors {
             println!("distance={}, score={}", neighbor.distance, neighbor.score);
         }
 
@@ -201,6 +205,8 @@ mod docs_examples {
         let loaded_from_file = Forest::load_json(&path)?;
         assert_eq!(loaded.num_trees(), forest.num_trees());
         assert_eq!(loaded_from_file.num_trees(), forest.num_trees());
+        assert!(loaded.score(&[1.5, 2.3])? >= 0.0);
+        assert!(loaded_from_file.score(&[1.5, 2.3])? >= 0.0);
 
         Ok(())
     }
@@ -221,14 +227,20 @@ mod docs_examples {
             vec![100.0, 200.0, 300.0],
         ];
 
+        let entries_before = forest.entries_seen();
+        let mut scores_seen = 0;
         for point in data {
             if forest.is_ready() {
                 let score = forest.score(&point)?;
                 println!("Point: {point:?}, score={score}");
+                assert!(score >= 0.0);
+                scores_seen += 1;
             }
 
             forest.update(&point)?;
         }
+        assert_eq!(scores_seen, 3);
+        assert_eq!(forest.entries_seen(), entries_before + 3);
 
         Ok(())
     }
@@ -309,6 +321,8 @@ mod docs_examples {
         assert_eq!(restored.current_time(), detector.current_time());
         assert_eq!(restored_from_file.entries_seen(), detector.entries_seen());
         assert_eq!(restored_from_file.current_time(), detector.current_time());
+        assert!(restored.score(&[1.5, 2.0], &[7], 2)? >= 0.0);
+        assert!(restored_from_file.score(&[1.5, 2.0], &[7], 2)? >= 0.0);
         Ok(())
     }
 
@@ -382,6 +396,8 @@ mod docs_examples {
         let restored_from_file = FeatureSketch::load_json(&path)?;
         assert_eq!(restored.entries_seen(), detector.entries_seen());
         assert_eq!(restored_from_file.entries_seen(), detector.entries_seen());
+        assert!(restored.score([("bytes", 812.0)])?.is_finite());
+        assert!(restored_from_file.score([("bytes", 812.0)])?.is_finite());
         Ok(())
     }
 
@@ -412,6 +428,10 @@ mod docs_examples {
         ])?;
 
         println!("normal={normal}, suspicious={suspicious}");
+        assert!(normal.is_finite());
+        assert!(suspicious.is_finite());
+        assert!(normal >= 0.0);
+        assert!(suspicious >= 0.0);
         Ok(())
     }
 
@@ -456,6 +476,8 @@ mod docs_examples {
         assert_eq!(restored.num_trees(), detector.num_trees());
         assert_eq!(restored_from_file.entries_seen(), detector.entries_seen());
         assert_eq!(restored_from_file.num_trees(), detector.num_trees());
+        assert!(restored.score(&[1.5, 2.3])? >= 0.0);
+        assert!(restored_from_file.score(&[1.5, 2.3])? >= 0.0);
         Ok(())
     }
 
@@ -476,6 +498,10 @@ mod docs_examples {
         let anomaly_score = detector.score(&[10.0, -10.0])?;
 
         println!("normal={normal_score}, anomaly={anomaly_score}");
+        assert!(normal_score.is_finite());
+        assert!(anomaly_score.is_finite());
+        assert!(normal_score >= 0.0);
+        assert!(anomaly_score >= 0.0);
         Ok(())
     }
 }

@@ -43,6 +43,11 @@ name = "onlineiforest_simulation"
 path = "tests/onlineiforest_simulation.rs"
 required-features = ["std"]
 
+[[test]]
+name = "public_api_surface"
+path = "tests/public_api_surface.rs"
+required-features = ["std"]
+
 [[bench]]
 harness = false
 name = "forest_bench"

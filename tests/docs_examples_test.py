@@ -118,6 +118,9 @@ def test_neighborhood_search():
         forest.update(point)
 
     neighbors = forest.near_neighbors([1.5, 2.3], top_k=10, percentile=50)
+    assert len(neighbors) <= 10
+    distances = [item["distance"] for item in neighbors]
+    assert distances == sorted(distances)
 
     print(f"Found {len(neighbors)} neighbors: {neighbors}")
     print("✓ test_neighborhood_search passed")
@@ -191,6 +194,8 @@ def test_serialization():
 
     assert loaded.num_trees() == forest.num_trees()
     assert loaded_from_file.num_trees() == forest.num_trees()
+    assert loaded.score([1.5, 2.3]) >= 0.0
+    assert loaded_from_file.score([1.5, 2.3]) >= 0.0
 
     print("✓ test_serialization passed")
 
@@ -217,6 +222,7 @@ def test_pickle_serialization():
             loaded = pickle.load(f)
 
     assert loaded.num_trees() == forest.num_trees()
+    assert loaded.score([1.5, 2.3]) >= 0.0
     print("✓ test_pickle_serialization passed")
 
 
@@ -229,10 +235,17 @@ def test_anomaly_detection_example():
         val = i * 0.01
         forest.update([1.0 + val, 2.0 + val, 3.0 + val])
 
+    entries_before = forest.entries_seen()
+    scores_seen = 0
     for point in ([1.0, 2.0, 3.0], [1.1, 2.1, 3.1], [100.0, 200.0, 300.0]):
         if forest.is_ready():
-            print(f"Point: {point}, score={forest.score(point)}")
+            score = forest.score(point)
+            print(f"Point: {point}, score={score}")
+            assert score >= 0.0
+            scores_seen += 1
         forest.update(point)
+    assert scores_seen == 3
+    assert forest.entries_seen() == entries_before + 3
 
     print("✓ test_anomaly_detection_example passed")
 
@@ -285,6 +298,8 @@ def test_mstream_serialization():
     assert restored.current_time() == detector.current_time()
     assert restored_from_file.entries_seen() == detector.entries_seen()
     assert restored_from_file.current_time() == detector.current_time()
+    assert restored.score([1.5, 2.0], [7], 2) >= 0.0
+    assert restored_from_file.score([1.5, 2.0], [7], 2) >= 0.0
 
 
 def test_mstream_practical_example():
@@ -294,6 +309,10 @@ def test_mstream_practical_example():
     normal = detector.update_and_score([0.0, 3.2], [1, 10], 1)
     suspicious = detector.score_detailed([12.0, 0.3], [99, 10], 2)
 
+    assert normal >= 0.0
+    assert suspicious["total"] >= 0.0
+    assert math.isfinite(normal)
+    assert math.isfinite(suspicious["total"])
     print(f"normal={normal}, suspicious={suspicious['total']}")
     print(f"failed-attempt contribution={suspicious['numeric_features'][0]}")
     print(f"country contribution={suspicious['categorical_features'][0]}")
@@ -353,6 +372,8 @@ def test_featuresketch_serialization():
 
     assert restored.entries_seen() == detector.entries_seen()
     assert restored_from_file.entries_seen() == detector.entries_seen()
+    assert math.isfinite(restored.score({"bytes": 812.0}))
+    assert math.isfinite(restored_from_file.score({"bytes": 812.0}))
 
 
 def test_featuresketch_practical_example():
@@ -384,6 +405,10 @@ def test_featuresketch_practical_example():
     )
 
     print(f"normal={normal}, suspicious={suspicious}")
+    assert math.isfinite(normal)
+    assert math.isfinite(suspicious)
+    assert normal >= 0.0
+    assert suspicious >= 0.0
 
 
 def test_onlineiforest_basic_usage():
@@ -422,6 +447,8 @@ def test_onlineiforest_serialization():
     assert restored.num_trees() == detector.num_trees()
     assert restored_from_file.entries_seen() == detector.entries_seen()
     assert restored_from_file.num_trees() == detector.num_trees()
+    assert restored.score([1.5, 2.3]) >= 0.0
+    assert restored_from_file.score([1.5, 2.3]) >= 0.0
 
 
 def test_onlineiforest_practical_example():
@@ -441,6 +468,10 @@ def test_onlineiforest_practical_example():
     anomaly_score = detector.score([10.0, -10.0])
 
     print(f"normal={normal_score}, anomaly={anomaly_score}")
+    assert math.isfinite(normal_score)
+    assert math.isfinite(anomaly_score)
+    assert normal_score >= 0.0
+    assert anomaly_score >= 0.0
 
 
 if __name__ == "__main__":
