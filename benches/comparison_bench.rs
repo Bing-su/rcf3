@@ -128,8 +128,16 @@ fn feature_event(event_idx: usize) -> Vec<(String, f64)> {
         2 => "account",
         _ => "search",
     };
-    let method = if event_idx % 5 == 0 { "POST" } else { "GET" };
-    let status = if event_idx % 97 == 0 { 500 } else { 200 };
+    let method = if event_idx.is_multiple_of(5) {
+        "POST"
+    } else {
+        "GET"
+    };
+    let status = if event_idx.is_multiple_of(97) {
+        500
+    } else {
+        200
+    };
     let latency = 45.0 + ((event_idx as f64) * 0.013).sin() * 8.0;
     let bytes_out = 2.0 + ((event_idx as f64) * 0.007).cos();
 
@@ -146,10 +154,10 @@ fn feature_event(event_idx: usize) -> Vec<(String, f64)> {
         ("failed_auths".to_string(), 0.0),
     ];
 
-    if event_idx % 37 == 0 {
+    if event_idx.is_multiple_of(37) {
         features.push((format!("partner:{}", event_idx % 11), 1.0));
     }
-    if event_idx % 211 == 0 {
+    if event_idx.is_multiple_of(211) {
         features.push(("header:x-forwarded-admin".to_string(), 1.0));
     }
 
