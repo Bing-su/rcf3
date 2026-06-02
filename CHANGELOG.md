@@ -1,3 +1,43 @@
+## [0.5.0] - 2026-06-02
+
+### 🚀 Features
+
+- _(featuresketch)_ Add sparse schema-evolving detector (#17)
+- _(bench)_ Enhance scenarios with size configuration
+- _(mstream)_ [**breaking**] Accept f64 numeric inputs (#18)
+- Add `update_and_score` to rcf, fix docstrings (#20)
+- _(bench)_ Add benchmarks for FeatureSketch (#22)
+
+### 🐛 Bug Fixes
+
+- Detach Python calls to release GIL (#21)
+
+### 💼 Other
+
+- _(deps)_ Bump the default group with 2 updates (#16)
+
+### 📚 Documentation
+
+- _(featuresketch)_ Clarify projection vector computation in research notes
+- Clarify FeatureSketch density and update model (#19)
+- _(featuresketch)_ Replace LR chart to TD chart
+
+### 🎨 Styling
+
+- _(clippy)_ Use `is_multiple_of` for modulo checks
+- _(clippy)_ Allow too many arguments for py_new
+
+### 🧪 Testing
+
+- _(featuresketch)_ Fix projection tests to use property-based testing
+- Clarify docs example coverage (#23)
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove some keywords
+- Remove unnecessary dependency features
+- Add oxfmtrc.json
+
 ## [0.4.0] - 2026-05-24
 
 ### 🚀 Features
