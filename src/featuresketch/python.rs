@@ -50,6 +50,7 @@ impl PyFeatureSketch {
         decay_half_life = 2048,
         seed = None
     ))]
+    #[allow(clippy::too_many_arguments)]
     fn py_new(
         value_projection_dims: usize,
         presence_projection_dims: usize,
