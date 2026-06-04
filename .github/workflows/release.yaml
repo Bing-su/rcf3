@@ -18,7 +18,7 @@ jobs:
       - uses: hustcer/setup-nu@v3
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: astral-sh/setup-uv@v8.2.0
 
       - name: Build sdist
         run: uv build --sdist
@@ -85,7 +85,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: astral-sh/setup-uv@v8.2.0
 
       - name: Build wheel
         uses: PyO3/maturin-action@v1
@@ -119,7 +119,7 @@ jobs:
     steps:
       - uses: hustcer/setup-nu@v3
       - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: astral-sh/setup-uv@v8.2.0
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/download-artifact@v8
         with:
