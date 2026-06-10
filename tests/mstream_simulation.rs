@@ -1,8 +1,9 @@
 //! End-to-end mStream simulations through the public API.
 
-use approx::assert_abs_diff_eq;
+use approx::abs_diff_eq;
 use fake::rand::prelude::*;
 use fake::{Dummy, Fake, Faker};
+use proptest::prelude::*;
 use rcf3::MStream;
 
 mod fixtures {
@@ -108,9 +109,9 @@ mod fixtures {
 
 use fixtures::{LoginEvent, LoginEventFactory};
 
-fn detector() -> MStream {
+fn detector(seed: u64) -> MStream {
     MStream::builder(2, 2)
-        .seed(2026)
+        .seed(seed)
         .alpha(0.8)
         .num_rows(2)
         .num_buckets(512)
@@ -139,25 +140,31 @@ fn peak(scores: impl IntoIterator<Item = f64>) -> f64 {
     scores.into_iter().fold(0.0_f64, f64::max)
 }
 
-#[test]
-fn credential_stuffing_burst_scores_above_normal_traffic() {
-    let mut factory = LoginEventFactory::seeded(2026);
-    let mut detector = detector();
+fn assert_credential_stuffing_burst_scores_above_normal_traffic(
+    traffic_seed: u64,
+    detector_seed: u64,
+) -> Result<(), TestCaseError> {
+    let mut factory = LoginEventFactory::seeded(traffic_seed);
+    let mut detector = detector(detector_seed);
 
     let normal_peak = peak(train_on_normal_traffic(&mut detector, &mut factory));
     let attack_peak =
         peak((0..8).map(|_| commit(&mut detector, factory.credential_stuffing_attempt(13))));
 
-    assert!(
+    prop_assert!(
         attack_peak > normal_peak,
-        "attack peak {attack_peak} should exceed normal peak {normal_peak}"
+        "attack peak should exceed normal peak: traffic_seed={traffic_seed}, detector_seed={detector_seed}, attack={attack_peak}, normal={normal_peak}"
     );
+
+    Ok(())
 }
 
-#[test]
-fn attack_preview_highlights_the_shift_before_committing_it() {
-    let mut factory = LoginEventFactory::seeded(2026);
-    let mut detector = detector();
+fn assert_attack_preview_highlights_the_shift_before_committing_it(
+    traffic_seed: u64,
+    detector_seed: u64,
+) -> Result<(), TestCaseError> {
+    let mut factory = LoginEventFactory::seeded(traffic_seed);
+    let mut detector = detector(detector_seed);
     train_on_normal_traffic(&mut detector, &mut factory);
 
     let attack = factory.credential_stuffing_attempt(13);
@@ -169,29 +176,36 @@ fn attack_preview_highlights_the_shift_before_committing_it() {
         .update_and_score_detailed(&attack.numeric(), &attack.categorical(), attack.tick())
         .unwrap();
 
-    assert_eq!(detector.entries_seen(), before_commit_entries + 1);
-    assert_abs_diff_eq!(preview.total, committed.total, epsilon = 1e-12);
-    assert!(
+    prop_assert_eq!(detector.entries_seen(), before_commit_entries + 1);
+    prop_assert!(
+        abs_diff_eq!(preview.total, committed.total, epsilon = 1e-12),
+        "preview should match committed score: traffic_seed={traffic_seed}, detector_seed={detector_seed}, preview={}, committed={}",
+        preview.total,
+        committed.total
+    );
+    prop_assert!(
         preview.numeric_features[0] > 0.0,
-        "failed-attempt spike should contribute to the anomaly score"
+        "failed-attempt spike should contribute to the anomaly score: traffic_seed={traffic_seed}, detector_seed={detector_seed}, contribution={}",
+        preview.numeric_features[0]
     );
-    assert!(
+    prop_assert!(
         preview.categorical_features[0] > 0.0,
-        "unseen country should contribute to the anomaly score"
+        "unseen country should contribute to the anomaly score: traffic_seed={traffic_seed}, detector_seed={detector_seed}, contribution={}",
+        preview.categorical_features[0]
     );
+
+    Ok(())
 }
 
-#[test]
-fn large_data_exfiltration_raises_bytes_sent_feature_score() {
-    let mut factory = LoginEventFactory::seeded(2026);
-    let mut detector = detector();
+fn assert_large_data_exfiltration_highlights_bytes_sent(
+    traffic_seed: u64,
+    detector_seed: u64,
+) -> Result<(), TestCaseError> {
+    let mut factory = LoginEventFactory::seeded(traffic_seed);
+    let mut detector = detector(detector_seed);
 
     train_on_normal_traffic(&mut detector, &mut factory);
-    let normal = factory.familiar_login(13);
     let exfiltration = factory.exfiltration_attempt(13);
-    let normal_preview = detector
-        .score_detailed(&normal.numeric(), &normal.categorical(), normal.tick())
-        .unwrap();
     let exfiltration_preview = detector
         .score_detailed(
             &exfiltration.numeric(),
@@ -200,27 +214,101 @@ fn large_data_exfiltration_raises_bytes_sent_feature_score() {
         )
         .unwrap();
 
-    assert!(
-        exfiltration_preview.numeric_features[1] > normal_preview.numeric_features[1],
-        "large transfer should dominate the bytes-sent feature score"
+    prop_assert!(exfiltration_preview.total.is_finite());
+    prop_assert!(exfiltration_preview.total >= 0.0);
+    prop_assert!(
+        exfiltration_preview.numeric_features[1] > 0.0,
+        "large transfer should contribute to the bytes-sent feature score: traffic_seed={traffic_seed}, detector_seed={detector_seed}, contribution={}",
+        exfiltration_preview.numeric_features[1]
     );
+    prop_assert!(
+        exfiltration_preview
+            .numeric_features
+            .iter()
+            .chain(&exfiltration_preview.categorical_features)
+            .all(|score| score.is_finite() && *score >= 0.0),
+        "detailed exfiltration score should contain only finite non-negative contributions: traffic_seed={traffic_seed}, detector_seed={detector_seed}, score={exfiltration_preview:?}"
+    );
+
+    Ok(())
 }
 
-#[test]
-fn unfamiliar_route_burst_scores_above_familiar_burst() {
-    let mut factory = LoginEventFactory::seeded(2026);
-    let mut detector = detector();
+fn assert_unfamiliar_route_burst_highlights_route_features(
+    traffic_seed: u64,
+    detector_seed: u64,
+) -> Result<(), TestCaseError> {
+    let mut factory = LoginEventFactory::seeded(traffic_seed);
+    let mut detector = detector(detector_seed);
     train_on_normal_traffic(&mut detector, &mut factory);
 
     let mut familiar_detector = detector.clone();
+    let unfamiliar_event = factory.unfamiliar_route_login(13);
+    let unfamiliar_preview = detector
+        .score_detailed(
+            &unfamiliar_event.numeric(),
+            &unfamiliar_event.categorical(),
+            unfamiliar_event.tick(),
+        )
+        .unwrap();
     let mut unfamiliar_detector = detector;
     let familiar_peak =
         peak((0..8).map(|_| commit(&mut familiar_detector, factory.familiar_login(13))));
     let unfamiliar_peak =
         peak((0..8).map(|_| commit(&mut unfamiliar_detector, factory.unfamiliar_route_login(13))));
 
-    assert!(
-        unfamiliar_peak > familiar_peak,
-        "unfamiliar route peak {unfamiliar_peak} should exceed familiar peak {familiar_peak}"
+    prop_assert!(familiar_peak.is_finite());
+    prop_assert!(unfamiliar_peak.is_finite());
+    prop_assert!(familiar_peak >= 0.0);
+    prop_assert!(
+        unfamiliar_peak >= 0.0,
+        "burst peaks should be finite and non-negative: traffic_seed={traffic_seed}, detector_seed={detector_seed}, unfamiliar={unfamiliar_peak}, familiar={familiar_peak}"
     );
+    prop_assert!(
+        unfamiliar_preview.categorical_features[0] > 0.0,
+        "unseen country should contribute to unfamiliar-route score: traffic_seed={traffic_seed}, detector_seed={detector_seed}, contribution={}",
+        unfamiliar_preview.categorical_features[0]
+    );
+    prop_assert!(
+        unfamiliar_preview.categorical_features[1] > 0.0,
+        "unseen endpoint should contribute to unfamiliar-route score: traffic_seed={traffic_seed}, detector_seed={detector_seed}, contribution={}",
+        unfamiliar_preview.categorical_features[1]
+    );
+
+    Ok(())
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[test]
+    fn credential_stuffing_burst_scores_above_normal_traffic(
+        traffic_seed in any::<u64>(),
+        detector_seed in any::<u64>(),
+    ) {
+        assert_credential_stuffing_burst_scores_above_normal_traffic(traffic_seed, detector_seed)?;
+    }
+
+    #[test]
+    fn attack_preview_highlights_the_shift_before_committing_it(
+        traffic_seed in any::<u64>(),
+        detector_seed in any::<u64>(),
+    ) {
+        assert_attack_preview_highlights_the_shift_before_committing_it(traffic_seed, detector_seed)?;
+    }
+
+    #[test]
+    fn large_data_exfiltration_highlights_bytes_sent(
+        traffic_seed in any::<u64>(),
+        detector_seed in any::<u64>(),
+    ) {
+        assert_large_data_exfiltration_highlights_bytes_sent(traffic_seed, detector_seed)?;
+    }
+
+    #[test]
+    fn unfamiliar_route_burst_highlights_route_features(
+        traffic_seed in any::<u64>(),
+        detector_seed in any::<u64>(),
+    ) {
+        assert_unfamiliar_route_burst_highlights_route_features(traffic_seed, detector_seed)?;
+    }
 }

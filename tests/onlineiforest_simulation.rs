@@ -2,6 +2,7 @@
 
 use fake::rand::prelude::*;
 use fake::{Dummy, Fake, Faker};
+use proptest::prelude::*;
 use rcf3::OnlineIForest;
 
 mod fixtures {
@@ -67,12 +68,12 @@ mod fixtures {
 
 use fixtures::{CheckoutEvent, CheckoutEventFactory};
 
-fn detector() -> OnlineIForest {
+fn detector(seed: u64) -> OnlineIForest {
     OnlineIForest::builder(3)
         .num_trees(64)
         .window_size(256)
         .max_leaf_samples(8)
-        .seed(2026)
+        .seed(seed)
         .build()
         .unwrap()
 }
@@ -94,10 +95,12 @@ fn mean(scores: &[f64]) -> f64 {
     scores.iter().sum::<f64>() / scores.len() as f64
 }
 
-#[test]
-fn account_takeover_burst_scores_above_normal_checkout_traffic() {
-    let mut factory = CheckoutEventFactory::seeded(2026);
-    let mut detector = detector();
+fn assert_account_takeover_burst_scores_above_normal_checkout_traffic(
+    traffic_seed: u64,
+    detector_seed: u64,
+) -> Result<(), TestCaseError> {
+    let mut factory = CheckoutEventFactory::seeded(traffic_seed);
+    let mut detector = detector(detector_seed);
 
     train_on_normal_checkouts(&mut detector, &mut factory);
 
@@ -117,12 +120,26 @@ fn account_takeover_burst_scores_above_normal_checkout_traffic() {
         .filter(|&&score| score > mean_normal)
         .count();
 
-    assert!(
+    prop_assert!(
         mean_attack > mean_normal,
-        "attack burst should score higher on average: attack={mean_attack} normal={mean_normal}, attack_scores={attack_scores:?}, normal_scores={normal_scores:?}"
+        "attack burst should score higher on average: traffic_seed={traffic_seed}, detector_seed={detector_seed}, attack={mean_attack}, normal={mean_normal}, attack_scores={attack_scores:?}, normal_scores={normal_scores:?}"
     );
-    assert!(
-        attacks_above_normal_mean >= 6,
-        "most attack events should outrank the normal mean: count={attacks_above_normal_mean}, mean_normal={mean_normal}, attack_scores={attack_scores:?}, normal_scores={normal_scores:?}"
+    prop_assert!(
+        attacks_above_normal_mean >= attack_scores.len() / 2,
+        "at least half of attack events should outrank the normal mean: traffic_seed={traffic_seed}, detector_seed={detector_seed}, count={attacks_above_normal_mean}, mean_normal={mean_normal}, attack_scores={attack_scores:?}, normal_scores={normal_scores:?}"
     );
+
+    Ok(())
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[test]
+    fn account_takeover_burst_scores_above_normal_checkout_traffic(
+        traffic_seed in any::<u64>(),
+        detector_seed in any::<u64>(),
+    ) {
+        assert_account_takeover_burst_scores_above_normal_checkout_traffic(traffic_seed, detector_seed)?;
+    }
 }

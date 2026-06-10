@@ -1,11 +1,18 @@
 /// Smoke test for the crate-level public facade exports.
+use proptest::prelude::*;
 use rcf3::{
     Attribution, FeatureSketch, FeatureSketchBuilder, FeatureSketchConfig, Forest, ForestBuilder,
     NeighborResult, RcfConfig,
 };
 
-#[test]
-fn top_level_facade_exports_expected_user_facing_types() {
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[test]
+    fn top_level_facade_exports_expected_user_facing_types(
+        forest_seed in any::<u64>(),
+        featuresketch_seed in any::<u64>(),
+    ) {
     let config = RcfConfig::new(2)
         .with_shingle_size(3)
         .with_capacity(64)
@@ -25,21 +32,21 @@ fn top_level_facade_exports_expected_user_facing_types() {
     assert_eq!(config.initial_accept_fraction(), 0.25);
 
     let builder: ForestBuilder = Forest::builder(2);
-    let forest = builder.seed(7).build().unwrap();
-    assert_eq!(forest.config().input_dim(), 2);
+    let forest = builder.seed(forest_seed).build().unwrap();
+    prop_assert_eq!(forest.config().input_dim(), 2);
 
     let attr = Attribution {
         below: 1.25,
         above: 0.75,
     };
-    assert_eq!(attr.total(), 2.0);
+    prop_assert_eq!(attr.total(), 2.0);
 
     let neighbor = NeighborResult {
         score: 0.5,
         point: vec![1.0, 2.0],
         distance: 3.0,
     };
-    assert_eq!(neighbor.point, vec![1.0, 2.0]);
+    prop_assert_eq!(neighbor.point, vec![1.0, 2.0]);
 
     let feature_config = FeatureSketchConfig::new()
         .with_value_projection_dims(4)
@@ -47,7 +54,7 @@ fn top_level_facade_exports_expected_user_facing_types() {
         .with_chains_per_ensemble(2)
         .with_chain_depth(2)
         .with_sketch_buckets(32);
-    assert_eq!(feature_config.value_projection_dims(), 4);
+    prop_assert_eq!(feature_config.value_projection_dims(), 4);
 
     let builder: FeatureSketchBuilder = FeatureSketch::builder()
         .value_projection_dims(4)
@@ -55,8 +62,9 @@ fn top_level_facade_exports_expected_user_facing_types() {
         .chains_per_ensemble(2)
         .chain_depth(2)
         .sketch_buckets(32)
-        .seed(7);
+        .seed(featuresketch_seed);
     let mut detector = builder.build().unwrap();
     detector.update([("feature", 1.0)]).unwrap();
-    assert!(detector.score([("feature", 1.0)]).unwrap().is_finite());
+    prop_assert!(detector.score([("feature", 1.0)]).unwrap().is_finite());
+    }
 }

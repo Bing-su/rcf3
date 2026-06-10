@@ -30,7 +30,7 @@ def vector_strategy(dim: int) -> st.SearchStrategy[list[float]]:
 def make_forest(  # noqa: PLR0913
     *,
     input_dim: int,
-    seed: int,
+    seed: int | None = None,
     shingle_size: int = 1,
     internal_shingling: bool = True,
     num_trees: int = DEFAULT_NUM_TREES,
@@ -56,7 +56,7 @@ def warm_forest(
     input_dim: int,
     shingle_size: int = 1,
     internal_shingling: bool = True,
-    seed: int = 7,
+    seed: int | None = None,
     updates: int = 64,
 ) -> Forest:
     """Create a forest and warm it with synthetic observations."""
@@ -142,17 +142,19 @@ def test_update_and_score_matches_score_then_update(
     capacity=st.integers(min_value=8, max_value=128),
     internal_shingling=st.booleans(),
     output_after=st.integers(min_value=0, max_value=20),
+    seed=st.integers(min_value=0, max_value=2**32 - 1),
 )
-def test_is_ready_threshold_contract(
+def test_is_ready_threshold_contract(  # noqa: PLR0913
     input_dim: int,
     shingle_size: int,
     capacity: int,
     internal_shingling: bool,
     output_after: int,
+    seed: int,
 ) -> None:
     forest = make_forest(
         input_dim=input_dim,
-        seed=19,
+        seed=seed,
         shingle_size=shingle_size,
         num_trees=30,
         capacity=capacity,
@@ -266,15 +268,17 @@ class TestRoundTrip:
     input_dim=st.integers(min_value=2, max_value=6),
     top_k=st.integers(min_value=1, max_value=12),
     percentile=st.integers(min_value=0, max_value=100),
+    seed=st.integers(min_value=0, max_value=2**32 - 1),
     data=st.data(),
 )
 def test_near_neighbors_are_bounded_and_sorted(
     input_dim: int,
     top_k: int,
     percentile: int,
+    seed: int,
     data: st.DataObject,
 ) -> None:
-    forest = make_forest(input_dim=input_dim, seed=23, num_trees=50)
+    forest = make_forest(input_dim=input_dim, seed=seed, num_trees=50)
     updates = [data.draw(vector_strategy(input_dim), label=f"u{i}") for i in range(56)]
     query = data.draw(vector_strategy(input_dim), label="query")
 
@@ -292,13 +296,15 @@ def test_near_neighbors_are_bounded_and_sorted(
 @settings(max_examples=25, deadline=None)
 @given(
     input_dim=st.integers(min_value=2, max_value=8),
+    seed=st.integers(min_value=0, max_value=2**32 - 1),
     data=st.data(),
 )
 def test_impute_deterministic_with_centrality_one_and_preserves_observed(
     input_dim: int,
+    seed: int,
     data: st.DataObject,
 ) -> None:
-    forest = warm_forest(input_dim=input_dim, seed=29)
+    forest = warm_forest(input_dim=input_dim, seed=seed)
     query = data.draw(vector_strategy(input_dim), label="query")
     missing = sorted(
         data.draw(
@@ -330,11 +336,13 @@ def test_impute_deterministic_with_centrality_one_and_preserves_observed(
 @given(
     input_dim=st.integers(min_value=1, max_value=4),
     shingle_size=st.integers(min_value=2, max_value=4),
+    seed=st.integers(min_value=0, max_value=2**32 - 1),
     data=st.data(),
 )
 def test_extrapolate_shape_and_finite_values(
     input_dim: int,
     shingle_size: int,
+    seed: int,
     data: st.DataObject,
 ) -> None:
     look_ahead = data.draw(
@@ -344,7 +352,7 @@ def test_extrapolate_shape_and_finite_values(
         input_dim=input_dim,
         shingle_size=shingle_size,
         internal_shingling=True,
-        seed=31,
+        seed=seed,
         updates=96,
     )
     out = forest.extrapolate(look_ahead)
@@ -357,15 +365,16 @@ def test_extrapolate_shape_and_finite_values(
 @given(
     input_dim=st.integers(min_value=1, max_value=5),
     look_ahead=st.integers(min_value=1, max_value=5),
+    seed=st.integers(min_value=0, max_value=2**32 - 1),
 )
 def test_extrapolate_requires_internal_shingling(
-    input_dim: int, look_ahead: int
+    input_dim: int, look_ahead: int, seed: int
 ) -> None:
     forest = warm_forest(
         input_dim=input_dim,
         shingle_size=2,
         internal_shingling=False,
-        seed=37,
+        seed=seed,
         updates=96,
     )
     with pytest.raises(ValueError, match="internal_shingling"):
@@ -376,15 +385,16 @@ def test_extrapolate_requires_internal_shingling(
 @given(
     input_dim=st.integers(min_value=1, max_value=5),
     look_ahead=st.integers(min_value=1, max_value=5),
+    seed=st.integers(min_value=0, max_value=2**32 - 1),
 )
 def test_extrapolate_requires_shingle_size_gt_one(
-    input_dim: int, look_ahead: int
+    input_dim: int, look_ahead: int, seed: int
 ) -> None:
     forest = warm_forest(
         input_dim=input_dim,
         shingle_size=1,
         internal_shingling=True,
-        seed=41,
+        seed=seed,
         updates=96,
     )
     with pytest.raises(ValueError, match="shingle_size"):
@@ -396,17 +406,19 @@ def test_extrapolate_requires_shingle_size_gt_one(
     input_dim=st.integers(min_value=1, max_value=5),
     shingle_size=st.integers(min_value=2, max_value=5),
     extra=st.integers(min_value=1, max_value=5),
+    seed=st.integers(min_value=0, max_value=2**32 - 1),
 )
 def test_extrapolate_rejects_look_ahead_beyond_shingle_window(
     input_dim: int,
     shingle_size: int,
     extra: int,
+    seed: int,
 ) -> None:
     forest = warm_forest(
         input_dim=input_dim,
         shingle_size=shingle_size,
         internal_shingling=True,
-        seed=43,
+        seed=seed,
         updates=96,
     )
     with pytest.raises(ValueError, match="look_ahead"):
@@ -414,19 +426,25 @@ def test_extrapolate_rejects_look_ahead_beyond_shingle_window(
 
 
 @settings(max_examples=15, deadline=None)
-@given(input_dim=st.integers(min_value=2, max_value=8), data=st.data())
+@given(
+    input_dim=st.integers(min_value=2, max_value=8),
+    seed=st.integers(min_value=0, max_value=2**32 - 1),
+    data=st.data(),
+)
 def test_dimension_mismatch_raises_value_error(
-    input_dim: int, data: st.DataObject
+    input_dim: int, seed: int, data: st.DataObject
 ) -> None:
-    forest = make_forest(input_dim=input_dim, seed=11)
+    forest = make_forest(input_dim=input_dim, seed=seed)
     bad_point = data.draw(vector_strategy(input_dim + 1), label="bad")
 
     with pytest.raises(ValueError, match="dimension mismatch"):
         forest.update(bad_point)
 
 
-def test_initial_accept_fraction_constructor_argument_is_accepted() -> None:
-    forest = make_forest(input_dim=2, seed=17, initial_accept_fraction=1.0)
+@settings(max_examples=15, deadline=None)
+@given(seed=st.integers(min_value=0, max_value=2**32 - 1))
+def test_initial_accept_fraction_constructor_argument_is_accepted(seed: int) -> None:
+    forest = make_forest(input_dim=2, seed=seed, initial_accept_fraction=1.0)
 
     forest.update([0.1, 0.2])
 
@@ -439,11 +457,11 @@ def test_initial_accept_fraction_constructor_argument_is_accepted() -> None:
 )
 def test_invalid_initial_accept_fraction_raises_value_error(value: float) -> None:
     with pytest.raises(ValueError, match="initial_accept_fraction"):
-        make_forest(input_dim=2, seed=17, initial_accept_fraction=value)
+        make_forest(input_dim=2, initial_accept_fraction=value)
 
 
 def test_impute_not_ready_raises_runtime_error() -> None:
-    forest = make_forest(input_dim=4, seed=3)
+    forest = make_forest(input_dim=4)
 
     assert not forest.is_ready()
     with pytest.raises(RuntimeError):
