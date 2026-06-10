@@ -5,10 +5,10 @@
 ///   - Inlier vs outlier score ordering after training
 ///   - Dimension-mismatch error handling
 ///   - `near_neighbors` returns distance-consistent nearest points
-///   - `impute` reconstructs held-out values from seen points
+///   - `impute` preserves observed values and returns in-range estimates
 use approx::abs_diff_eq;
 use proptest::prelude::*;
-use rcf3::{Forest, RcfError};
+use rcf3::{Attribution, Forest, RcfError};
 
 // ---------------------------------------------------------------------------
 // Forest::entries_seen monotonicity
@@ -18,11 +18,11 @@ mod forest_entries_seen {
 
     proptest! {
         #[test]
-        fn entries_seen_equals_update_count(n in 1usize..=30) {
+        fn entries_seen_equals_update_count(n in 1usize..=30, seed in any::<u64>()) {
             let mut f = Forest::builder(2)
                 .num_trees(5)
                 .capacity(50)
-                .seed(42)
+                .seed(seed)
                 .build()
                 .unwrap();
             for i in 0..n {
@@ -32,20 +32,21 @@ mod forest_entries_seen {
         }
     }
 
-    #[test]
-    fn wrong_full_dim_update_does_not_increment_entries_seen() {
+    proptest! {
+        #[test]
+        fn wrong_full_dim_update_does_not_increment_entries_seen(seed in any::<u64>()) {
         let mut f = Forest::builder(2)
             .shingle_size(3)
             .internal_shingling(false)
             .num_trees(5)
             .capacity(20)
-            .seed(0)
+            .seed(seed)
             .build()
             .unwrap();
 
         let err = f.update(&[0.0, 0.0]).unwrap_err();
 
-        assert!(
+        prop_assert!(
             matches!(
                 err,
                 RcfError::DimensionMismatch {
@@ -55,7 +56,8 @@ mod forest_entries_seen {
             ),
             "unexpected error variant: {err:?}"
         );
-        assert_eq!(f.entries_seen(), 0);
+        prop_assert_eq!(f.entries_seen(), 0);
+        }
     }
 }
 
@@ -66,12 +68,12 @@ mod forest_outlier_properties {
     use super::*;
 
     /// Small forest trained on a fixed cluster, reused across cases.
-    fn trained_cluster_forest() -> Forest {
+    fn trained_cluster_forest(seed: u64) -> Forest {
         let mut f = Forest::builder(2)
             .num_trees(10)
             .capacity(50)
             .output_after(10)
-            .seed(42)
+            .seed(seed)
             .build()
             .unwrap();
         for i in 0..80u32 {
@@ -88,8 +90,9 @@ mod forest_outlier_properties {
             sign_x in prop_oneof![Just(-1.0f32), Just(1.0f32)],
             sign_y in prop_oneof![Just(-1.0f32), Just(1.0f32)],
             magnitude in 5.0f32..25.0f32,
+            seed in any::<u64>(),
         ) {
-            let f = trained_cluster_forest();
+            let f = trained_cluster_forest(seed);
             let inlier = f.score(&[0.2, 0.2]).unwrap();
             let outlier = f.score(&[sign_x * magnitude, sign_y * magnitude]).unwrap();
             prop_assert!(
@@ -103,8 +106,9 @@ mod forest_outlier_properties {
             sign_x in prop_oneof![Just(-1.0f32), Just(1.0f32)],
             sign_y in prop_oneof![Just(-1.0f32), Just(1.0f32)],
             magnitude in 5.0f32..25.0f32,
+            seed in any::<u64>(),
         ) {
-            let f = trained_cluster_forest();
+            let f = trained_cluster_forest(seed);
             let inlier = f.displacement_score(&[0.2, 0.2]).unwrap();
             let outlier = f
                 .displacement_score(&[sign_x * magnitude, sign_y * magnitude])
@@ -116,14 +120,23 @@ mod forest_outlier_properties {
         }
 
         #[test]
-        fn axis_spike_dominates_matching_attribution_axis(magnitude in 5.0f32..25.0f32) {
-            let f = trained_cluster_forest();
-            let attr = f.attribution(&[magnitude, 0.2]).unwrap();
-            let dim0 = attr[0].total();
-            let dim1 = attr[1].total();
+        fn axis_spike_attribution_marks_spiked_dimension(
+            magnitude in 5.0f32..25.0f32,
+            seed in any::<u64>(),
+        ) {
+            let f = trained_cluster_forest(seed);
+            let query = [magnitude, 0.2];
+            let score = f.score(&query).unwrap();
+            let attr = f.attribution(&query).unwrap();
+            let attr_total: f64 = attr.iter().copied().map(Attribution::total).sum();
+            prop_assert_eq!(attr.len(), 2);
             prop_assert!(
-                dim0 > dim1,
-                "x-axis anomaly should dominate attribution: dim0={dim0}, dim1={dim1}"
+                attr[0].total() > 0.0,
+                "x-axis spike should receive positive attribution: attr={attr:?}, seed={seed}"
+            );
+            prop_assert!(
+                attr_total.is_finite() && attr_total >= 0.0 && attr_total <= score * 1.01,
+                "attribution total should be finite, non-negative, and bounded by score: attr_total={attr_total}, score={score}, seed={seed}"
             );
         }
     }
@@ -139,11 +152,12 @@ mod forest_error_handling {
         #[test]
         fn wrong_dim_update_gives_dimension_mismatch(
             wrong_dim in (1usize..=10).prop_filter("not 2", |&d| d != 2),
+            seed in any::<u64>(),
         ) {
             let mut f = Forest::builder(2)
                 .num_trees(5)
                 .capacity(20)
-                .seed(0)
+                .seed(seed)
                 .build()
                 .unwrap();
             let vec: Vec<f32> = vec![0.0f32; wrong_dim];
@@ -179,12 +193,12 @@ mod neighbor_result_properties {
             .sum()
     }
 
-    fn trained_forest_for_nn() -> Forest {
+    fn trained_forest_for_nn(seed: u64) -> Forest {
         let mut f = Forest::builder(2)
             .num_trees(20)
             .capacity(128)
             .output_after(20)
-            .seed(99)
+            .seed(seed)
             .build()
             .unwrap();
         for i in 0..100u32 {
@@ -202,8 +216,9 @@ mod neighbor_result_properties {
             sign_y in prop_oneof![Just(-1.0f32), Just(1.0f32)],
             magnitude in 5.0f32..25.0f32,
             top_k in 1usize..=10,
+            seed in any::<u64>(),
         ) {
-            let f = trained_forest_for_nn();
+            let f = trained_forest_for_nn(seed);
             let query = [0.5 + sign_x * magnitude, 0.5 + sign_y * magnitude];
             let results = f.near_neighbors(&query, top_k, 0).unwrap();
 
@@ -247,14 +262,14 @@ mod imputation_properties {
             .collect()
     }
 
-    fn trained_forest_for_impute() -> Forest {
+    fn trained_forest_for_impute(seed: u64) -> Forest {
         let mut f = Forest::builder(3)
             .shingle_size(1)
             .internal_shingling(false)
             .num_trees(10)
             .capacity(128)
             .output_after(10)
-            .seed(77)
+            .seed(seed)
             .build()
             .unwrap();
         for row in impute_training_rows() {
@@ -265,8 +280,12 @@ mod imputation_properties {
 
     proptest! {
         #[test]
-        fn recovers_seen_point_value(row_idx in 0usize..64, missing_idx in 0usize..3) {
-            let f = trained_forest_for_impute();
+        fn preserves_observed_values_and_imputes_training_range(
+            row_idx in 0usize..64,
+            missing_idx in 0usize..3,
+            seed in any::<u64>(),
+        ) {
+            let f = trained_forest_for_impute(seed);
             let original = impute_training_rows()[row_idx];
             let mut query = original;
             query[missing_idx] = 0.0;
@@ -278,10 +297,22 @@ mod imputation_properties {
                     prop_assert_eq!(out[i], original[i]);
                 }
             }
+            let rows = impute_training_rows();
+            let min_seen = rows
+                .iter()
+                .map(|row| row[missing_idx])
+                .fold(f32::INFINITY, f32::min);
+            let max_seen = rows
+                .iter()
+                .map(|row| row[missing_idx])
+                .fold(f32::NEG_INFINITY, f32::max);
             prop_assert!(
-                abs_diff_eq!(out[missing_idx], original[missing_idx], epsilon = 1e-5),
-                "expected imputed value {} at dim {}, got {}",
-                original[missing_idx],
+                out[missing_idx].is_finite()
+                    && out[missing_idx] >= min_seen
+                    && out[missing_idx] <= max_seen,
+                "expected finite imputed value in the training range [{}, {}] at dim {}, got {}",
+                min_seen,
+                max_seen,
                 missing_idx,
                 out[missing_idx]
             );

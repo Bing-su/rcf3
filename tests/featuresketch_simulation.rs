@@ -2,6 +2,7 @@
 
 use fake::rand::prelude::*;
 use fake::{Dummy, Fake, Faker};
+use proptest::prelude::*;
 use rcf3::FeatureSketch;
 
 mod fixtures {
@@ -147,7 +148,7 @@ mod fixtures {
 
 use fixtures::{ApiEvent, ApiEventFactory};
 
-fn detector() -> FeatureSketch {
+fn detector(seed: u64) -> FeatureSketch {
     FeatureSketch::builder()
         .value_projection_dims(16)
         .presence_projection_dims(16)
@@ -156,7 +157,7 @@ fn detector() -> FeatureSketch {
         .sketch_rows(2)
         .sketch_buckets(512)
         .decay_half_life(512)
-        .seed(2026)
+        .seed(seed)
         .build()
         .unwrap()
 }
@@ -192,10 +193,12 @@ fn peak(scores: impl IntoIterator<Item = f64>) -> f64 {
     scores.into_iter().fold(0.0_f64, f64::max)
 }
 
-#[test]
-fn admin_probe_scores_above_normal_api_traffic() {
-    let mut factory = ApiEventFactory::seeded(2026);
-    let mut detector = detector();
+fn assert_admin_probe_scores_above_normal_api_traffic(
+    traffic_seed: u64,
+    detector_seed: u64,
+) -> Result<(), TestCaseError> {
+    let mut factory = ApiEventFactory::seeded(traffic_seed);
+    let mut detector = detector(detector_seed);
 
     train_on_normal_traffic(&mut detector, &mut factory);
     let normal_scores: Vec<_> = (0..64)
@@ -204,16 +207,20 @@ fn admin_probe_scores_above_normal_api_traffic() {
     let normal_p95 = p95(normal_scores);
     let probe_score = detector.score(factory.admin_probe().features()).unwrap();
 
-    assert!(
+    prop_assert!(
         probe_score > normal_p95,
-        "admin probe should exceed normal p95: probe={probe_score}, normal_p95={normal_p95}"
+        "admin probe should exceed normal p95: traffic_seed={traffic_seed}, detector_seed={detector_seed}, probe={probe_score}, normal_p95={normal_p95}"
     );
+
+    Ok(())
 }
 
-#[test]
-fn missing_security_context_scores_above_familiar_request() {
-    let mut factory = ApiEventFactory::seeded(2027);
-    let mut detector = detector();
+fn assert_missing_security_context_scores_above_familiar_request(
+    traffic_seed: u64,
+    detector_seed: u64,
+) -> Result<(), TestCaseError> {
+    let mut factory = ApiEventFactory::seeded(traffic_seed);
+    let mut detector = detector(detector_seed);
     train_on_normal_traffic(&mut detector, &mut factory);
 
     let familiar = detector
@@ -223,16 +230,20 @@ fn missing_security_context_scores_above_familiar_request() {
         .score(factory.missing_security_context().features())
         .unwrap();
 
-    assert!(
+    prop_assert!(
         missing_context > familiar,
-        "missing security context should score above a familiar request: missing={missing_context}, familiar={familiar}"
+        "missing security context should score above a familiar request: traffic_seed={traffic_seed}, detector_seed={detector_seed}, missing={missing_context}, familiar={familiar}"
     );
+
+    Ok(())
 }
 
-#[test]
-fn repeated_admin_probe_adapts_after_training() {
-    let mut factory = ApiEventFactory::seeded(2028);
-    let mut detector = detector();
+fn assert_repeated_admin_probe_adapts_after_training(
+    traffic_seed: u64,
+    detector_seed: u64,
+) -> Result<(), TestCaseError> {
+    let mut factory = ApiEventFactory::seeded(traffic_seed);
+    let mut detector = detector(detector_seed);
     train_on_normal_traffic(&mut detector, &mut factory);
 
     let first_score = detector.score(factory.admin_probe().features()).unwrap();
@@ -241,16 +252,20 @@ fn repeated_admin_probe_adapts_after_training() {
     }
     let adapted_score = detector.score(factory.admin_probe().features()).unwrap();
 
-    assert!(
+    prop_assert!(
         adapted_score < first_score,
-        "repeated probe pattern should adapt downward: first={first_score}, adapted={adapted_score}"
+        "repeated probe pattern should adapt downward: traffic_seed={traffic_seed}, detector_seed={detector_seed}, first={first_score}, adapted={adapted_score}"
     );
+
+    Ok(())
 }
 
-#[test]
-fn admin_probe_burst_scores_above_familiar_burst() {
-    let mut factory = ApiEventFactory::seeded(2029);
-    let mut detector = detector();
+fn assert_admin_probe_burst_scores_above_familiar_burst(
+    traffic_seed: u64,
+    detector_seed: u64,
+) -> Result<(), TestCaseError> {
+    let mut factory = ApiEventFactory::seeded(traffic_seed);
+    let mut detector = detector(detector_seed);
     train_on_normal_traffic(&mut detector, &mut factory);
 
     let mut familiar_detector = detector.clone();
@@ -260,8 +275,46 @@ fn admin_probe_burst_scores_above_familiar_burst() {
     let probe_peak =
         peak((0..8).map(|_| score_then_update(&mut probe_detector, factory.admin_probe())));
 
-    assert!(
+    prop_assert!(
         probe_peak > familiar_peak,
-        "probe burst should exceed familiar burst: probe={probe_peak}, familiar={familiar_peak}"
+        "probe burst should exceed familiar burst: traffic_seed={traffic_seed}, detector_seed={detector_seed}, probe={probe_peak}, familiar={familiar_peak}"
     );
+
+    Ok(())
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    #[test]
+    fn admin_probe_scores_above_normal_api_traffic(
+        traffic_seed in any::<u64>(),
+        detector_seed in any::<u64>(),
+    ) {
+        assert_admin_probe_scores_above_normal_api_traffic(traffic_seed, detector_seed)?;
+    }
+
+    #[test]
+    fn missing_security_context_scores_above_familiar_request(
+        traffic_seed in any::<u64>(),
+        detector_seed in any::<u64>(),
+    ) {
+        assert_missing_security_context_scores_above_familiar_request(traffic_seed, detector_seed)?;
+    }
+
+    #[test]
+    fn repeated_admin_probe_adapts_after_training(
+        traffic_seed in any::<u64>(),
+        detector_seed in any::<u64>(),
+    ) {
+        assert_repeated_admin_probe_adapts_after_training(traffic_seed, detector_seed)?;
+    }
+
+    #[test]
+    fn admin_probe_burst_scores_above_familiar_burst(
+        traffic_seed in any::<u64>(),
+        detector_seed in any::<u64>(),
+    ) {
+        assert_admin_probe_burst_scores_above_familiar_burst(traffic_seed, detector_seed)?;
+    }
 }

@@ -1,4 +1,5 @@
 import pickle
+import tempfile
 from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
@@ -25,7 +26,7 @@ def vector_strategy(dim: int) -> st.SearchStrategy[list[float]]:
 def make_detector(
     *,
     input_dim: int = 2,
-    seed: int = 7,
+    seed: int | None = None,
     num_trees: int = 8,
     window_size: int = 32,
     max_leaf_samples: int = 4,
@@ -181,8 +182,10 @@ class TestRoundTrip:
         )
 
 
-def test_status_accessors_repr_and_score_before_ready() -> None:
-    detector = make_detector(input_dim=2, seed=11)
+@settings(max_examples=20, deadline=None)
+@given(seed=st.integers(min_value=0, max_value=2**32 - 1))
+def test_status_accessors_repr_and_score_before_ready(seed: int) -> None:
+    detector = make_detector(input_dim=2, seed=seed)
 
     assert not detector.is_ready()
     assert detector.entries_seen() == 0
@@ -199,8 +202,10 @@ def test_status_accessors_repr_and_score_before_ready() -> None:
     )
 
 
-def test_score_preview_does_not_mutate_state() -> None:
-    detector = make_detector(input_dim=2, seed=7)
+@settings(max_examples=20, deadline=None)
+@given(seed=st.integers(min_value=0, max_value=2**32 - 1))
+def test_score_preview_does_not_mutate_state(seed: int) -> None:
+    detector = make_detector(input_dim=2, seed=seed)
     detector.update([0.0, 0.0])
 
     entries_before = detector.entries_seen()
@@ -211,14 +216,17 @@ def test_score_preview_does_not_mutate_state() -> None:
     assert first == pytest.approx(second, abs=1e-12)
 
 
-def test_save_load_json_preserves_state_and_scores(tmp_path: Path) -> None:
-    detector = make_detector(input_dim=2, seed=19)
+@settings(max_examples=15, deadline=None)
+@given(seed=st.integers(min_value=0, max_value=2**32 - 1))
+def test_save_load_json_preserves_state_and_scores(seed: int) -> None:
+    detector = make_detector(input_dim=2, seed=seed)
     for idx in range(12):
         detector.update([idx * 0.1, idx * 0.2])
 
-    path = tmp_path / "onlineiforest.json"
-    detector.save_json(path)
-    restored = OnlineIForest.load_json(path)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        path = Path(tmp_dir) / "onlineiforest.json"
+        detector.save_json(path)
+        restored = OnlineIForest.load_json(path)
 
     assert restored.entries_seen() == detector.entries_seen()
     assert restored.score([2.0, 4.0]) == pytest.approx(

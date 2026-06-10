@@ -1,4 +1,5 @@
 import pickle
+import tempfile
 from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
@@ -29,7 +30,7 @@ def feature_event_strategy() -> st.SearchStrategy[list[tuple[str, float]]]:
     )
 
 
-def make_detector(*, seed: int = 7) -> FeatureSketch:
+def make_detector(*, seed: int | None = None) -> FeatureSketch:
     return FeatureSketch(
         value_projection_dims=8,
         presence_projection_dims=8,
@@ -119,8 +120,10 @@ def test_update_and_score_matches_score_then_update(
     assert committed == pytest.approx(preview, abs=1e-12)
 
 
-def test_mapping_and_sequence_inputs_are_equivalent() -> None:
-    detector = make_detector(seed=11)
+@settings(max_examples=20, deadline=None)
+@given(seed=st.integers(min_value=0, max_value=2**32 - 1))
+def test_mapping_and_sequence_inputs_are_equivalent(seed: int) -> None:
+    detector = make_detector(seed=seed)
 
     sequence = [("device:web", 2.0), ("country:kr", 1.0), ("device:web", 2.0)]
     mapping = {"device:web": 4.0, "country:kr": 1.0}
@@ -128,8 +131,10 @@ def test_mapping_and_sequence_inputs_are_equivalent() -> None:
     assert detector.score(sequence) == pytest.approx(detector.score(mapping), abs=1e-12)
 
 
-def test_status_accessors_and_repr() -> None:
-    detector = make_detector(seed=11)
+@settings(max_examples=20, deadline=None)
+@given(seed=st.integers(min_value=0, max_value=2**32 - 1))
+def test_status_accessors_and_repr(seed: int) -> None:
+    detector = make_detector(seed=seed)
 
     assert not detector.is_ready()
     assert detector.entries_seen() == 0
@@ -213,14 +218,17 @@ class TestRoundTrip:
         self._inner(seed=seed, data=data, roundtrip=deepcopy)
 
 
-def test_save_load_json_preserves_state_and_scores(tmp_path: Path) -> None:
-    detector = make_detector(seed=19)
+@settings(max_examples=15, deadline=None)
+@given(seed=st.integers(min_value=0, max_value=2**32 - 1))
+def test_save_load_json_preserves_state_and_scores(seed: int) -> None:
+    detector = make_detector(seed=seed)
     for idx in range(12):
         detector.update({"event": float(idx), "device:web": 1.0})
 
-    path = tmp_path / "featuresketch.json"
-    detector.save_json(path)
-    restored = FeatureSketch.load_json(path)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        path = Path(tmp_dir) / "featuresketch.json"
+        detector.save_json(path)
+        restored = FeatureSketch.load_json(path)
 
     assert restored.entries_seen() == detector.entries_seen()
     assert restored.score({"event": 2.0}) == pytest.approx(
