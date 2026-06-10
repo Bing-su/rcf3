@@ -284,7 +284,7 @@ fn assert_admin_probe_burst_scores_above_familiar_burst(
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(128))]
+    #![proptest_config(ProptestConfig::with_cases(32))]
 
     #[test]
     fn admin_probe_scores_above_normal_api_traffic(

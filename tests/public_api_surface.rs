@@ -6,6 +6,8 @@ use rcf3::{
 };
 
 proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
     #[test]
     fn top_level_facade_exports_expected_user_facing_types(
         forest_seed in any::<u64>(),

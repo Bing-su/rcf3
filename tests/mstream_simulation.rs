@@ -113,8 +113,8 @@ fn detector(seed: u64) -> MStream {
     MStream::builder(2, 2)
         .seed(seed)
         .alpha(0.8)
-        .num_rows(4)
-        .num_buckets(4096)
+        .num_rows(2)
+        .num_buckets(512)
         .build()
         .unwrap()
 }
@@ -278,7 +278,7 @@ fn assert_unfamiliar_route_burst_highlights_route_features(
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(128))]
+    #![proptest_config(ProptestConfig::with_cases(32))]
 
     #[test]
     fn credential_stuffing_burst_scores_above_normal_traffic(

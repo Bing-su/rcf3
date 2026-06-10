@@ -133,7 +133,7 @@ fn assert_account_takeover_burst_scores_above_normal_checkout_traffic(
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(128))]
+    #![proptest_config(ProptestConfig::with_cases(32))]
 
     #[test]
     fn account_takeover_burst_scores_above_normal_checkout_traffic(

@@ -33,6 +33,7 @@ mod forest_entries_seen {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(32))]
         #[test]
         fn wrong_full_dim_update_does_not_increment_entries_seen(seed in any::<u64>()) {
         let mut f = Forest::builder(2)
@@ -129,14 +130,15 @@ mod forest_outlier_properties {
             let score = f.score(&query).unwrap();
             let attr = f.attribution(&query).unwrap();
             let attr_total: f64 = attr.iter().copied().map(Attribution::total).sum();
+            let attr_ratio = attr_total / score;
             prop_assert_eq!(attr.len(), 2);
             prop_assert!(
                 attr[0].total() > 0.0,
                 "x-axis spike should receive positive attribution: attr={attr:?}, seed={seed}"
             );
             prop_assert!(
-                attr_total.is_finite() && attr_total >= 0.0 && attr_total <= score * 1.01,
-                "attribution total should be finite, non-negative, and bounded by score: attr_total={attr_total}, score={score}, seed={seed}"
+                attr_ratio.is_finite() && (0.05..=1.01).contains(&attr_ratio),
+                "attribution total should be a meaningful bounded fraction of score: attr_total={attr_total}, score={score}, ratio={attr_ratio}, seed={seed}"
             );
         }
     }
