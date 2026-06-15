@@ -34,6 +34,11 @@ jobs:
   wheel:
     name: Build wheel (${{ matrix.os }}, ${{ matrix.target }})
     runs-on: ${{ matrix.os }}
+    env:
+      # https://pyodide.org/en/stable/development/abi.html
+      EMSCRIPTEN_VERSION: "5.0.3"
+      PYODIDE_PYTHON_VERSION: "3.14"
+      PYODIDE_ABI_VERSION: "2026_0"
     strategy:
       fail-fast: false
       matrix:
@@ -74,6 +79,10 @@ jobs:
             target: aarch64-pc-windows-msvc
             args: --out dist --interpreter 3.11 3.14t
             manylinux: auto
+          - os: ubuntu-latest
+            target: wasm32-unknown-emscripten
+            args: --out dist --interpreter 3.14
+            manylinux: ""
 
     defaults:
       run:
@@ -86,6 +95,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - uses: astral-sh/setup-uv@v8.2.0
+
+      - uses: emscripten-core/setup-emsdk@v16
+        if: ${{ startsWith(matrix.target, 'wasm') }}
+        with:
+          version: ${{ env.EMSCRIPTEN_VERSION }}
 
       - name: Build wheel
         uses: PyO3/maturin-action@v1
