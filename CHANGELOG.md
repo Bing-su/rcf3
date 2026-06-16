@@ -1,3 +1,20 @@
+## [0.5.1] - 2026-06-16
+
+### 💼 Other
+
+- _(deps)_ Bump astral-sh/setup-uv from 8.1.0 to 8.2.0 in the default group (#24)
+- _(deps)_ Bump the default group with 3 updates (#25)
+- _(deps)_ Bump the default group with 3 updates (#26)
+
+### 🧪 Testing
+
+- Randomize seeded detector coverage (#27)
+
+### ⚙️ Miscellaneous Tasks
+
+- Update rust-lang/crates-io-auth-action to v1.0.4
+- Add support for wasm32-unknown-emscripten builds
+
 ## [0.5.0] - 2026-06-02
 
 ### 🚀 Features
@@ -37,6 +54,7 @@
 - Remove some keywords
 - Remove unnecessary dependency features
 - Add oxfmtrc.json
+- Release version 0.5.0
 
 ## [0.4.0] - 2026-05-24
 

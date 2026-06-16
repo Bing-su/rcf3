@@ -1,8 +1,8 @@
 [package]
 name = "rcf3"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
-description = "A Rust implementation of the Random Cut Forest algorithm for anomaly detection."
+description = "Streaming anomaly detection algorithms in Rust with Python bindings."
 readme = "README.md"
 repository = "https://github.com/Bing-su/rcf3"
 license = "MIT OR Apache-2.0"
