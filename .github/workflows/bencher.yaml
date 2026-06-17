@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - uses: bencherdev/bencher@v0.6.6
+      - uses: bencherdev/bencher@v0.6.7
       - name: Track base branch benchmarks with Bencher
         run: |
           bencher run \
