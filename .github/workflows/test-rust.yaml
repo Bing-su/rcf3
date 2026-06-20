@@ -32,14 +32,10 @@ jobs:
           - windows-latest
           - windows-11-arm
 
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - uses: mozilla-actions/sccache-action@v0.0.10
+      - uses: kunobi-ninja/kache-action@main
       - name: Run tests
         run: cargo test --verbose
       - name: Run tests (no-default-features)
