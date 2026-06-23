@@ -1,10 +1,21 @@
 from collections.abc import Mapping, Sequence
 from os import PathLike
-from typing import Any, Final, Self, SupportsFloat, SupportsInt, TypedDict, final
+from typing import (
+    Any,
+    Final,
+    Self,
+    SupportsFloat,
+    SupportsInt,
+    TypeAlias,
+    TypedDict,
+    final,
+)
 
 __version__: Final[str]
 
-_KeyValueLike = Mapping[str, SupportsFloat] | Sequence[tuple[str, SupportsFloat]]
+_KeyValueLike: TypeAlias = (
+    Mapping[str, SupportsFloat] | Sequence[tuple[str, SupportsFloat]]
+)
 
 @final
 class _NeighborResult(TypedDict):
