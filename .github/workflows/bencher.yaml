@@ -14,9 +14,9 @@ jobs:
     permissions:
       checks: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: bencherdev/bencher@v0.6.7
+      - uses: bencherdev/bencher@v0.6.8
       - name: Track base branch benchmarks with Bencher
         run: |
           bencher run \
