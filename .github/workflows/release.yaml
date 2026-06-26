@@ -83,6 +83,14 @@ jobs:
             target: wasm32-unknown-emscripten
             args: --out dist --interpreter 3.14
             manylinux: ""
+          - os: ubuntu-latest
+            target: x86_64-linux-android
+            args: --out dist
+            manylinux: ""
+          - os: ubuntu-latest
+            target: aarch64-linux-android
+            args: --out dist
+            manylinux: ""
 
     defaults:
       run:
