@@ -144,7 +144,7 @@ def test_update_and_score_matches_score_then_update(
     output_after=st.integers(min_value=0, max_value=20),
     seed=st.integers(min_value=0, max_value=2**32 - 1),
 )
-def test_is_ready_threshold_contract(  # noqa: PLR0913
+def test_is_ready_threshold_contract(  # noqa: PLR0913, PLR0917
     input_dim: int,
     shingle_size: int,
     capacity: int,

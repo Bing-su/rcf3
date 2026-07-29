@@ -10,7 +10,7 @@ updates:
     schedule:
       interval: "weekly"
     groups:
-      default:
+      actions:
         patterns:
           - "*"
 
@@ -19,6 +19,6 @@ updates:
     schedule:
       interval: "weekly"
     groups:
-      default:
+      pre-commit:
         patterns:
           - "*"
