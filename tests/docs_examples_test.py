@@ -506,6 +506,6 @@ if __name__ == "__main__":
     except AssertionError as e:
         print(f"\n❌ Test failed: {e}")
         sys.exit(1)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"\n❌ Error: {e}")
         sys.exit(1)

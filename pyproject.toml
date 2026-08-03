@@ -36,8 +36,11 @@ profile = "release"
 python-source = "python"
 strip = true
 
+[tool.ruff.format]
+docstring-code-format = true
+
 [tool.ruff.lint]
-select = [
+extend-select = [
   "A",
   "B",
   "C4",

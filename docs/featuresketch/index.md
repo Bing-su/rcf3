@@ -203,11 +203,13 @@ detector = FeatureSketch(
 Python accepts either a mapping or a sequence of `(name, value)` pairs:
 
 ```python
-score = detector.update_and_score({
-    "endpoint:/login": 1.0,
-    "status:200": 1.0,
-    "bytes": 812.0,
-})
+score = detector.update_and_score(
+    {
+        "endpoint:/login": 1.0,
+        "status:200": 1.0,
+        "bytes": 812.0,
+    }
+)
 assert score >= 0.0
 
 event = {
@@ -250,22 +252,28 @@ from rcf3 import FeatureSketch
 detector = FeatureSketch(seed=2026, sketch_buckets=512)
 
 for _ in range(64):
-    detector.update({
+    detector.update(
+        {
+            "endpoint:/login": 1.0,
+            "status:200": 1.0,
+            "bytes": 750.0,
+        }
+    )
+
+normal = detector.score(
+    {
         "endpoint:/login": 1.0,
         "status:200": 1.0,
-        "bytes": 750.0,
-    })
-
-normal = detector.score({
-    "endpoint:/login": 1.0,
-    "status:200": 1.0,
-    "bytes": 790.0,
-})
-suspicious = detector.score({
-    "endpoint:/admin": 1.0,
-    "status:401": 1.0,
-    "bytes": 12000.0,
-})
+        "bytes": 790.0,
+    }
+)
+suspicious = detector.score(
+    {
+        "endpoint:/admin": 1.0,
+        "status:401": 1.0,
+        "bytes": 12000.0,
+    }
+)
 
 print(f"normal={normal}, suspicious={suspicious}")
 ```
