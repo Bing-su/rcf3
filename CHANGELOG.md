@@ -1,3 +1,31 @@
+## [0.5.2] - 2026-08-03
+
+### 🐛 Bug Fixes
+
+- _(python)_ Explicitly use TypeAlias
+
+### 💼 Other
+
+- _(deps)_ Bump the default group with 2 updates (#28)
+- _(deps)_ Bump the default group across 1 directory with 3 updates (#30)
+- _(deps)_ Bump the default group with 2 updates (#31)
+- _(deps)_ Bump the default group with 3 updates (#32)
+- _(deps)_ Bump the default group with 2 updates (#33)
+- _(deps)_ Bump astral-sh/setup-uv from 8.2.0 to 8.3.1 in the default group (#34)
+- _(deps)_ Bump the default group across 1 directory with 2 updates (#38)
+
+### 🎨 Styling
+
+- Update ruff config, fixes
+
+### ⚙️ Miscellaneous Tasks
+
+- Replace sccache with kache
+- Add support for android targets
+- Update ci deps versions, fix
+- _(deps)_ Update pre-commit, actions
+- Release version 0.5.2
+
 ## [0.5.1] - 2026-06-16
 
 ### 💼 Other
@@ -14,6 +42,7 @@
 
 - Update rust-lang/crates-io-auth-action to v1.0.4
 - Add support for wasm32-unknown-emscripten builds
+- Release version 0.5.1
 
 ## [0.5.0] - 2026-06-02
 
