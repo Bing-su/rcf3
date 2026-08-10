@@ -34,55 +34,61 @@ jobs:
   wheel:
     name: Build wheel (${{ matrix.os }}, ${{ matrix.target }})
     runs-on: ${{ matrix.os }}
-    env:
-      # https://pyodide.org/en/stable/development/abi.html
-      EMSCRIPTEN_VERSION: "5.0.3"
-      PYODIDE_PYTHON_VERSION: "3.14"
-      PYODIDE_ABI_VERSION: "2026_0"
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            args: --out dist --interpreter 3.11 3.14t pypy3.11
+            args: --out dist --interpreter 3.11 3.14t 3.15t pypy3.11
             manylinux: manylinux_2_28
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            args: --out dist --interpreter 3.11 3.14t pypy3.11
+            args: --out dist --interpreter 3.11 3.14t 3.15t pypy3.11
             manylinux: manylinux_2_28
           - os: ubuntu-24.04-riscv
             target: riscv64gc-unknown-linux-gnu
-            args: --out dist --interpreter 3.11 3.14t
+            args: --out dist --interpreter 3.11 3.14t 3.15t
             manylinux: auto
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            args: --out dist --interpreter 3.11 3.14t
+            args: --out dist --interpreter 3.11 3.14t 3.15t
             manylinux: musllinux_1_2
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
-            args: --out dist --interpreter 3.11 3.14t
+            args: --out dist --interpreter 3.11 3.14t 3.15t
             manylinux: musllinux_1_2
           - os: ubuntu-24.04-riscv
             target: riscv64gc-unknown-linux-musl
-            args: --out dist --interpreter 3.11 3.14t
+            args: --out dist --interpreter 3.11 3.14t 3.15t
             manylinux: auto
           - os: macos-latest
             target: aarch64-apple-darwin
-            args: --out dist --interpreter 3.11 3.14t pypy3.11
+            args: --out dist --interpreter 3.11 3.14t 3.15t pypy3.11
             manylinux: auto
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            args: --out dist --interpreter 3.11 3.14t pypy3.11
+            args: --out dist --interpreter 3.11 3.14t 3.15t pypy3.11
             manylinux: auto
           - os: windows-11-arm
             target: aarch64-pc-windows-msvc
-            args: --out dist --interpreter 3.11 3.14t
+            args: --out dist --interpreter 3.11 3.14t 3.15t
             manylinux: auto
           - os: ubuntu-latest
             target: wasm32-unknown-emscripten
             args: --out dist --interpreter 3.14
             manylinux: ""
+            envs:
+              # https://pyodide.org/en/stable/development/abi.html
+              EMSCRIPTEN_VERSION: "5.0.3"
+              PYODIDE_ABI_VERSION: "2026_0"
+          - os: ubuntu-latest
+            target: wasm32-unknown-emscripten
+            args: --out dist --interpreter 3.15
+            manylinux: ""
+            envs:
+              EMSCRIPTEN_VERSION: "6.0.5"
+              PYODIDE_ABI_VERSION: "2026_5"
           - os: ubuntu-latest
             target: x86_64-linux-android
             args: --out dist
@@ -103,6 +109,13 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - uses: astral-sh/setup-uv@v9.0.0
+
+      - name: Set env
+        if: ${{ matrix.envs }}
+        run: |
+          $env.VARS | from json | items { |key, value| echo $"($key)=($value)\n" | save -a $env.GITHUB_ENV }
+        env:
+          VARS: ${{ toJson(matrix.envs) }}
 
       - uses: emscripten-core/setup-emsdk@v16
         if: ${{ startsWith(matrix.target, 'wasm') }}
