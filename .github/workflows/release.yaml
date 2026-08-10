@@ -129,7 +129,19 @@ jobs:
           manylinux: ${{ matrix.manylinux }}
           args: ${{ matrix.args }}
 
-      - run: ls dist
+      - name: List dist
+        run: |
+          "## ${{ matrix.target }}: Built wheels\n" | save -a $env.GITHUB_STEP_SUMMARY
+          "| Filename | Size |\n| --- | --- |\n" | save -a $env.GITHUB_STEP_SUMMARY
+          ls dist | each { |row|
+            let filename = $row.name | path basename
+            let filesize = $row.size
+            echo $"| ($filename) | ($filesize) |\n" | save -a $env.GITHUB_STEP_SUMMARY
+          }
+          ls dist
+
+      - name: Abi3audit
+        run: uvx abi3audit --report dist/*.whl | jq
 
       - uses: actions/upload-artifact@v7
         with:
