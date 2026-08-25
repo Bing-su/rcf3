@@ -18,7 +18,7 @@ jobs:
       - uses: hustcer/setup-nu@v3
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: astral-sh/setup-uv@v9.0.0
+      - uses: astral-sh/setup-uv@v10.0.1
 
       - name: Build sdist
         run: uv build --sdist
@@ -108,7 +108,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - uses: astral-sh/setup-uv@v9.0.0
+      - uses: astral-sh/setup-uv@v10.0.1
 
       - name: Set env
         if: ${{ matrix.envs }}
@@ -166,7 +166,7 @@ jobs:
     steps:
       - uses: hustcer/setup-nu@v3
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v9.0.0
+      - uses: astral-sh/setup-uv@v10.0.1
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/download-artifact@v8
         with:
