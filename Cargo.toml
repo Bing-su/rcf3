@@ -81,7 +81,7 @@ approx = "0.5"
 criterion = { version = "0.8", features = ["html_reports"] }
 fake = { version = "5.1", features = ["derive"] }
 proptest = "1.11"
-rstest = "0.26"
+rstest = "0.27"
 tempfile = "3"
 
 [features]
