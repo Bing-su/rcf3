@@ -18,68 +18,6 @@ use super::sketch::EnsembleSketch;
 
 const FORMAT_VERSION: u32 = 1;
 
-/// Builder for [`FeatureSketch`].
-#[derive(Clone, Debug)]
-pub struct FeatureSketchBuilder {
-    config: FeatureSketchConfig,
-    seed: Option<u64>,
-}
-
-impl FeatureSketchBuilder {
-    pub(crate) fn new(config: FeatureSketchConfig) -> Self {
-        Self { config, seed: None }
-    }
-
-    /// Set a random seed for deterministic projection, chain, and sketch layout.
-    pub fn seed(mut self, value: u64) -> Self {
-        self.seed = Some(value);
-        self
-    }
-
-    pub fn value_projection_dims(mut self, value: usize) -> Self {
-        self.config = self.config.with_value_projection_dims(value);
-        self
-    }
-
-    pub fn presence_projection_dims(mut self, value: usize) -> Self {
-        self.config = self.config.with_presence_projection_dims(value);
-        self
-    }
-
-    pub fn chains_per_ensemble(mut self, value: usize) -> Self {
-        self.config = self.config.with_chains_per_ensemble(value);
-        self
-    }
-
-    pub fn chain_depth(mut self, value: usize) -> Self {
-        self.config = self.config.with_chain_depth(value);
-        self
-    }
-
-    pub fn sketch_rows(mut self, value: usize) -> Self {
-        self.config = self.config.with_sketch_rows(value);
-        self
-    }
-
-    pub fn sketch_buckets(mut self, value: usize) -> Self {
-        self.config = self.config.with_sketch_buckets(value);
-        self
-    }
-
-    pub fn decay_half_life(mut self, value: u64) -> Self {
-        self.config = self.config.with_decay_half_life(value);
-        self
-    }
-
-    /// Build the detector.
-    pub fn build(self) -> Result<FeatureSketch> {
-        match self.seed {
-            Some(seed) => FeatureSketch::from_config_seeded(&self.config, seed),
-            None => FeatureSketch::from_config(&self.config),
-        }
-    }
-}
-
 /// Sparse feature-name sketch detector for schema-evolving streams.
 ///
 /// `score()` previews the current anomaly score without mutating detector
@@ -100,10 +38,48 @@ pub struct FeatureSketch {
     entries_seen: u64,
 }
 
+#[bon::bon]
 impl FeatureSketch {
     /// Create a builder with the documented default configuration.
-    pub fn builder() -> FeatureSketchBuilder {
-        FeatureSketchBuilder::new(FeatureSketchConfig::new())
+    #[builder(derive(Clone, Debug))]
+    pub fn builder(
+        /// Set the numerical value projection dimension.
+        #[builder(default = FeatureSketchConfig::default_value_projection_dims())]
+        value_projection_dims: usize,
+        /// Set the feature presence projection dimension.
+        #[builder(default = FeatureSketchConfig::default_presence_projection_dims())]
+        presence_projection_dims: usize,
+        /// Set the number of chains in each ensemble.
+        #[builder(default = FeatureSketchConfig::default_chains_per_ensemble())]
+        chains_per_ensemble: usize,
+        /// Set the number of levels in each chain.
+        #[builder(default = FeatureSketchConfig::default_chain_depth())]
+        chain_depth: usize,
+        /// Set the number of hash rows in each sketch.
+        #[builder(default = FeatureSketchConfig::default_sketch_rows())]
+        sketch_rows: usize,
+        /// Set the number of buckets in each sketch row.
+        #[builder(default = FeatureSketchConfig::default_sketch_buckets())]
+        sketch_buckets: usize,
+        /// Set the number of events per decay half-life.
+        #[builder(default = FeatureSketchConfig::default_decay_half_life())]
+        decay_half_life: u64,
+        /// Set a random seed for deterministic projection, chain, and sketch layout.
+        seed: Option<u64>,
+    ) -> Result<Self> {
+        let config = FeatureSketchConfig::builder()
+            .value_projection_dims(value_projection_dims)
+            .presence_projection_dims(presence_projection_dims)
+            .chains_per_ensemble(chains_per_ensemble)
+            .chain_depth(chain_depth)
+            .sketch_rows(sketch_rows)
+            .sketch_buckets(sketch_buckets)
+            .decay_half_life(decay_half_life)
+            .build();
+        match seed {
+            Some(seed) => Self::from_config_seeded(&config, seed),
+            None => Self::from_config(&config),
+        }
     }
 
     /// Build directly from config with a random seed.

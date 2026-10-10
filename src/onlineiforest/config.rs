@@ -6,41 +6,64 @@ use crate::math;
 
 /// Configuration for an [`OnlineIForest`](super::OnlineIForest) detector.
 ///
-/// Values are validated when the detector is built. Use the `with_*` methods to
+/// Values are validated when a detector is built. Use [`Self::builder`] to
 /// override defaults while keeping the fields themselves read-only.
-#[derive(Clone, Debug)]
+///
+/// ```rust
+/// use rcf3::OnlineIForestConfig;
+/// let config = OnlineIForestConfig::builder(3).window_size(512).build();
+/// ```
+#[derive(Clone, Debug, bon::Builder)]
+#[builder(derive(Clone, Debug))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct OnlineIForestConfig {
+    #[builder(start_fn)]
     input_dim: usize,
+    #[builder(default = OnlineIForestConfig::default_num_trees())]
     num_trees: usize,
+    #[builder(default = OnlineIForestConfig::default_window_size())]
     window_size: usize,
+    #[builder(default = OnlineIForestConfig::default_max_leaf_samples())]
     max_leaf_samples: usize,
 }
 
 impl OnlineIForestConfig {
+    /// Default number of trees.
+    pub const fn default_num_trees() -> usize {
+        32
+    }
+
+    /// Default sliding window size.
+    pub const fn default_window_size() -> usize {
+        2048
+    }
+
+    /// Default leaf splitting threshold.
+    pub const fn default_max_leaf_samples() -> usize {
+        32
+    }
+
     /// Create a config with the paper's default hyperparameters.
     pub fn new(input_dim: usize) -> Self {
-        Self {
-            input_dim,
-            num_trees: 32,
-            window_size: 2048,
-            max_leaf_samples: 32,
-        }
+        Self::builder(input_dim).build()
     }
 
     /// Set the number of trees in the ensemble.
+    #[deprecated(note = "Use OnlineIForestConfig::builder(input_dim) instead.")]
     pub fn with_num_trees(mut self, value: usize) -> Self {
         self.num_trees = value;
         self
     }
 
     /// Set the number of recent points retained by the sliding window.
+    #[deprecated(note = "Use OnlineIForestConfig::builder(input_dim) instead.")]
     pub fn with_window_size(mut self, value: usize) -> Self {
         self.window_size = value;
         self
     }
 
     /// Set the base leaf-splitting threshold.
+    #[deprecated(note = "Use OnlineIForestConfig::builder(input_dim) instead.")]
     pub fn with_max_leaf_samples(mut self, value: usize) -> Self {
         self.max_leaf_samples = value;
         self
@@ -123,14 +146,15 @@ mod tests {
 
     #[rstest]
     #[case::zero_input_dim(OnlineIForestConfig::new(0))]
-    #[case::zero_trees(OnlineIForestConfig::new(1).with_num_trees(0))]
-    #[case::zero_window(OnlineIForestConfig::new(1).with_window_size(0))]
-    #[case::large_window(OnlineIForestConfig::new(1).with_window_size(usize::MAX))]
-    #[case::zero_leaf_samples(OnlineIForestConfig::new(1).with_max_leaf_samples(0))]
+    #[case::zero_trees(OnlineIForestConfig::builder(1).num_trees(0).build())]
+    #[case::zero_window(OnlineIForestConfig::builder(1).window_size(0).build())]
+    #[case::large_window(OnlineIForestConfig::builder(1).window_size(usize::MAX).build())]
+    #[case::zero_leaf_samples(OnlineIForestConfig::builder(1).max_leaf_samples(0).build())]
     #[case::window_not_larger_than_leaf_samples(
-        OnlineIForestConfig::new(1)
-            .with_window_size(32)
-            .with_max_leaf_samples(32)
+        OnlineIForestConfig::builder(1)
+            .window_size(32)
+            .max_leaf_samples(32)
+            .build()
     )]
     fn rejects_invalid_values(#[case] config: OnlineIForestConfig) {
         assert!(matches!(
@@ -141,9 +165,10 @@ mod tests {
 
     #[test]
     fn depth_limit_preserves_fractional_values() {
-        let config = OnlineIForestConfig::new(1)
-            .with_window_size(10)
-            .with_max_leaf_samples(3);
+        let config = OnlineIForestConfig::builder(1)
+            .window_size(10)
+            .max_leaf_samples(3)
+            .build();
         assert!(config.depth_limit() > 1.0);
         assert!(config.depth_limit() < 2.0);
     }

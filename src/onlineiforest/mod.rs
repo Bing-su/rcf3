@@ -11,5 +11,5 @@ mod node;
 pub(crate) mod python;
 mod tree;
 
-pub use config::OnlineIForestConfig;
+pub use config::{OnlineIForestConfig, OnlineIForestConfigBuilder};
 pub use detector::{OnlineIForest, OnlineIForestBuilder};

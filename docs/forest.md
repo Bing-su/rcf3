@@ -45,10 +45,11 @@ From a config object:
 ```rust
 use rcf3::{Forest, RcfConfig};
 
-let config = RcfConfig::new(3)
-    .with_num_trees(75)
-    .with_capacity(512)
-    .with_shingle_size(4);
+let config = RcfConfig::builder(3)
+    .num_trees(75)
+    .capacity(512)
+    .shingle_size(4)
+    .build();
 
 let forest = Forest::from_config(&config)?;
 ```

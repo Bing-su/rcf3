@@ -9,5 +9,5 @@ mod projection;
 pub(crate) mod python;
 mod sketch;
 
-pub use config::FeatureSketchConfig;
+pub use config::{FeatureSketchConfig, FeatureSketchConfigBuilder};
 pub use detector::{FeatureSketch, FeatureSketchBuilder};

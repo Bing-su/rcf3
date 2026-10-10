@@ -61,17 +61,15 @@ impl PyFeatureSketch {
         decay_half_life: u64,
         seed: Option<u64>,
     ) -> PyResult<Self> {
-        let mut builder = FeatureSketch::builder()
+        let builder = FeatureSketch::builder()
             .value_projection_dims(value_projection_dims)
             .presence_projection_dims(presence_projection_dims)
             .chains_per_ensemble(chains_per_ensemble)
             .chain_depth(chain_depth)
             .sketch_rows(sketch_rows)
             .sketch_buckets(sketch_buckets)
-            .decay_half_life(decay_half_life);
-        if let Some(seed) = seed {
-            builder = builder.seed(seed);
-        }
+            .decay_half_life(decay_half_life)
+            .maybe_seed(seed);
         let inner = builder.build().map_err(to_py_err)?;
         Ok(Self { inner })
     }

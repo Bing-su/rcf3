@@ -52,51 +52,6 @@ pub struct MStreamScore {
     pub categorical_features: Vec<f64>,
 }
 
-/// Builder for [`MStream`].
-#[derive(Clone, Debug)]
-pub struct MStreamBuilder {
-    config: MStreamConfig,
-    seed: Option<u64>,
-}
-
-impl MStreamBuilder {
-    pub(crate) fn new(config: MStreamConfig) -> Self {
-        Self { config, seed: None }
-    }
-
-    /// Set a random seed for deterministic hashing.
-    pub fn seed(mut self, value: u64) -> Self {
-        self.seed = Some(value);
-        self
-    }
-
-    /// Set the number of hash rows.
-    pub fn num_rows(mut self, value: usize) -> Self {
-        self.config = self.config.with_num_rows(value);
-        self
-    }
-
-    /// Set the number of buckets per hash row.
-    pub fn num_buckets(mut self, value: usize) -> Self {
-        self.config = self.config.with_num_buckets(value);
-        self
-    }
-
-    /// Set the temporal decay factor.
-    pub fn alpha(mut self, value: f64) -> Self {
-        self.config = self.config.with_alpha(value);
-        self
-    }
-
-    /// Build the detector.
-    pub fn build(self) -> Result<MStream> {
-        match self.seed {
-            Some(seed) => MStream::from_config_seeded(&self.config, seed),
-            None => MStream::from_config(&self.config),
-        }
-    }
-}
-
 /// mStream detector for mixed numerical/categorical records.
 ///
 /// `timestamp` is interpreted as a logical time tick, not as wall-clock time.
@@ -121,10 +76,34 @@ pub struct MStream {
     numeric_normalizer: NumericRangeNormalizer,
 }
 
+#[bon::bon]
 impl MStream {
     /// Create a builder for records with the required dimensions.
-    pub fn builder(numeric_dim: usize, categorical_dim: usize) -> MStreamBuilder {
-        MStreamBuilder::new(MStreamConfig::new(numeric_dim, categorical_dim))
+    #[builder(derive(Clone, Debug))]
+    pub fn builder(
+        #[builder(start_fn)] numeric_dim: usize,
+        #[builder(start_fn)] categorical_dim: usize,
+        /// Set the number of hash rows.
+        #[builder(default = MStreamConfig::default_num_rows())]
+        num_rows: usize,
+        /// Set the number of buckets per hash row.
+        #[builder(default = MStreamConfig::default_num_buckets())]
+        num_buckets: usize,
+        /// Set the temporal decay factor.
+        #[builder(default = MStreamConfig::default_alpha())]
+        alpha: f64,
+        /// Set a random seed for deterministic hashing.
+        seed: Option<u64>,
+    ) -> Result<Self> {
+        let config = MStreamConfig::builder(numeric_dim, categorical_dim)
+            .num_rows(num_rows)
+            .num_buckets(num_buckets)
+            .alpha(alpha)
+            .build();
+        match seed {
+            Some(seed) => Self::from_config_seeded(&config, seed),
+            None => Self::from_config(&config),
+        }
     }
 
     /// Build directly from config with a random seed.
@@ -562,10 +541,11 @@ mod tests {
 
     #[test]
     fn seeded_from_config_is_deterministic() {
-        let cfg = crate::mstream::MStreamConfig::new(2, 1)
-            .with_alpha(0.8)
-            .with_num_rows(2)
-            .with_num_buckets(256);
+        let cfg = crate::mstream::MStreamConfig::builder(2, 1)
+            .alpha(0.8)
+            .num_rows(2)
+            .num_buckets(256)
+            .build();
 
         let mut a = MStream::from_config_seeded(&cfg, 123).unwrap();
         let mut b = MStream::from_config_seeded(&cfg, 123).unwrap();

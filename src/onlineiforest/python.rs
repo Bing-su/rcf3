@@ -48,13 +48,11 @@ impl PyOnlineIForest {
         max_leaf_samples: usize,
         seed: Option<u64>,
     ) -> PyResult<Self> {
-        let mut builder = OnlineIForest::builder(input_dim)
+        let builder = OnlineIForest::builder(input_dim)
             .num_trees(num_trees)
             .window_size(window_size)
-            .max_leaf_samples(max_leaf_samples);
-        if let Some(seed) = seed {
-            builder = builder.seed(seed);
-        }
+            .max_leaf_samples(max_leaf_samples)
+            .maybe_seed(seed);
         let inner = builder.build().map_err(to_py_err)?;
         Ok(Self { inner })
     }

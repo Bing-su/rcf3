@@ -100,17 +100,15 @@ impl PyForest {
         initial_accept_fraction: f64,
         seed: Option<u64>,
     ) -> PyResult<Self> {
-        let mut b = Forest::builder(input_dim)
+        let b = Forest::builder(input_dim)
             .shingle_size(shingle_size)
             .num_trees(num_trees)
             .capacity(capacity)
             .time_decay(time_decay)
             .output_after(output_after)
             .internal_shingling(internal_shingling)
-            .initial_accept_fraction(initial_accept_fraction);
-        if let Some(s) = seed {
-            b = b.seed(s);
-        }
+            .initial_accept_fraction(initial_accept_fraction)
+            .maybe_seed(seed);
         let inner = b.build().map_err(to_py_err)?;
         Ok(PyForest { inner })
     }

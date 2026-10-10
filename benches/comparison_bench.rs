@@ -180,11 +180,13 @@ fn categorical_row_slice<'a>(row: &'a ArrayView1<'a, i64>) -> &'a [i64] {
 }
 
 fn build_ready_forest(warmup: &StreamData, scenario: ForestScenario) -> Forest {
-    let mut builder = Forest::builder(DIM).seed(42);
-    if matches!(scenario.size, ConfigSize::Small) {
-        builder = builder.num_trees(16).capacity(128);
+    let builder = Forest::builder(DIM).seed(42);
+    let mut forest = if matches!(scenario.size, ConfigSize::Small) {
+        builder.num_trees(16).capacity(128).build()
+    } else {
+        builder.build()
     }
-    let mut forest = builder.build().unwrap();
+    .unwrap();
 
     warmup.for_each_numeric_row(|point| forest.update(point).unwrap());
 
@@ -195,11 +197,17 @@ fn build_ready_onlineiforest(
     warmup: &StreamData,
     scenario: OnlineIForestScenario,
 ) -> OnlineIForest {
-    let mut builder = OnlineIForest::builder(DIM).seed(42);
-    if matches!(scenario.size, ConfigSize::Small) {
-        builder = builder.num_trees(16).window_size(512).max_leaf_samples(8);
+    let builder = OnlineIForest::builder(DIM).seed(42);
+    let mut detector = if matches!(scenario.size, ConfigSize::Small) {
+        builder
+            .num_trees(16)
+            .window_size(512)
+            .max_leaf_samples(8)
+            .build()
+    } else {
+        builder.build()
     }
-    let mut detector = builder.build().unwrap();
+    .unwrap();
 
     warmup.for_each_numeric_row(|point| detector.update(point).unwrap());
 
@@ -210,18 +218,21 @@ fn build_ready_featuresketch(
     warmup: &FeatureStreamData,
     scenario: FeatureSketchScenario,
 ) -> FeatureSketch {
-    let mut builder = FeatureSketch::builder().seed(42);
-    if matches!(scenario.size, ConfigSize::Small) {
-        builder = builder
+    let builder = FeatureSketch::builder().seed(42);
+    let mut detector = if matches!(scenario.size, ConfigSize::Small) {
+        builder
             .value_projection_dims(scenario.value_projection_dims)
             .presence_projection_dims(scenario.presence_projection_dims)
             .chains_per_ensemble(scenario.chains_per_ensemble)
             .chain_depth(scenario.chain_depth)
             .sketch_rows(scenario.sketch_rows)
             .sketch_buckets(scenario.sketch_buckets)
-            .decay_half_life(scenario.decay_half_life);
+            .decay_half_life(scenario.decay_half_life)
+            .build()
+    } else {
+        builder.build()
     }
-    let mut detector = builder.build().unwrap();
+    .unwrap();
 
     warmup.for_each_event(|event| {
         detector
@@ -233,11 +244,13 @@ fn build_ready_featuresketch(
 }
 
 fn build_ready_mstream(warmup: &StreamData, scenario: MStreamScenario) -> MStream {
-    let mut builder = MStream::builder(DIM, scenario.categorical_dim).seed(42);
-    if matches!(scenario.size, ConfigSize::Small) {
-        builder = builder.num_rows(2).num_buckets(256);
+    let builder = MStream::builder(DIM, scenario.categorical_dim).seed(42);
+    let mut detector = if matches!(scenario.size, ConfigSize::Small) {
+        builder.num_rows(2).num_buckets(256).build()
+    } else {
+        builder.build()
     }
-    let mut detector = builder.build().unwrap();
+    .unwrap();
 
     warmup.for_each_mstream_row(|offset, numeric, categorical| {
         detector

@@ -72,13 +72,11 @@ impl PyMStream {
         alpha: f64,
         seed: Option<u64>,
     ) -> PyResult<Self> {
-        let mut builder = MStream::builder(numeric_dim, categorical_dim)
+        let builder = MStream::builder(numeric_dim, categorical_dim)
             .num_rows(num_rows)
             .num_buckets(num_buckets)
-            .alpha(alpha);
-        if let Some(seed) = seed {
-            builder = builder.seed(seed);
-        }
+            .alpha(alpha)
+            .maybe_seed(seed);
         let inner = builder.build().map_err(to_py_err)?;
         Ok(Self { inner })
     }

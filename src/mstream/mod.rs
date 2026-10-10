@@ -13,5 +13,5 @@ pub(crate) mod python;
 mod scoring;
 mod sketch;
 
-pub use config::MStreamConfig;
+pub use config::{MStreamConfig, MStreamConfigBuilder};
 pub use detector::{MStream, MStreamBuilder, MStreamScore};

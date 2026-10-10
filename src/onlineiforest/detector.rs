@@ -18,51 +18,6 @@ use crate::math;
 use super::config::OnlineIForestConfig;
 use super::tree::OnlineITree;
 
-/// Builder for [`OnlineIForest`].
-#[derive(Clone, Debug)]
-pub struct OnlineIForestBuilder {
-    config: OnlineIForestConfig,
-    seed: Option<u64>,
-}
-
-impl OnlineIForestBuilder {
-    pub(crate) fn new(config: OnlineIForestConfig) -> Self {
-        Self { config, seed: None }
-    }
-
-    /// Set a random seed for deterministic trees.
-    pub fn seed(mut self, value: u64) -> Self {
-        self.seed = Some(value);
-        self
-    }
-
-    /// Set the number of trees in the ensemble.
-    pub fn num_trees(mut self, value: usize) -> Self {
-        self.config = self.config.with_num_trees(value);
-        self
-    }
-
-    /// Set the number of recent points retained by the sliding window.
-    pub fn window_size(mut self, value: usize) -> Self {
-        self.config = self.config.with_window_size(value);
-        self
-    }
-
-    /// Set the base leaf-splitting threshold.
-    pub fn max_leaf_samples(mut self, value: usize) -> Self {
-        self.config = self.config.with_max_leaf_samples(value);
-        self
-    }
-
-    /// Build the detector.
-    pub fn build(self) -> Result<OnlineIForest> {
-        match self.seed {
-            Some(seed) => OnlineIForest::from_config_seeded(&self.config, seed),
-            None => OnlineIForest::from_config(&self.config),
-        }
-    }
-}
-
 /// Online Isolation Forest detector for numerical streams.
 ///
 /// Use [`update`](Self::update) or [`update_and_score`](Self::update_and_score)
@@ -77,10 +32,33 @@ pub struct OnlineIForest {
     entries_seen: u64,
 }
 
+#[bon::bon]
 impl OnlineIForest {
     /// Create a builder for points with the required dimensionality.
-    pub fn builder(input_dim: usize) -> OnlineIForestBuilder {
-        OnlineIForestBuilder::new(OnlineIForestConfig::new(input_dim))
+    #[builder(derive(Clone, Debug))]
+    pub fn builder(
+        #[builder(start_fn)] input_dim: usize,
+        /// Set the number of trees in the ensemble.
+        #[builder(default = OnlineIForestConfig::default_num_trees())]
+        num_trees: usize,
+        /// Set the number of recent points retained by the sliding window.
+        #[builder(default = OnlineIForestConfig::default_window_size())]
+        window_size: usize,
+        /// Set the base leaf-splitting threshold.
+        #[builder(default = OnlineIForestConfig::default_max_leaf_samples())]
+        max_leaf_samples: usize,
+        /// Set a random seed for deterministic trees.
+        seed: Option<u64>,
+    ) -> Result<Self> {
+        let config = OnlineIForestConfig::builder(input_dim)
+            .num_trees(num_trees)
+            .window_size(window_size)
+            .max_leaf_samples(max_leaf_samples)
+            .build();
+        match seed {
+            Some(seed) => Self::from_config_seeded(&config, seed),
+            None => Self::from_config(&config),
+        }
     }
 
     /// Build directly from config with a random seed.

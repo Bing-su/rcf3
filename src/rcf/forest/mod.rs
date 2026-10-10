@@ -136,6 +136,7 @@ impl fmt::Debug for Forest {
     }
 }
 
+#[bon::bon]
 impl Forest {
     // -----------------------------------------------------------------------
     // Construction
@@ -191,9 +192,47 @@ impl Forest {
     // Builder
     // -----------------------------------------------------------------------
 
-    /// Convenience entry point.
-    pub fn builder(input_dim: usize) -> ForestBuilder {
-        ForestBuilder::new(input_dim)
+    /// Create a builder for the given base dimension.
+    #[builder(derive(Clone, Debug))]
+    pub fn builder(
+        #[builder(start_fn)] input_dim: usize,
+        /// Set the shingle size.
+        #[builder(default = RcfConfig::default_shingle_size())]
+        shingle_size: usize,
+        /// Set the number of trees in the ensemble.
+        #[builder(default = RcfConfig::default_num_trees())]
+        num_trees: usize,
+        /// Set the maximum number of points retained per tree.
+        #[builder(default = RcfConfig::default_capacity())]
+        capacity: usize,
+        /// Set the finite non-negative sampling decay rate; `0.0` uses `0.1 / capacity`.
+        #[builder(default = RcfConfig::default_time_decay())]
+        time_decay: f64,
+        /// Set the minimum updates before non-trivial scores are returned.
+        #[builder(default = RcfConfig::default_output_after())]
+        output_after: usize,
+        /// Enable or disable internal shingle buffer management.
+        #[builder(default = RcfConfig::default_internal_shingling())]
+        internal_shingling: bool,
+        /// Set the finite warm-up acceptance fraction in `[0.0, 1.0]`.
+        #[builder(default = RcfConfig::default_initial_accept_fraction())]
+        initial_accept_fraction: f64,
+        /// Set a deterministic seed for all trees in the forest.
+        seed: Option<u64>,
+    ) -> Result<Self> {
+        let config = RcfConfig::builder(input_dim)
+            .shingle_size(shingle_size)
+            .num_trees(num_trees)
+            .capacity(capacity)
+            .time_decay(time_decay)
+            .output_after(output_after)
+            .internal_shingling(internal_shingling)
+            .initial_accept_fraction(initial_accept_fraction)
+            .build();
+        match seed {
+            Some(seed) => Self::from_config_seeded(&config, seed),
+            None => Self::from_config(&config),
+        }
     }
     // -----------------------------------------------------------------------
     // Readiness
@@ -263,84 +302,12 @@ impl Forest {
     }
 }
 
-// ---------------------------------------------------------------------------
-// ForestBuilder
-// ---------------------------------------------------------------------------
-
-/// Fluent builder for constructing a [`Forest`] with custom hyperparameters.
-pub struct ForestBuilder {
-    config: RcfConfig,
-    seed: Option<u64>,
-}
-
 impl ForestBuilder {
-    /// Create a builder for the given base dimension.
+    /// Create a builder for the given base dimension, as with [`Forest::builder`].
     pub fn new(input_dim: usize) -> Self {
-        let config = RcfConfig::new(input_dim);
-        ForestBuilder { config, seed: None }
-    }
-
-    /// Set the shingle size.
-    pub fn shingle_size(mut self, n: usize) -> Self {
-        self.config = self.config.with_shingle_size(n);
-        self
-    }
-
-    /// Set the number of trees in the ensemble.
-    pub fn num_trees(mut self, n: usize) -> Self {
-        self.config = self.config.with_num_trees(n);
-        self
-    }
-
-    /// Set the maximum number of points retained per tree.
-    pub fn capacity(mut self, c: usize) -> Self {
-        self.config = self.config.with_capacity(c);
-        self
-    }
-
-    /// Set the finite non-negative exponential time-decay rate for sampling
-    /// weights.
-    ///
-    /// Use `0.0` to keep the default behavior (`0.1 / capacity`).
-    pub fn time_decay(mut self, d: f64) -> Self {
-        self.config = self.config.with_time_decay(d);
-        self
-    }
-
-    /// Set the minimum updates before non-trivial scores are returned.
-    pub fn output_after(mut self, n: usize) -> Self {
-        self.config = self.config.with_output_after(n);
-        self
-    }
-
-    /// Enable or disable internal shingle buffer management.
-    pub fn internal_shingling(mut self, v: bool) -> Self {
-        self.config = self.config.with_internal_shingling(v);
-        self
-    }
-
-    /// Set the finite warm-up acceptance fraction for the sampler.
-    ///
-    /// Must be in `[0.0, 1.0]`; lower values throttle acceptance more while
-    /// each tree sampler is below capacity.
-    pub fn initial_accept_fraction(mut self, f: f64) -> Self {
-        self.config = self.config.with_initial_accept_fraction(f);
-        self
-    }
-
-    /// Set a deterministic seed for all trees in the forest.
-    pub fn seed(mut self, s: u64) -> Self {
-        self.seed = Some(s);
-        self
-    }
-
-    /// Build a forest from the accumulated configuration.
-    pub fn build(self) -> Result<Forest> {
-        match self.seed {
-            Some(s) => Forest::from_config_seeded(&self.config, s),
-            None => Forest::from_config(&self.config),
-        }
+        Forest::builder(input_dim)
     }
 }
+
 #[cfg(test)]
 mod tests;

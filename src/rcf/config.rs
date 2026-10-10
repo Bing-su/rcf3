@@ -5,62 +5,67 @@ use crate::error::{RcfError, Result};
 
 /// Hyperparameters for a Random Cut Forest.
 ///
-/// Use [`RcfConfig::new`] then chain the builder methods, or deserialise from JSON.
-#[derive(Clone, Debug)]
+/// Use [`Self::builder`] to override defaults, or deserialize from JSON.
+/// Values are validated when a forest is built.
+///
+/// ```rust
+/// use rcf3::RcfConfig;
+/// let config = RcfConfig::builder(3).capacity(64).build();
+/// ```
+#[derive(Clone, Debug, bon::Builder)]
+#[builder(derive(Clone, Debug))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RcfConfig {
     /// Number of base feature dimensions per observation (before shingling).
+    #[builder(start_fn)]
     input_dim: usize,
 
     /// Temporal window size. When `internal_shingling` is true the forest
     /// maintains a rolling buffer and the effective model dimension is
     /// `input_dim * shingle_size`.
-    #[cfg_attr(feature = "serde", serde(default = "default_shingle_size"))]
+    #[cfg_attr(feature = "serde", serde(default = "RcfConfig::default_shingle_size"))]
+    #[builder(default = RcfConfig::default_shingle_size())]
     shingle_size: usize,
 
     /// Maximum number of points stored per tree.
-    #[cfg_attr(feature = "serde", serde(default = "default_capacity"))]
+    #[cfg_attr(feature = "serde", serde(default = "RcfConfig::default_capacity"))]
+    #[builder(default = RcfConfig::default_capacity())]
     capacity: usize,
 
     /// Number of trees in the forest.
-    #[cfg_attr(feature = "serde", serde(default = "default_num_trees"))]
+    #[cfg_attr(feature = "serde", serde(default = "RcfConfig::default_num_trees"))]
+    #[builder(default = RcfConfig::default_num_trees())]
     num_trees: usize,
 
     /// Finite non-negative exponential time-decay rate applied to sampling
     /// weights. `0.0` means "use the default `0.1 / capacity`".
-    #[cfg_attr(feature = "serde", serde(default))]
+    #[cfg_attr(feature = "serde", serde(default = "RcfConfig::default_time_decay"))]
+    #[builder(default = RcfConfig::default_time_decay())]
     time_decay: f64,
 
     /// Minimum number of updates before `score` / `attribution` / etc. return
     /// non-trivial results.  `0` means "use `1 + capacity / 4`".
-    #[cfg_attr(feature = "serde", serde(default))]
+    #[cfg_attr(feature = "serde", serde(default = "RcfConfig::default_output_after"))]
+    #[builder(default = RcfConfig::default_output_after())]
     output_after: usize,
 
     /// When true the forest manages the shingle buffer automatically so callers
     /// pass one base observation at a time.
-    #[cfg_attr(feature = "serde", serde(default = "default_internal_shingling"))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default = "RcfConfig::default_internal_shingling")
+    )]
+    #[builder(default = RcfConfig::default_internal_shingling())]
     internal_shingling: bool,
 
     /// Finite value in `[0.0, 1.0]` controlling how often each tree sampler
     /// accepts points while it is below capacity.
-    #[cfg_attr(feature = "serde", serde(default = "default_initial_accept_fraction"))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default = "RcfConfig::default_initial_accept_fraction")
+    )]
+    #[builder(default = RcfConfig::default_initial_accept_fraction())]
     initial_accept_fraction: f64,
-}
-
-fn default_shingle_size() -> usize {
-    1
-}
-fn default_capacity() -> usize {
-    256
-}
-fn default_num_trees() -> usize {
-    50
-}
-fn default_internal_shingling() -> bool {
-    true
-}
-fn default_initial_accept_fraction() -> f64 {
-    0.125
 }
 
 /// Initial node-arena capacity for a tree with `capacity` sampled points.
@@ -87,33 +92,62 @@ pub(in crate::rcf) fn checked_point_store_capacity(
 }
 
 impl RcfConfig {
+    /// Default temporal window size.
+    pub const fn default_shingle_size() -> usize {
+        1
+    }
+
+    /// Default sample capacity per tree.
+    pub const fn default_capacity() -> usize {
+        256
+    }
+
+    /// Default number of trees.
+    pub const fn default_num_trees() -> usize {
+        50
+    }
+
+    /// Default sampling decay sentinel; zero selects `0.1 / capacity`.
+    pub const fn default_time_decay() -> f64 {
+        0.0
+    }
+
+    /// Default readiness sentinel; zero selects `1 + capacity / 4`.
+    pub const fn default_output_after() -> usize {
+        0
+    }
+
+    /// Default internal shingle management.
+    pub const fn default_internal_shingling() -> bool {
+        true
+    }
+
+    /// Default warm-up acceptance fraction.
+    pub const fn default_initial_accept_fraction() -> f64 {
+        0.125
+    }
+
     /// Create a config with defaults for all optional parameters.
     pub fn new(input_dim: usize) -> Self {
-        Self {
-            input_dim,
-            shingle_size: default_shingle_size(),
-            capacity: default_capacity(),
-            num_trees: default_num_trees(),
-            time_decay: 0.0,
-            output_after: 0,
-            internal_shingling: default_internal_shingling(),
-            initial_accept_fraction: default_initial_accept_fraction(),
-        }
+        Self::builder(input_dim).build()
     }
 
     /// Set the temporal window size. `1` disables shingling.
+    #[deprecated(note = "Use RcfConfig::builder(input_dim) instead.")]
     pub fn with_shingle_size(mut self, v: usize) -> Self {
         self.shingle_size = v;
         self
     }
 
     /// Set the maximum number of points retained per tree.
+    #[deprecated(note = "Use RcfConfig::builder(input_dim) instead.")]
     pub fn with_capacity(mut self, v: usize) -> Self {
         self.capacity = v;
         self
     }
 
     /// Set the number of trees in the forest ensemble.
+    #[deprecated(note = "Use RcfConfig::builder(input_dim) instead.")]
     pub fn with_num_trees(mut self, v: usize) -> Self {
         self.num_trees = v;
         self
@@ -123,6 +157,7 @@ impl RcfConfig {
     /// weights.
     ///
     /// Use `0.0` to keep the default behavior (`0.1 / capacity`).
+    #[deprecated(note = "Use RcfConfig::builder(input_dim) instead.")]
     pub fn with_time_decay(mut self, v: f64) -> Self {
         self.time_decay = v;
         self
@@ -131,12 +166,14 @@ impl RcfConfig {
     /// Set the minimum updates before non-trivial scores are returned.
     ///
     /// Use `0` to keep the default behavior (`1 + capacity / 4`).
+    #[deprecated(note = "Use RcfConfig::builder(input_dim) instead.")]
     pub fn with_output_after(mut self, v: usize) -> Self {
         self.output_after = v;
         self
     }
 
     /// Enable or disable internal shingle buffer management.
+    #[deprecated(note = "Use RcfConfig::builder(input_dim) instead.")]
     pub fn with_internal_shingling(mut self, v: bool) -> Self {
         self.internal_shingling = v;
         self
@@ -146,6 +183,7 @@ impl RcfConfig {
     ///
     /// Must be in `[0.0, 1.0]`; lower values throttle acceptance more while
     /// each tree sampler is below capacity.
+    #[deprecated(note = "Use RcfConfig::builder(input_dim) instead.")]
     pub fn with_initial_accept_fraction(mut self, v: f64) -> Self {
         self.initial_accept_fraction = v;
         self
@@ -279,27 +317,27 @@ mod tests {
             input_dim in 1usize..=32,
             shingle_size in 1usize..=16,
         ) {
-            let cfg = RcfConfig::new(input_dim).with_shingle_size(shingle_size);
+            let cfg = RcfConfig::builder(input_dim).shingle_size(shingle_size).build();
             prop_assert_eq!(cfg.dim(), input_dim * shingle_size);
         }
 
         #[test]
         fn effective_time_decay_positive(capacity in 1usize..=1000) {
             // time_decay == 0.0 triggers the default formula: 0.1 / capacity
-            let cfg = RcfConfig::new(1).with_capacity(capacity);
+            let cfg = RcfConfig::builder(1).capacity(capacity).build();
             prop_assert!(cfg.effective_time_decay() > 0.0);
         }
 
         #[test]
         fn effective_output_after_positive(capacity in 1usize..=1000) {
             // output_after == 0 triggers the default formula: 1 + capacity/4
-            let cfg = RcfConfig::new(1).with_capacity(capacity).with_output_after(0);
+            let cfg = RcfConfig::builder(1).capacity(capacity).output_after(0).build();
             prop_assert!(cfg.effective_output_after() >= 1);
         }
 
         #[test]
         fn setters_reflect_values(n in 1usize..=100) {
-            let cfg = RcfConfig::new(1).with_num_trees(n);
+            let cfg = RcfConfig::builder(1).num_trees(n).build();
             prop_assert_eq!(cfg.num_trees(), n);
         }
     }
@@ -324,14 +362,15 @@ mod tests {
 
     #[test]
     fn getters_reflect_all_config_fields() {
-        let config = RcfConfig::new(3)
-            .with_shingle_size(4)
-            .with_capacity(128)
-            .with_num_trees(17)
-            .with_time_decay(0.25)
-            .with_output_after(9)
-            .with_internal_shingling(false)
-            .with_initial_accept_fraction(0.5);
+        let config = RcfConfig::builder(3)
+            .shingle_size(4)
+            .capacity(128)
+            .num_trees(17)
+            .time_decay(0.25)
+            .output_after(9)
+            .internal_shingling(false)
+            .initial_accept_fraction(0.5)
+            .build();
 
         assert_eq!(config.input_dim(), 3);
         assert_eq!(config.shingle_size(), 4);
@@ -347,14 +386,15 @@ mod tests {
     #[cfg(feature = "serde")]
     #[test]
     fn serde_preserves_private_field_wire_shape_and_defaults() {
-        let config = RcfConfig::new(3)
-            .with_shingle_size(4)
-            .with_capacity(128)
-            .with_num_trees(17)
-            .with_time_decay(0.25)
-            .with_output_after(9)
-            .with_internal_shingling(false)
-            .with_initial_accept_fraction(0.5);
+        let config = RcfConfig::builder(3)
+            .shingle_size(4)
+            .capacity(128)
+            .num_trees(17)
+            .time_decay(0.25)
+            .output_after(9)
+            .internal_shingling(false)
+            .initial_accept_fraction(0.5)
+            .build();
 
         let value = serde_json::to_value(&config).unwrap();
         assert_eq!(value["input_dim"], 3);
@@ -379,39 +419,40 @@ mod tests {
 
     #[rstest]
     #[case::zero_input_dim(RcfConfig::new(0), "input_dim")]
-    #[case::zero_shingle_size(RcfConfig::new(1).with_shingle_size(0), "shingle_size")]
-    #[case::zero_capacity(RcfConfig::new(1).with_capacity(0), "capacity")]
-    #[case::zero_num_trees(RcfConfig::new(1).with_num_trees(0), "num_trees")]
+    #[case::zero_shingle_size(RcfConfig::builder(1).shingle_size(0).build(), "shingle_size")]
+    #[case::zero_capacity(RcfConfig::builder(1).capacity(0).build(), "capacity")]
+    #[case::zero_num_trees(RcfConfig::builder(1).num_trees(0).build(), "num_trees")]
     #[case::tree_arena_capacity_overflow(
-        RcfConfig::new(1).with_capacity(usize::MAX / 2),
+        RcfConfig::builder(1).capacity(usize::MAX / 2).build(),
         "2 * capacity + 4"
     )]
     #[case::point_store_capacity_overflow(
-        RcfConfig::new(1)
-            .with_capacity(2)
-            .with_num_trees(usize::MAX / 2 + 1),
+        RcfConfig::builder(1)
+            .capacity(2)
+            .num_trees(usize::MAX / 2 + 1)
+            .build(),
         "capacity * num_trees + 1"
     )]
-    #[case::negative_time_decay(RcfConfig::new(1).with_time_decay(-0.1), "time_decay")]
-    #[case::nan_time_decay(RcfConfig::new(1).with_time_decay(f64::NAN), "time_decay")]
+    #[case::negative_time_decay(RcfConfig::builder(1).time_decay(-0.1).build(), "time_decay")]
+    #[case::nan_time_decay(RcfConfig::builder(1).time_decay(f64::NAN).build(), "time_decay")]
     #[case::infinite_time_decay(
-        RcfConfig::new(1).with_time_decay(f64::INFINITY),
+        RcfConfig::builder(1).time_decay(f64::INFINITY).build(),
         "time_decay"
     )]
     #[case::negative_initial_accept_fraction(
-        RcfConfig::new(1).with_initial_accept_fraction(-0.1),
+        RcfConfig::builder(1).initial_accept_fraction(-0.1).build(),
         "initial_accept_fraction"
     )]
     #[case::nan_initial_accept_fraction(
-        RcfConfig::new(1).with_initial_accept_fraction(f64::NAN),
+        RcfConfig::builder(1).initial_accept_fraction(f64::NAN).build(),
         "initial_accept_fraction"
     )]
     #[case::infinite_initial_accept_fraction(
-        RcfConfig::new(1).with_initial_accept_fraction(f64::INFINITY),
+        RcfConfig::builder(1).initial_accept_fraction(f64::INFINITY).build(),
         "initial_accept_fraction"
     )]
     #[case::too_large_initial_accept_fraction(
-        RcfConfig::new(1).with_initial_accept_fraction(1.1),
+        RcfConfig::builder(1).initial_accept_fraction(1.1).build(),
         "initial_accept_fraction"
     )]
     fn validate_rejects_invalid_core_fields(
@@ -428,14 +469,16 @@ mod tests {
 
     #[rstest]
     #[case::zero_time_decay_and_zero_initial_fraction(
-        RcfConfig::new(1)
-            .with_time_decay(0.0)
-            .with_initial_accept_fraction(0.0)
+        RcfConfig::builder(1)
+            .time_decay(0.0)
+            .initial_accept_fraction(0.0)
+            .build()
     )]
     #[case::positive_time_decay_and_full_initial_fraction(
-        RcfConfig::new(1)
-            .with_time_decay(0.1)
-            .with_initial_accept_fraction(1.0)
+        RcfConfig::builder(1)
+            .time_decay(0.1)
+            .initial_accept_fraction(1.0)
+            .build()
     )]
     fn validate_accepts_float_boundaries(#[case] config: RcfConfig) {
         config.validate().unwrap();

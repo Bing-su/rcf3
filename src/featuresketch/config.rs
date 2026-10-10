@@ -7,64 +7,111 @@ const MAX_CHAIN_DEPTH_FOR_POSITIVE_WIDTH: usize = 1024;
 
 /// Configuration for a [`FeatureSketch`](super::FeatureSketch) detector.
 ///
-/// Values are validated when a detector is built. Use the `with_*` methods to
+/// Values are validated when a detector is built. Use [`Self::builder`] to
 /// override defaults while keeping the fields themselves read-only.
-#[derive(Clone, Debug)]
+///
+/// ```rust
+/// use rcf3::FeatureSketchConfig;
+/// let config = FeatureSketchConfig::builder().sketch_buckets(256).build();
+/// ```
+#[derive(Clone, Debug, bon::Builder)]
+#[builder(derive(Clone, Debug))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FeatureSketchConfig {
+    #[builder(default = FeatureSketchConfig::default_value_projection_dims())]
     value_projection_dims: usize,
+    #[builder(default = FeatureSketchConfig::default_presence_projection_dims())]
     presence_projection_dims: usize,
+    #[builder(default = FeatureSketchConfig::default_chains_per_ensemble())]
     chains_per_ensemble: usize,
+    #[builder(default = FeatureSketchConfig::default_chain_depth())]
     chain_depth: usize,
+    #[builder(default = FeatureSketchConfig::default_sketch_rows())]
     sketch_rows: usize,
+    #[builder(default = FeatureSketchConfig::default_sketch_buckets())]
     sketch_buckets: usize,
+    #[builder(default = FeatureSketchConfig::default_decay_half_life())]
     decay_half_life: u64,
 }
 
 impl FeatureSketchConfig {
-    /// Create a config with the documented FeatureSketch defaults.
-    pub fn new() -> Self {
-        Self {
-            value_projection_dims: 32,
-            presence_projection_dims: 32,
-            chains_per_ensemble: 16,
-            chain_depth: 8,
-            sketch_rows: 2,
-            sketch_buckets: 2048,
-            decay_half_life: 2048,
-        }
+    /// Default value projection dimension.
+    pub const fn default_value_projection_dims() -> usize {
+        32
     }
 
+    /// Default presence projection dimension.
+    pub const fn default_presence_projection_dims() -> usize {
+        32
+    }
+
+    /// Default number of chains per ensemble.
+    pub const fn default_chains_per_ensemble() -> usize {
+        16
+    }
+
+    /// Default chain depth.
+    pub const fn default_chain_depth() -> usize {
+        8
+    }
+
+    /// Default number of sketch rows.
+    pub const fn default_sketch_rows() -> usize {
+        2
+    }
+
+    /// Default number of buckets per sketch row.
+    pub const fn default_sketch_buckets() -> usize {
+        2048
+    }
+
+    /// Default event-count decay half-life.
+    pub const fn default_decay_half_life() -> u64 {
+        2048
+    }
+
+    /// Create a config with the documented FeatureSketch defaults.
+    pub fn new() -> Self {
+        Self::builder().build()
+    }
+
+    #[deprecated(note = "Use FeatureSketchConfig::builder() instead.")]
     pub fn with_value_projection_dims(mut self, value: usize) -> Self {
         self.value_projection_dims = value;
         self
     }
 
+    #[deprecated(note = "Use FeatureSketchConfig::builder() instead.")]
     pub fn with_presence_projection_dims(mut self, value: usize) -> Self {
         self.presence_projection_dims = value;
         self
     }
 
+    #[deprecated(note = "Use FeatureSketchConfig::builder() instead.")]
     pub fn with_chains_per_ensemble(mut self, value: usize) -> Self {
         self.chains_per_ensemble = value;
         self
     }
 
+    #[deprecated(note = "Use FeatureSketchConfig::builder() instead.")]
     pub fn with_chain_depth(mut self, value: usize) -> Self {
         self.chain_depth = value;
         self
     }
 
+    #[deprecated(note = "Use FeatureSketchConfig::builder() instead.")]
     pub fn with_sketch_rows(mut self, value: usize) -> Self {
         self.sketch_rows = value;
         self
     }
 
+    #[deprecated(note = "Use FeatureSketchConfig::builder() instead.")]
     pub fn with_sketch_buckets(mut self, value: usize) -> Self {
         self.sketch_buckets = value;
         self
     }
 
+    #[deprecated(note = "Use FeatureSketchConfig::builder() instead.")]
     pub fn with_decay_half_life(mut self, value: u64) -> Self {
         self.decay_half_life = value;
         self
@@ -196,29 +243,30 @@ mod tests {
     }
 
     #[rstest]
-    #[case(FeatureSketchConfig::new().with_value_projection_dims(1))]
-    #[case(FeatureSketchConfig::new().with_presence_projection_dims(1))]
-    #[case(FeatureSketchConfig::new().with_chains_per_ensemble(1))]
-    #[case(FeatureSketchConfig::new().with_chain_depth(1))]
-    #[case(FeatureSketchConfig::new().with_chain_depth(MAX_CHAIN_DEPTH_FOR_POSITIVE_WIDTH))]
-    #[case(FeatureSketchConfig::new().with_sketch_rows(1))]
-    #[case(FeatureSketchConfig::new().with_sketch_buckets(2))]
-    #[case(FeatureSketchConfig::new().with_decay_half_life(1))]
+    #[case(FeatureSketchConfig::builder().value_projection_dims(1).build())]
+    #[case(FeatureSketchConfig::builder().presence_projection_dims(1).build())]
+    #[case(FeatureSketchConfig::builder().chains_per_ensemble(1).build())]
+    #[case(FeatureSketchConfig::builder().chain_depth(1).build())]
+    #[case(FeatureSketchConfig::builder().chain_depth(MAX_CHAIN_DEPTH_FOR_POSITIVE_WIDTH).build())]
+    #[case(FeatureSketchConfig::builder().sketch_rows(1).build())]
+    #[case(FeatureSketchConfig::builder().sketch_buckets(2).build())]
+    #[case(FeatureSketchConfig::builder().decay_half_life(1).build())]
     fn accepts_minimum_valid_boundaries(#[case] config: FeatureSketchConfig) {
         config.validate().unwrap();
     }
 
     #[rstest]
-    #[case::value_dims(FeatureSketchConfig::new().with_value_projection_dims(0))]
-    #[case::presence_dims(FeatureSketchConfig::new().with_presence_projection_dims(0))]
-    #[case::chains(FeatureSketchConfig::new().with_chains_per_ensemble(0))]
-    #[case::depth(FeatureSketchConfig::new().with_chain_depth(0))]
-    #[case::rows(FeatureSketchConfig::new().with_sketch_rows(0))]
-    #[case::buckets(FeatureSketchConfig::new().with_sketch_buckets(1))]
-    #[case::half_life(FeatureSketchConfig::new().with_decay_half_life(0))]
+    #[case::value_dims(FeatureSketchConfig::builder().value_projection_dims(0).build())]
+    #[case::presence_dims(FeatureSketchConfig::builder().presence_projection_dims(0).build())]
+    #[case::chains(FeatureSketchConfig::builder().chains_per_ensemble(0).build())]
+    #[case::depth(FeatureSketchConfig::builder().chain_depth(0).build())]
+    #[case::rows(FeatureSketchConfig::builder().sketch_rows(0).build())]
+    #[case::buckets(FeatureSketchConfig::builder().sketch_buckets(1).build())]
+    #[case::half_life(FeatureSketchConfig::builder().decay_half_life(0).build())]
     #[case::too_deep(
-        FeatureSketchConfig::new()
-            .with_chain_depth(MAX_CHAIN_DEPTH_FOR_POSITIVE_WIDTH + 1)
+        FeatureSketchConfig::builder()
+            .chain_depth(MAX_CHAIN_DEPTH_FOR_POSITIVE_WIDTH + 1)
+            .build()
     )]
     fn rejects_invalid_values(#[case] config: FeatureSketchConfig) {
         assert!(matches!(
@@ -229,24 +277,27 @@ mod tests {
 
     #[rstest]
     #[case::presence_feature_count_dimension(
-        FeatureSketchConfig::new().with_presence_projection_dims(usize::MAX)
+        FeatureSketchConfig::builder().presence_projection_dims(usize::MAX).build()
     )]
     #[case::chain_layout_size(
-        FeatureSketchConfig::new()
-            .with_chains_per_ensemble(usize::MAX)
-            .with_chain_depth(2)
+        FeatureSketchConfig::builder()
+            .chains_per_ensemble(usize::MAX)
+            .chain_depth(2)
+            .build()
     )]
     #[case::sketch_cell_count(
-        FeatureSketchConfig::new()
-            .with_sketch_rows(usize::MAX)
-            .with_sketch_buckets(2)
+        FeatureSketchConfig::builder()
+            .sketch_rows(usize::MAX)
+            .sketch_buckets(2)
+            .build()
     )]
     #[case::total_sketch_cells(
-        FeatureSketchConfig::new()
-            .with_chains_per_ensemble(usize::MAX / 8 + 1)
-            .with_chain_depth(2)
-            .with_sketch_rows(2)
-            .with_sketch_buckets(2)
+        FeatureSketchConfig::builder()
+            .chains_per_ensemble(usize::MAX / 8 + 1)
+            .chain_depth(2)
+            .sketch_rows(2)
+            .sketch_buckets(2)
+            .build()
     )]
     fn rejects_overflowing_values(#[case] config: FeatureSketchConfig) {
         assert!(matches!(
