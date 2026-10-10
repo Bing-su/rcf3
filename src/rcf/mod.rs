@@ -10,6 +10,6 @@ mod sampler;
 mod score;
 mod tree;
 
-pub use config::{RcfConfig, RcfConfigBuilder};
+pub use config::RcfConfig;
 pub use forest::{Forest, ForestBuilder, NeighborResult};
 pub use score::Attribution;

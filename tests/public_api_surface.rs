@@ -1,10 +1,9 @@
 /// Smoke test for the crate-level public facade exports.
 use proptest::prelude::*;
 use rcf3::{
-    Attribution, FeatureSketch, FeatureSketchBuilder, FeatureSketchConfig,
-    FeatureSketchConfigBuilder, Forest, ForestBuilder, MStream, MStreamConfig,
-    MStreamConfigBuilder, NeighborResult, OnlineIForest, OnlineIForestConfig,
-    OnlineIForestConfigBuilder, RcfConfig, RcfConfigBuilder, RcfError,
+    Attribution, FeatureSketch, FeatureSketchBuilder, FeatureSketchConfig, Forest, ForestBuilder,
+    MStream, MStreamConfig, NeighborResult, OnlineIForest, OnlineIForestConfig, RcfConfig,
+    RcfError,
 };
 #[cfg(feature = "serde")]
 use rcf3::{MStreamBuilder, OnlineIForestBuilder};
@@ -120,10 +119,10 @@ fn public_config_builders_and_constant_defaults_are_available() {
         (256, 2048, 1024, 2048)
     );
 
-    let forest: RcfConfigBuilder<_> = RcfConfig::builder(2).capacity(64);
-    let online: OnlineIForestConfigBuilder<_> = OnlineIForestConfig::builder(2).window_size(512);
-    let mstream: MStreamConfigBuilder<_> = MStreamConfig::builder(2, 1).num_buckets(256);
-    let sketch: FeatureSketchConfigBuilder<_> = FeatureSketchConfig::builder().decay_half_life(16);
+    let forest = RcfConfig::builder(2).capacity(64);
+    let online = OnlineIForestConfig::builder(2).window_size(512);
+    let mstream = MStreamConfig::builder(2, 1).num_buckets(256);
+    let sketch = FeatureSketchConfig::builder().decay_half_life(16);
     assert_eq!(forest.build().capacity(), 64);
     assert_eq!(online.build().window_size(), 512);
     assert_eq!(mstream.build().num_buckets(), 256);
