@@ -43,7 +43,7 @@ jobs:
             args: --out dist --interpreter 3.11 3.14t pypy3.11 pypy3.12
             manylinux: manylinux_2_28
             abi3t: true
-          - os: ubuntu-24.04-arm
+          - os: ubuntu-26.04-arm
             target: aarch64-unknown-linux-gnu
             args: --out dist --interpreter 3.11 3.14t pypy3.11 pypy3.12
             manylinux: manylinux_2_28
@@ -58,7 +58,7 @@ jobs:
             args: --out dist --interpreter 3.11 3.14t
             manylinux: musllinux_1_2
             abi3t: true
-          - os: ubuntu-24.04-arm
+          - os: ubuntu-26.04-arm
             target: aarch64-unknown-linux-musl
             args: --out dist --interpreter 3.11 3.14t
             manylinux: musllinux_1_2
