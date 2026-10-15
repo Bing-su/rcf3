@@ -25,7 +25,7 @@ use crate::pyutil::{StrOrBytes, to_py_err};
 ///     Base leaf-splitting threshold (default 32).
 /// seed : int, optional
 ///     Random seed for deterministic trees.
-#[pyclass(name = "OnlineIForest", module = "rcf3.rcf3", skip_from_py_object)]
+#[pyclass(name = "OnlineIForest", module = "rcf3.rcf3")]
 #[derive(Clone, Debug)]
 pub struct PyOnlineIForest {
     inner: OnlineIForest,

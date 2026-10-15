@@ -68,7 +68,7 @@ impl From<Attribution> for PyAttribution {
 ///     before capacity (default 0.125).
 /// seed : int, optional
 ///     Random seed for deterministic forests.
-#[pyclass(name = "Forest", module = "rcf3.rcf3", skip_from_py_object)]
+#[pyclass(name = "Forest", module = "rcf3.rcf3")]
 #[derive(Clone, Debug)]
 pub struct PyForest {
     inner: Forest,

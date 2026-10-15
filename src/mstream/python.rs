@@ -47,7 +47,7 @@ impl From<MStreamScore> for PyMStreamScore {
 ///     Temporal decay factor in `(0, 1)` (default 0.8).
 /// seed : int, optional
 ///     Random seed for deterministic hashing.
-#[pyclass(name = "MStream", module = "rcf3.rcf3", skip_from_py_object)]
+#[pyclass(name = "MStream", module = "rcf3.rcf3")]
 #[derive(Clone, Debug)]
 pub struct PyMStream {
     inner: MStream,

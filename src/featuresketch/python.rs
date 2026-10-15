@@ -31,7 +31,7 @@ use crate::pyutil::{KeyValueLike, StrOrBytes, to_py_err};
 ///     Event-count half-life used for temporal decay (default 2048).
 /// seed : int, optional
 ///     Random seed for deterministic projections, chains, and sketches.
-#[pyclass(name = "FeatureSketch", module = "rcf3.rcf3", skip_from_py_object)]
+#[pyclass(name = "FeatureSketch", module = "rcf3.rcf3")]
 #[derive(Clone, Debug)]
 pub struct PyFeatureSketch {
     inner: FeatureSketch,
