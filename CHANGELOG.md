@@ -1,3 +1,36 @@
+## [0.6.0] - 2026-11-06
+
+### 🐛 Bug Fixes
+
+- _(api)_ Hide configuration builders from public exports
+- _(python)_ Remove deprecated skip_from_pyobject
+
+### 💼 Other
+
+- Build 3.15 wheels
+- Abi3audit, build summary, disable abi3t
+- _(deps)_ Update ci dependencies
+- _(deps)_ Bump actions, pre-commit
+- Pypy3.12 wheels
+
+### 🚜 Refactor
+
+- _(api)_ Migrate detector builders to bon
+
+### 🎨 Styling
+
+- Tombi format
+
+### ⚙️ Miscellaneous Tasks
+
+- Update deps
+- Update deps
+- Build abi3t wheel
+- Ubuntu-24.04-arm -> ubuntu-26.04-arm
+- Update CI and pre-commit tooling
+- Update dependencies
+- Release version 0.6.0
+
 ## [0.5.2] - 2026-08-03
 
 ### 🐛 Bug Fixes
