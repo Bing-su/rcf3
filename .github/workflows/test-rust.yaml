@@ -35,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: kunobi-ninja/kache-action@main
+      - uses: jdx/mr-boxington-action@v1
       - name: Run tests
         run: cargo test --verbose
       - name: Run tests (no-default-features)
